@@ -1,0 +1,12 @@
+[workspace]
+members = ["sealbox-server", "sealbox-cli"]
+
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+authors = ["luckywood <morrisliu1994@outlook.com>"]
+description = "Sealbox: A Simple Secret Storage Service – self-hosted and developer-friendly."
+repository = "https://github.com/realmorrisliu/sealbox"
+readme = "README.md"
