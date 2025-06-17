@@ -1,11 +1,10 @@
 use axum::{
     Router,
-    extract::State,
+    extract::{Json, State},
     http::{HeaderName, Request},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{delete, get, put},
 };
-use http::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceBuilder;
@@ -19,7 +18,7 @@ use crate::{
     api::{path::Path, state::AppState},
     config::SealboxConfig,
     error::{Result, SealboxError},
-    repo::Secret,
+    repo::{MasterKey, Secret},
 };
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
@@ -57,12 +56,15 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         .route("/", get(root))
         .route(
             "/{version}/secrets/{secret_key}",
-            get(handler)
-                .put(handler)
-                .delete(handler)
-                .post(handler)
-                .head(handler)
-                .options(handler),
+            get(get_secret).put(save_secret).delete(delete_secret),
+        )
+        .route(
+            "/{version}/master-key",
+            put(rotate_master_key).post(create_master_key),
+        )
+        .route(
+            "/{version}/master-key/{master_key_id}",
+            delete(delete_master_key),
         )
         .with_state(AppState::new(config)?)
         .layer(middleware))
@@ -80,21 +82,6 @@ enum Version {
     V3,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-struct Params {
-    version: Version,
-    secret_key: String,
-}
-
-impl Params {
-    fn version(&self) -> Version {
-        self.version.clone()
-    }
-    fn secret_key(&self) -> String {
-        self.secret_key.clone()
-    }
-}
-
 pub enum SealboxResponse {
     Ok,
     Data(serde_json::Value),
@@ -108,25 +95,195 @@ impl IntoResponse for SealboxResponse {
     }
 }
 
-async fn handler(
-    method: Method,
-    Path(params): Path<Params>,
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct SecretPathParams {
+    version: Version,
+    secret_key: String,
+}
+
+impl SecretPathParams {
+    fn version(&self) -> Version {
+        self.version.clone()
+    }
+    fn secret_key(&self) -> String {
+        self.secret_key.clone()
+    }
+}
+
+// GET /{version}/secrets/{secret_key}
+async fn get_secret(
     State(state): State<AppState>,
+    Path(params): Path<SecretPathParams>,
 ) -> Result<SealboxResponse> {
-    match (method, params.version()) {
-        (Method::GET, Version::V1) => {
-            let _secret = state.secret_repo.get_secret(&params.secret_key());
-            Ok(SealboxResponse::Data(json!({"secret": ""})))
+    match params.version() {
+        Version::V1 => {
+            let secret = state.secret_repo.get_secret(&params.secret_key())?;
+            Ok(SealboxResponse::Data(json!({"secret": secret})))
         }
-        (Method::PUT, Version::V1) => {
-            let secret = Secret::create(&params.secret_key()).await?;
-            state.secret_repo.save_secret(&secret);
+        _ => Err(SealboxError::InvalidVersion),
+    }
+}
+
+// PUT /{version}/secrets/{secret_key}
+async fn save_secret(
+    State(state): State<AppState>,
+    Path(params): Path<SecretPathParams>,
+) -> Result<SealboxResponse> {
+    match params.version() {
+        Version::V1 => {
+            let value = "example_value";
+
+            let master_key = state
+                .master_key_repo
+                .get_valid_master_key()?
+                .ok_or_else(|| SealboxError::NotInitialized)?;
+
+            let secret = Secret::new(&params.secret_key(), value, master_key)?;
+            state.secret_repo.save_secret(&secret)?;
+
             Ok(SealboxResponse::Ok)
         }
-        (Method::DELETE, Version::V1) => {
-            state.secret_repo.delete_secret(&params.secret_key());
+        _ => Err(SealboxError::InvalidVersion),
+    }
+}
+
+// DELETE /{version}/secrets/{secret_key}
+async fn delete_secret(
+    State(state): State<AppState>,
+    Path(params): Path<SecretPathParams>,
+) -> Result<SealboxResponse> {
+    match params.version() {
+        Version::V1 => {
+            state.secret_repo.delete_secret(&params.secret_key())?;
             Ok(SealboxResponse::Ok)
         }
-        _ => Err(SealboxError::InvalidMethod),
+        _ => Err(SealboxError::InvalidVersion),
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct MasterKeyPathParams {
+    version: Version,
+}
+
+impl MasterKeyPathParams {
+    fn version(&self) -> Version {
+        self.version.clone()
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct RotateMasterKeyPayload {
+    new_master_key_id: String,
+    old_master_key_id: String,
+    old_private_key_pem: String,
+}
+
+// PUT /{version}/master-key
+async fn rotate_master_key(
+    State(state): State<AppState>,
+    Path(params): Path<MasterKeyPathParams>,
+    Json(payload): Json<RotateMasterKeyPayload>,
+) -> Result<SealboxResponse> {
+    match params.version() {
+        Version::V1 => {
+            let new_master_key_id = payload.new_master_key_id;
+            let old_master_key_id = payload.old_master_key_id;
+            let old_private_key_pem = payload.old_private_key_pem;
+
+            let new_public_key_pem = state
+                .master_key_repo
+                .fetch_public_key(&new_master_key_id)?
+                .ok_or_else(|| SealboxError::MasterKeyNotFound(new_master_key_id.clone()))?;
+
+            let secrets = state
+                .secret_repo
+                .fetch_secrets_by_master_key(&old_master_key_id)?;
+
+            let mut failed_secret_keys = Vec::new();
+
+            for secret in secrets {
+                let secret_key = secret.key.clone();
+
+                match secret.rotate_master_key(
+                    &old_master_key_id,
+                    &old_private_key_pem,
+                    &new_master_key_id,
+                    &new_public_key_pem,
+                ) {
+                    Ok(rotated_secret) => {
+                        state
+                            .secret_repo
+                            .update_secret_master_key(&rotated_secret)?;
+                    }
+                    Err(err) => {
+                        failed_secret_keys.push(secret_key.clone());
+                        error!(
+                            "Failed to rotate master key for secret {}: {}",
+                            secret_key, err
+                        );
+                    }
+                }
+            }
+
+            if !failed_secret_keys.is_empty() {
+                return Ok(SealboxResponse::Data(json!({
+                  "master_key": new_master_key_id,
+                  "failed_secret_keys": failed_secret_keys
+                })));
+            }
+
+            Ok(SealboxResponse::Data(
+                json!({"master_key": new_master_key_id}),
+            ))
+        }
+        _ => Err(SealboxError::InvalidVersion),
+    }
+}
+
+// POST /{version}/master-key
+async fn create_master_key(
+    State(state): State<AppState>,
+    Path(params): Path<MasterKeyPathParams>,
+) -> Result<SealboxResponse> {
+    match params.version() {
+        Version::V1 => {
+            let (master_key, private_key) = MasterKey::create_key_pair()?;
+            state.master_key_repo.create_master_key(&master_key)?;
+
+            Ok(SealboxResponse::Data(json!({"private_key": private_key})))
+        }
+        _ => Err(SealboxError::InvalidVersion),
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct DeleteMasterKeyPathParams {
+    version: Version,
+    master_key_id: String,
+}
+
+impl DeleteMasterKeyPathParams {
+    fn version(&self) -> Version {
+        self.version.clone()
+    }
+    fn master_key_id(&self) -> &str {
+        &self.master_key_id
+    }
+}
+
+// DELETE /{version}/master-key/{master_key_id}
+async fn delete_master_key(
+    State(state): State<AppState>,
+    Path(params): Path<DeleteMasterKeyPathParams>,
+) -> Result<SealboxResponse> {
+    match params.version() {
+        Version::V1 => {
+            state
+                .master_key_repo
+                .delete_master_key(params.master_key_id())?;
+            Ok(SealboxResponse::Ok)
+        }
+        _ => Err(SealboxError::InvalidVersion),
     }
 }

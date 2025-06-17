@@ -149,22 +149,110 @@ To prevent replay attacks, Sealbox will implement nonce-based token tracking:
 
 ## Storage Design
 
-Sealbox uses a single `secrets` table in SQLite with the following fields:
-- `id` (primary key)
-- `namespace` (TEXT)
-- `key` (TEXT)
-- `version` (INTEGER)
-- `encrypted_value` (BLOB)
-- `created_at` (TIMESTAMP)
-- `expires_at` (TIMESTAMP)
-- `created_by` (TEXT, optional)
+Sealbox uses end-to-end encryption (E2EE) by default: secrets are always encrypted with a user-held private key model. The server never has access to the keys required to decrypt user data.
 
-This schema supports:
+---
+
+### End-to-End Encryption (E2EE, User-Held Private Key)
+
+**How it works:**
+- Each user generates a key pair (public/private).
+- For each secret, a random Data Key is generated.
+- The secret value is encrypted with the Data Key (`encrypted_data`).
+- The Data Key is encrypted with the user’s public key (`encrypted_data_key`).
+- Only the user, holding the private key, can decrypt the Data Key and thus the secret.
+- The server only stores encrypted data and public keys.
+
+**Schema:**
+```sql
+CREATE TABLE IF NOT EXISTS master_keys (
+    id TEXT PRIMARY KEY,
+    public_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    description TEXT,
+    version INTEGER,
+    metadata TEXT
+);
+
+CREATE TABLE IF NOT EXISTS secrets (
+    namespace TEXT NOT NULL,
+    key TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    encrypted_data BLOB NOT NULL,
+    encrypted_data_key BLOB NOT NULL,
+    master_key_id TEXT NOT NULL, -- references master_keys.id
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    metadata TEXT,
+    PRIMARY KEY (namespace, key, version)
+);
+```
+
+**Features:**
 - Versioning (by incrementing `version` per insert)
 - TTL (`expires_at`)
-- Auditing (`created_by`, `created_at`)
+- Auditing (`created_at`, `updated_at`, `metadata`)
+- Multi-user and multi-tenant isolation
 
-**Note**: While `version` is stored internally, the external API only supports retrieving the latest version for simplicity. This preserves the 1-key-1-secret UX while keeping future rollback or auditing capabilities.
+**E2EE Flow:**
+```mermaid
+flowchart TD
+    A[Secret Value] -->|Encrypt with Data Key| B[encrypted_data]
+    C[Data Key] -->|Encrypt with User Public Key| D[encrypted_data_key]
+    B -. Store .-> E[Database]
+    D -. Store .-> E
+    E -. Retrieve .-> B2[encrypted_data]
+    E -. Retrieve .-> D2[encrypted_data_key]
+    D2 -->|Decrypt with User Private Key| C2[Data Key]
+    B2 -->|Decrypt with Data Key| F[Secret Value]
+    C2 --> F
+```
+
+**Advantages:**
+- Sealbox server cannot decrypt user secrets; only the user with the private key can.
+- No root key or server-side master key required.
+- Supports multi-user and multi-tenant isolation by design.
+
+**Considerations:**
+- Sealbox only returns encrypted secrets; decryption is always performed client-side.
+- Lost private keys mean lost data.
+- Key rotation requires support for multiple public keys and batch re-encryption.
+
+---
+
+### Master Key Rotation in E2EE Mode
+
+Sealbox supports master key (public key) rotation to ensure cryptographic agility and security. The rotation process allows users to update their encryption key pair without losing access to existing secrets.
+
+**Rotation Workflow:**
+1. User generates a new key pair (public/private).
+2. The new public key is registered in the `master_keys` table and marked as active.
+3. New secrets are encrypted with the new public key.
+4. For existing secrets:
+    - The user retrieves the encrypted data and encrypted data key.
+    - The user uses their old private key to decrypt the data key, then re-encrypts the data key with the new public key.
+    - The updated `encrypted_data_key` is uploaded to Sealbox, referencing the new `master_key_id`.
+5. Once all secrets have been re-encrypted, the old public key can be marked as retired or removed.
+
+**Rotation Flow:**
+```mermaid
+flowchart TD
+    subgraph Before Rotation
+      D1[encrypted_data_key (Old Public Key)] -->|Decrypt with Old Private Key| DK[Data Key]
+    end
+    subgraph After Rotation
+      DK -->|Encrypt with New Public Key| D2[encrypted_data_key (New Public Key)]
+    end
+```
+
+**Key Points:**
+- Multiple public keys can coexist during rotation; each secret references its corresponding `master_key_id`.
+- Old public keys should not be deleted until all secrets have been re-encrypted.
+- Users are responsible for securely managing both old and new private keys during the transition.
+
+
 
 ### Note on Raft and SQLite
 
