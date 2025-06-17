@@ -31,35 +31,35 @@ Sealbox doesn’t aim to replace Vault. It aims to be the 90% simpler alternativ
 ## Features
 
 ### MVP 0.1.0
-- Envelope encryption
-- Static token auth
-- SQLite storage
-- PUT/GET/DELETE HTTP API
-- TTL field support (no GC)
-- REST API only (no CLI)
+- [ ] Envelope encryption
+- [ ] Static token auth
+- [ ] SQLite storage
+- [ ] PUT/GET/DELETE HTTP API
+- [ ] TTL field support (no GC)
+- [ ] REST API only (no CLI)
 
 ### v1.0.0
-- Sealbox CLI
-- JWT authentication (with replay protection)
-- Secret versioning
-- Automatic TTL expiration cleanup
-- Raft replication for multi-replica SQLite
-- Docker Compose support
-- Helm Chart support (Kubernetes)
+- [ ] Sealbox CLI
+- [ ] JWT authentication (with replay protection)
+- [ ] Secret versioning
+- [ ] Automatic TTL expiration cleanup
+- [ ] Raft replication for multi-replica SQLite
+- [ ] Docker Compose support
+- [ ] Helm Chart support (Kubernetes)
 
 ### v1.1.0
-- Web UI
-- Access audit logging
-- CLI secret decryption cache
-- Metadata query API
+- [ ] Web UI
+- [ ] Access audit logging
+- [ ] CLI secret decryption cache
+- [ ] Metadata query API
 
 ### Future
-- External KMS support (AWS, Vault)
-- TPM/YubiKey hardware key support
-- Multi-tenant ACL
-- Pluggable crypto backend
-- CLI auto-login via OAuth2 Device Code Flow
-- Additional authentication strategies
+- [ ] External KMS support (AWS, Vault)
+- [ ] TPM/YubiKey hardware key support
+- [ ] Multi-tenant ACL
+- [ ] Pluggable crypto backend
+- [ ] CLI auto-login via OAuth2 Device Code Flow
+- [ ] Additional authentication strategies
 
 ---
 
@@ -240,10 +240,10 @@ Sealbox supports master key (public key) rotation to ensure cryptographic agilit
 ```mermaid
 flowchart TD
     subgraph Before Rotation
-      D1[encrypted_data_key (Old Public Key)] -->|Decrypt with Old Private Key| DK[Data Key]
+      D1["encrypted_data_key (Old Public Key)"] -->|Decrypt with Old Private Key| DK[Data Key]
     end
     subgraph After Rotation
-      DK -->|Encrypt with New Public Key| D2[encrypted_data_key (New Public Key)]
+      DK -->|Encrypt with New Public Key| D2["encrypted_data_key (New Public Key)"]
     end
 ```
 
