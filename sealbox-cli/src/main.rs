@@ -5,6 +5,8 @@ use rsa::pkcs1::DecodeRsaPublicKey;
 use serde_json::json;
 use std::fs;
 use std::path::Path;
+use time::format_description::well_known::Rfc2822;
+use time::{OffsetDateTime, UtcOffset};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -87,8 +89,29 @@ async fn main() -> Result<()> {
                 let status = res.status();
                 let body = res.text().await?;
 
-                println!("\nServer Response ({})", status);
-                println!("{}", body);
+                if status.is_success() {
+                    let master_key: sealbox_server::repo::MasterKey = serde_json::from_str(&body)?;
+                    let created_at = OffsetDateTime::from_unix_timestamp(master_key.created_at)?;
+                    let local_offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
+                    let created_at_local = created_at.to_offset(local_offset);
+
+                    println!("Master key registered successfully!");
+                    println!("  ID: {}", master_key.id);
+                    println!("  Status: {:?}", master_key.status);
+                    println!(
+                        "  Created At: {} (Local Time)",
+                        created_at_local
+                            .format(&Rfc2822)
+                            .unwrap_or(created_at_local.to_string())
+                    );
+                } else {
+                    println!(
+                        "
+Server returned an error ({})",
+                        status
+                    );
+                    println!("{}", body);
+                }
             }
         },
     }

@@ -8,6 +8,7 @@ use axum::{
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tower::ServiceBuilder;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
@@ -34,23 +35,7 @@ const REQUEST_ID_HEADER: &str = "x-request-id";
 pub fn create_app(config: &SealboxConfig) -> Result<Router> {
     tracing::info!("Initializing API routes");
     let x_request_id = HeaderName::from_static(REQUEST_ID_HEADER);
-
-    let state = AppState::new(config)?;
-
-    Ok(Router::new()
-        .route("/", get(root))
-        .route(
-            "/{version}/secrets/{secret_key}",
-            get(secret::get).put(secret::save).delete(secret::delete),
-        )
-        .route(
-            "/{version}/master-key",
-            get(master_key::list)
-                .put(master_key::rotate)
-                .post(master_key::create),
-        )
-        .route_layer(from_fn_with_state(state.clone(), static_auth))
-        .with_state(state)
+    let request_id_middleware = ServiceBuilder::new()
         .layer(SetRequestIdLayer::new(
             x_request_id.clone(),
             MakeRequestUuid,
@@ -73,7 +58,25 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             }),
         )
         // send headers from request to response headers
-        .layer(PropagateRequestIdLayer::new(x_request_id)))
+        .layer(PropagateRequestIdLayer::new(x_request_id));
+
+    let state = AppState::new(config)?;
+
+    Ok(Router::new()
+        .route("/", get(root))
+        .route(
+            "/{version}/secrets/{secret_key}",
+            get(secret::get).put(secret::save).delete(secret::delete),
+        )
+        .route(
+            "/{version}/master-key",
+            get(master_key::list)
+                .put(master_key::rotate)
+                .post(master_key::create),
+        )
+        .route_layer(from_fn_with_state(state.clone(), static_auth))
+        .with_state(state)
+        .layer(request_id_middleware))
 }
 
 async fn root() -> &'static str {

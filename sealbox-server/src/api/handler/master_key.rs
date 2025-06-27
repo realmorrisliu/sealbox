@@ -129,7 +129,7 @@ pub(crate) async fn create(
             state
                 .master_key_repo
                 .create_master_key(&conn, &master_key)?;
-            Ok(SealboxResponse::Json(json!({ "master_key": master_key })))
+            Ok(SealboxResponse::Json(json!(master_key)))
         }
         _ => Err(SealboxError::InvalidApiVersion),
     }

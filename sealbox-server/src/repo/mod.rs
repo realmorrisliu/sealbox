@@ -1,5 +1,5 @@
 use rusqlite::{ToSql, types::FromSql};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -143,7 +143,7 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn update_secret_master_key(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()>;
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum MasterKeyStatus {
     Active,
     Retired,
@@ -170,7 +170,7 @@ impl FromSql for MasterKeyStatus {
 }
 
 /// MasterKey struct, represents a row in the master_keys table
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MasterKey {
     pub id: Uuid,                    // Unique identifier (e.g., UUID)
     pub public_key: String,          // Public key (PEM format)
