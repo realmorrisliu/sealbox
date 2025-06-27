@@ -44,7 +44,7 @@ pub(crate) async fn get(
                 }
                 None => state.secret_repo.get_secret(&conn, &params.secret_key())?,
             };
-            Ok(SealboxResponse::Json(json!({"secret": secret})))
+            Ok(SealboxResponse::Json(json!(secret)))
         }
         _ => Err(SealboxError::InvalidApiVersion),
     }

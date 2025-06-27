@@ -37,7 +37,7 @@ pub(crate) async fn list(
         Version::V1 => {
             let conn = state.conn_pool.lock()?;
             let master_keys = state.master_key_repo.fetch_all_master_keys(&conn)?;
-            Ok(SealboxResponse::Json(json!({"master_keys": master_keys})))
+            Ok(SealboxResponse::Json(json!(master_keys)))
         }
         _ => Err(SealboxError::InvalidApiVersion),
     }
