@@ -39,7 +39,7 @@ pub(crate) async fn list(
             let master_keys = state.master_key_repo.fetch_all_master_keys(&conn)?;
             Ok(SealboxResponse::Json(json!({"master_keys": master_keys})))
         }
-        _ => Err(SealboxError::InvalidVersion),
+        _ => Err(SealboxError::InvalidApiVersion),
     }
 }
 
@@ -107,7 +107,7 @@ pub(crate) async fn rotate(
                 json!({ "master_key": new_master_key_id }),
             ))
         }
-        _ => Err(SealboxError::InvalidVersion),
+        _ => Err(SealboxError::InvalidApiVersion),
     }
 }
 
@@ -131,6 +131,6 @@ pub(crate) async fn create(
                 .create_master_key(&conn, &master_key)?;
             Ok(SealboxResponse::Json(json!({ "master_key": master_key })))
         }
-        _ => Err(SealboxError::InvalidVersion),
+        _ => Err(SealboxError::InvalidApiVersion),
     }
 }

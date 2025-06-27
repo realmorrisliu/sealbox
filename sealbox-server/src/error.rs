@@ -28,11 +28,8 @@ pub enum SealboxError {
     #[error("Invalid request: {0}")]
     BadRequest(String),
 
-    #[error("Invalid method")]
-    InvalidMethod,
-
-    #[error("Invalid version")]
-    InvalidVersion,
+    #[error("Invalid API version")]
+    InvalidApiVersion,
 
     #[error("Database error: {0}")]
     DatabaseError(#[from] rusqlite::Error),
@@ -71,8 +68,7 @@ impl IntoResponse for SealboxError {
             }
             SealboxError::StorageError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
             SealboxError::BadRequest(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
-            SealboxError::InvalidMethod => (StatusCode::METHOD_NOT_ALLOWED, errorfmt(&self)),
-            SealboxError::InvalidVersion => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::InvalidApiVersion => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
             SealboxError::PKCS1CryptoError(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))

@@ -47,7 +47,7 @@ impl Secret {
     /// 4. Encrypts the data key using the provided master key's public key.
     /// 5. Sets the creation and update timestamps to the current time.
     /// 6. Constructs and returns the new `Secret` instance.
-    pub(crate) fn new(key: &str, data: &str, master_key: MasterKey) -> Result<Self> {
+    pub(crate) fn new(key: &str, data: &str, master_key: MasterKey, version: i32) -> Result<Self> {
         let data_bytes = data.as_bytes();
 
         let data_key = generate_data_key()?;
@@ -59,7 +59,7 @@ impl Secret {
         Ok(Self {
             namespace: String::new(),
             key: key.to_string(),
-            version: 1,
+            version,
             encrypted_data,
             encrypted_data_key,
             master_key_id: master_key.id,
@@ -104,8 +104,25 @@ impl Secret {
 
 pub(crate) trait SecretRepo: Send + Sync {
     fn get_secret(&self, conn: &rusqlite::Connection, key: &str) -> Result<Secret>;
-    fn save_secret(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()>;
-    fn delete_secret(&self, conn: &rusqlite::Connection, key: &str) -> Result<()>;
+    fn get_secret_by_version(
+        &self,
+        conn: &rusqlite::Connection,
+        key: &str,
+        version: i32,
+    ) -> Result<Secret>;
+    fn create_new_version(
+        &self,
+        conn: &mut rusqlite::Connection,
+        key: &str,
+        data: &str,
+        master_key: MasterKey,
+    ) -> Result<Secret>;
+    fn delete_secret_by_version(
+        &self,
+        conn: &rusqlite::Connection,
+        key: &str,
+        version: i32,
+    ) -> Result<()>;
 
     /// Fetch all secrets using the given master_key_id.
     fn fetch_secrets_by_master_key(
