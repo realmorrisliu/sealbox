@@ -49,6 +49,9 @@ pub enum SealboxError {
     #[error("Error creating response: {0}")]
     ResponseCreationError(String),
 
+    #[error("Database connection error: {0}")]
+    DatabaseConnectionError(String),
+
     #[error("Unknown error")]
     Unknown,
 }
@@ -81,6 +84,9 @@ impl IntoResponse for SealboxError {
             SealboxError::ResponseCreationError(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
             }
+            SealboxError::DatabaseConnectionError(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
+            }
             SealboxError::Unknown => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
         };
 
@@ -95,5 +101,13 @@ impl IntoResponse for SealboxError {
 impl From<aes_gcm::Error> for SealboxError {
     fn from(err: aes_gcm::Error) -> Self {
         SealboxError::AESGCMCryptoError(err)
+    }
+}
+
+impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, rusqlite::Connection>>>
+    for SealboxError
+{
+    fn from(err: std::sync::PoisonError<std::sync::MutexGuard<'_, rusqlite::Connection>>) -> Self {
+        SealboxError::DatabaseConnectionError(err.to_string())
     }
 }

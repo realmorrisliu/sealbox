@@ -11,7 +11,11 @@ use sha2::Sha256;
 
 use crate::error::Result;
 
-/// Generate a new RSA key pair for master_key, returning (private_pem, public_pem)
+/// Generate a new RSA key pair for master_key, returning (private_pem, public_pem).
+///
+/// **Note: This function is intended for client-side use only.** The server should
+/// never generate or handle private keys as per the E2EE design. The private key
+/// must remain on the client.
 pub fn generate_master_key_pair() -> Result<(String, String)> {
     // Generate 2048-bit RSA key pair
     let mut rng = rand::thread_rng(); // rand@0.8

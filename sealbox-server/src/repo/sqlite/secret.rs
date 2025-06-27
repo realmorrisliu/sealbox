@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use rusqlite::OptionalExtension;
 use tracing::info;
 use uuid::Uuid;
@@ -10,17 +8,12 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct SqliteSecretRepo {
-    conn: Arc<Mutex<rusqlite::Connection>>,
-}
+pub(crate) struct SqliteSecretRepo;
 
 impl SqliteSecretRepo {
-    pub fn new(conn: Arc<Mutex<rusqlite::Connection>>) -> Result<Self> {
-        let temp_conn = conn.clone();
-        let acquired_conn = temp_conn.lock().unwrap();
-
+    pub fn init_table(conn: &rusqlite::Connection) -> Result<()> {
         // Initialize database table structure
-        acquired_conn.execute(
+        conn.execute(
             "CREATE TABLE IF NOT EXISTS secrets (
                 namespace TEXT NOT NULL,
                 key TEXT NOT NULL,
@@ -37,14 +30,13 @@ impl SqliteSecretRepo {
             (),
         )?;
 
-        Ok(Self { conn })
+        Ok(())
     }
 }
 
 impl SecretRepo for SqliteSecretRepo {
-    fn get_secret(&self, key: &str) -> Result<Secret> {
+    fn get_secret(&self, conn: &rusqlite::Connection, key: &str) -> Result<Secret> {
         info!("get_secret");
-        let conn = self.conn.lock().unwrap();
 
         let mut stmt = conn.prepare(
             "SELECT
@@ -85,9 +77,8 @@ impl SecretRepo for SqliteSecretRepo {
         }
     }
 
-    fn save_secret(&self, secret: &Secret) -> Result<()> {
+    fn save_secret(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()> {
         info!("save_secret");
-        let conn = self.conn.lock().unwrap();
 
         conn.execute(
             "INSERT INTO secrets (
@@ -119,15 +110,17 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(())
     }
 
-    fn delete_secret(&self, key: &str) -> Result<()> {
+    fn delete_secret(&self, conn: &rusqlite::Connection, key: &str) -> Result<()> {
         info!("delete_secret");
-        let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM secrets WHERE key = ?1", [key])?;
         Ok(())
     }
 
-    fn fetch_secrets_by_master_key(&self, master_key_id: &Uuid) -> Result<Vec<Secret>> {
-        let conn = self.conn.lock().unwrap();
+    fn fetch_secrets_by_master_key(
+        &self,
+        conn: &rusqlite::Connection,
+        master_key_id: &Uuid,
+    ) -> Result<Vec<Secret>> {
         let mut stmt = conn.prepare(
             "SELECT
                 namespace,
@@ -162,16 +155,14 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(secrets)
     }
 
-    fn update_secret_master_key(&self, secret: &Secret) -> Result<()> {
-        use rusqlite::params;
-        let conn = self.conn.lock().unwrap();
+    fn update_secret_master_key(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()> {
         conn.execute(
             "UPDATE secrets SET
                 encrypted_data_key = ?1,
                 master_key_id = ?2,
                 updated_at = ?3
              WHERE namespace = ?4 AND key = ?5 AND version = ?6",
-            params![
+            rusqlite::params![
                 &secret.encrypted_data_key,
                 &secret.master_key_id,
                 &secret.updated_at,

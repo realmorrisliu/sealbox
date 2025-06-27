@@ -10,20 +10,22 @@ use crate::{
 
 #[derive(Clone)]
 pub(crate) struct AppState {
+    pub(crate) conn_pool: Arc<Mutex<rusqlite::Connection>>,
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
     pub(crate) master_key_repo: Arc<dyn MasterKeyRepo>,
 }
 
 impl AppState {
     pub fn new(config: &SealboxConfig) -> Result<Self> {
-        let conn = Arc::new(Mutex::new(create_db_connection(&config.store_path)?));
+        let conn = create_db_connection(&config.store_path)?;
 
-        let secret_repo = SqliteSecretRepo::new(conn.clone())?;
-        let master_key_repo = SqliteMasterKeyRepo::new(conn.clone())?;
+        SqliteSecretRepo::init_table(&conn)?;
+        SqliteMasterKeyRepo::init_table(&conn)?;
 
         Ok(Self {
-            secret_repo: Arc::new(secret_repo.clone()),
-            master_key_repo: Arc::new(master_key_repo.clone()),
+            conn_pool: Arc::new(Mutex::new(conn)),
+            secret_repo: Arc::new(SqliteSecretRepo {}),
+            master_key_repo: Arc::new(SqliteMasterKeyRepo {}),
         })
     }
 }
