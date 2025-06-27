@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::OptionalExtension;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::{
     error::{Result, SealboxError},
@@ -26,7 +27,7 @@ impl SqliteSecretRepo {
                 version INTEGER NOT NULL DEFAULT 1,
                 encrypted_data BLOB NOT NULL,
                 encrypted_data_key BLOB NOT NULL,
-                master_key_id TEXT NOT NULL,
+                master_key_id BLOB NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 expires_at INTEGER,
@@ -125,7 +126,7 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(())
     }
 
-    fn fetch_secrets_by_master_key(&self, master_key_id: &str) -> Result<Vec<Secret>> {
+    fn fetch_secrets_by_master_key(&self, master_key_id: &Uuid) -> Result<Vec<Secret>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT

@@ -17,7 +17,7 @@ serde_with = "3"
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-rusqlite = { version = "0.36.0", features = ["bundled"] }
+rusqlite = { version = "0.36.0", features = ["bundled", "uuid"] }
 rsa = { version = "0.9", features = ["pem"] }
 rand = "0.8"
 aes-gcm = "0.10"
@@ -31,6 +31,7 @@ time = "0.3"
 http = "1.0"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["request-id", "trace"] }
+uuid = { version = "1.17.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }

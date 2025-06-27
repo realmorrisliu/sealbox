@@ -4,6 +4,7 @@ use axum::{
 };
 use serde_json::json;
 use thiserror::Error;
+use uuid::Uuid;
 
 pub type Result<T, E = SealboxError> = anyhow::Result<T, E>;
 
@@ -16,7 +17,7 @@ pub enum SealboxError {
     SecretNotFound(String),
 
     #[error("Master key not found: {0}")]
-    MasterKeyNotFound(String),
+    MasterKeyNotFound(Uuid),
 
     #[error("Master key not match for {0}: expected {1}, got {2}")]
     MasterKeyNotMatch(String, String, String),
@@ -45,6 +46,9 @@ pub enum SealboxError {
     #[error("AES-GCM crypto error: {0}")]
     AESGCMCryptoError(aes_gcm::Error),
 
+    #[error("Error creating response: {0}")]
+    ResponseCreationError(String),
+
     #[error("Unknown error")]
     Unknown,
 }
@@ -72,6 +76,9 @@ impl IntoResponse for SealboxError {
             }
             SealboxError::RSACryptoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
             SealboxError::AESGCMCryptoError(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
+            }
+            SealboxError::ResponseCreationError(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
             }
             SealboxError::Unknown => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),

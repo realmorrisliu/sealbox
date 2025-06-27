@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use rusqlite::OptionalExtension;
+use tracing::error;
+use uuid::Uuid;
 
 use crate::{
     error::Result,
@@ -20,7 +22,7 @@ impl SqliteMasterKeyRepo {
         // Initialize database table structure
         acquired_conn.execute(
             "CREATE TABLE IF NOT EXISTS master_keys (
-                id TEXT PRIMARY KEY,
+                id BLOB PRIMARY KEY,
                 public_key TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
                 status TEXT NOT NULL,
@@ -45,29 +47,21 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
                 created_at,
                 status,
                 description,
-                version,
                 metadata
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             (
                 &key.id,
                 &key.public_key,
                 &key.created_at,
                 &key.status,
                 &key.description,
-                &key.version,
                 &key.metadata,
             ),
         )?;
         Ok(())
     }
 
-    fn delete_master_key(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM master_keys WHERE id = ?1", [id])?;
-        Ok(())
-    }
-
-    fn fetch_public_key(&self, master_key_id: &str) -> Result<Option<String>> {
+    fn fetch_public_key(&self, master_key_id: &Uuid) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT public_key FROM master_keys WHERE id = ?1 LIMIT 1")?;
         let public_key = stmt
@@ -87,11 +81,35 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
                     created_at: row.get(2)?,
                     status: row.get(3)?,
                     description: row.get(4)?,
-                    version: row.get(5)?,
-                    metadata: row.get(6)?,
+                    metadata: row.get(5)?,
                 })
             })
             .optional()?;
         Ok(master_key)
+    }
+
+    fn fetch_all_master_keys(&self) -> Result<Vec<MasterKey>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt =
+            conn.prepare("SELECT id, created_at, status, description, metadata FROM master_keys")?;
+        let master_key_iter = stmt.query_map([], |row| {
+            Ok(MasterKey {
+                id: row.get(0)?,
+                public_key: "[HIDDEN]".to_string(),
+                created_at: row.get(1)?,
+                status: row.get(2)?,
+                description: row.get(3)?,
+                metadata: row.get(4)?,
+            })
+        })?;
+
+        let master_keys: Vec<_> = master_key_iter
+            .filter_map(|res| {
+                res.map_err(|err| error!("Failed to fetch master key: {}", err))
+                    .ok()
+            })
+            .collect();
+
+        Ok(master_keys)
     }
 }

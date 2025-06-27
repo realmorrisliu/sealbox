@@ -3,8 +3,9 @@ use axum::{
     extract::{Json, State},
     http::{HeaderName, Request},
     response::{IntoResponse, Response},
-    routing::{delete, get, put},
+    routing::get,
 };
+use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceBuilder;
@@ -13,6 +14,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing::{error, info_span};
+use uuid::Uuid;
 
 use crate::{
     api::{path::Path, state::AppState},
@@ -60,11 +62,9 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         )
         .route(
             "/{version}/master-key",
-            put(rotate_master_key).post(create_master_key),
-        )
-        .route(
-            "/{version}/master-key/{master_key_id}",
-            delete(delete_master_key),
+            get(list_master_keys)
+                .put(rotate_master_key)
+                .post(create_master_key),
         )
         .with_state(AppState::new(config)?)
         .layer(middleware))
@@ -84,13 +84,22 @@ enum Version {
 
 pub enum SealboxResponse {
     Ok,
-    Data(serde_json::Value),
+    Json(serde_json::Value),
+    Text(String),
 }
 impl IntoResponse for SealboxResponse {
     fn into_response(self) -> Response {
         match self {
             SealboxResponse::Ok => axum::Json(json!({"result": "Ok"})).into_response(),
-            SealboxResponse::Data(data) => axum::Json(data).into_response(),
+            SealboxResponse::Json(data) => axum::Json(data).into_response(),
+            SealboxResponse::Text(data) => axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/plain; charset=utf-8")
+                .body(data)
+                .map(|response| response.into_response())
+                .unwrap_or_else(|err| {
+                    SealboxError::ResponseCreationError(err.to_string()).into_response()
+                }),
         }
     }
 }
@@ -118,27 +127,31 @@ async fn get_secret(
     match params.version() {
         Version::V1 => {
             let secret = state.secret_repo.get_secret(&params.secret_key())?;
-            Ok(SealboxResponse::Data(json!({"secret": secret})))
+            Ok(SealboxResponse::Json(json!({"secret": secret})))
         }
         _ => Err(SealboxError::InvalidVersion),
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct SaveSecretPayload {
+    secret: String,
 }
 
 // PUT /{version}/secrets/{secret_key}
 async fn save_secret(
     State(state): State<AppState>,
     Path(params): Path<SecretPathParams>,
+    Json(payload): Json<SaveSecretPayload>,
 ) -> Result<SealboxResponse> {
     match params.version() {
         Version::V1 => {
-            let value = "example_value";
-
             let master_key = state
                 .master_key_repo
                 .get_valid_master_key()?
                 .ok_or_else(|| SealboxError::NotInitialized)?;
 
-            let secret = Secret::new(&params.secret_key(), value, master_key)?;
+            let secret = Secret::new(&params.secret_key(), &payload.secret, master_key)?;
             state.secret_repo.save_secret(&secret)?;
 
             Ok(SealboxResponse::Ok)
@@ -174,9 +187,23 @@ impl MasterKeyPathParams {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct RotateMasterKeyPayload {
-    new_master_key_id: String,
-    old_master_key_id: String,
+    new_master_key_id: Uuid,
+    old_master_key_id: Uuid,
     old_private_key_pem: String,
+}
+
+// GET /{version}/master-key
+async fn list_master_keys(
+    State(state): State<AppState>,
+    Path(params): Path<MasterKeyPathParams>,
+) -> Result<SealboxResponse> {
+    match params.version() {
+        Version::V1 => {
+            let master_keys = state.master_key_repo.fetch_all_master_keys()?;
+            Ok(SealboxResponse::Json(json!({"master_keys": master_keys})))
+        }
+        _ => Err(SealboxError::InvalidVersion),
+    }
 }
 
 // PUT /{version}/master-key
@@ -227,13 +254,13 @@ async fn rotate_master_key(
             }
 
             if !failed_secret_keys.is_empty() {
-                return Ok(SealboxResponse::Data(json!({
+                return Ok(SealboxResponse::Json(json!({
                   "master_key": new_master_key_id,
                   "failed_secret_keys": failed_secret_keys
                 })));
             }
 
-            Ok(SealboxResponse::Data(
+            Ok(SealboxResponse::Json(
                 json!({"master_key": new_master_key_id}),
             ))
         }
@@ -250,39 +277,7 @@ async fn create_master_key(
         Version::V1 => {
             let (master_key, private_key) = MasterKey::create_key_pair()?;
             state.master_key_repo.create_master_key(&master_key)?;
-
-            Ok(SealboxResponse::Data(json!({"private_key": private_key})))
-        }
-        _ => Err(SealboxError::InvalidVersion),
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-struct DeleteMasterKeyPathParams {
-    version: Version,
-    master_key_id: String,
-}
-
-impl DeleteMasterKeyPathParams {
-    fn version(&self) -> Version {
-        self.version.clone()
-    }
-    fn master_key_id(&self) -> &str {
-        &self.master_key_id
-    }
-}
-
-// DELETE /{version}/master-key/{master_key_id}
-async fn delete_master_key(
-    State(state): State<AppState>,
-    Path(params): Path<DeleteMasterKeyPathParams>,
-) -> Result<SealboxResponse> {
-    match params.version() {
-        Version::V1 => {
-            state
-                .master_key_repo
-                .delete_master_key(params.master_key_id())?;
-            Ok(SealboxResponse::Ok)
+            Ok(SealboxResponse::Text(private_key))
         }
         _ => Err(SealboxError::InvalidVersion),
     }
