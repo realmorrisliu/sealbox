@@ -2,19 +2,12 @@
 name = "sealbox-cli"
 version = "0.1.0"
 edition = "2024"
-authors = ["luckywood <morrisliu1994@outlook.com>"]
-description = "Sealbox: A Simple Secret Storage Service – self-hosted and developer-friendly."
-license = "Apache-2.0"
-repository = "https://github.com/realmorrisliu/sealbox"
-readme = "../README.md"
 
 [dependencies]
-clap = { version = "4.4", features = ["derive"] }
-reqwest = { version = "0.11", features = ["json", "blocking"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-anyhow = "1.0"
-sealbox-server = { path = "../sealbox-server", optional = true }
-
-[dev-dependencies]
-assert_cmd = "2.0"
+sealbox-server = { path = "../sealbox-server" }
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+tokio = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+rsa = { workspace = true }
+serde_json = { workspace = true }

@@ -47,7 +47,13 @@ impl Secret {
     /// 4. Encrypts the data key using the provided master key's public key.
     /// 5. Sets the creation and update timestamps to the current time.
     /// 6. Constructs and returns the new `Secret` instance.
-    pub(crate) fn new(key: &str, data: &str, master_key: MasterKey, version: i32) -> Result<Self> {
+    pub(crate) fn new(
+        key: &str,
+        data: &str,
+        master_key: MasterKey,
+        version: i32,
+        ttl: Option<i64>,
+    ) -> Result<Self> {
         let data_bytes = data.as_bytes();
 
         let data_key = generate_data_key()?;
@@ -55,6 +61,8 @@ impl Secret {
         let encrypted_data_key = encrypt_data_key(&data_key, &master_key.public_key)?;
 
         let now_timestamp = time::OffsetDateTime::now_utc().unix_timestamp();
+
+        let expires_at = ttl.map(|ttl| now_timestamp + ttl);
 
         Ok(Self {
             namespace: String::new(),
@@ -65,7 +73,7 @@ impl Secret {
             master_key_id: master_key.id,
             created_at: now_timestamp,
             updated_at: now_timestamp,
-            expires_at: None,
+            expires_at,
             metadata: None,
         })
     }
@@ -116,6 +124,7 @@ pub(crate) trait SecretRepo: Send + Sync {
         key: &str,
         data: &str,
         master_key: MasterKey,
+        ttl: Option<i64>,
     ) -> Result<Secret>;
     fn delete_secret_by_version(
         &self,

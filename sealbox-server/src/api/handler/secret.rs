@@ -53,6 +53,7 @@ pub(crate) async fn get(
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub(crate) struct SaveSecretPayload {
     secret: String,
+    ttl: Option<i64>,
 }
 
 // PUT /{version}/secrets/{secret_key}
@@ -74,6 +75,7 @@ pub(crate) async fn save(
                 &params.secret_key(),
                 &payload.secret,
                 master_key,
+                payload.ttl,
             )?;
 
             Ok(SealboxResponse::Json(json!(secret)))

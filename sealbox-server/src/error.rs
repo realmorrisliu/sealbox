@@ -10,6 +10,9 @@ pub type Result<T, E = SealboxError> = anyhow::Result<T, E>;
 
 #[derive(Error, Debug)]
 pub enum SealboxError {
+    #[error("Unauthorized")]
+    Unauthorized,
+
     #[error("System is not initialized")]
     NotInitialized,
 
@@ -60,6 +63,7 @@ fn errorfmt(error: &SealboxError) -> String {
 impl IntoResponse for SealboxError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
+            SealboxError::Unauthorized => (StatusCode::UNAUTHORIZED, errorfmt(&self)),
             SealboxError::NotInitialized => (StatusCode::PRECONDITION_REQUIRED, errorfmt(&self)),
             SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::MasterKeyNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),

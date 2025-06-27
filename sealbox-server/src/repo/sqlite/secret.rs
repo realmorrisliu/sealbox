@@ -131,6 +131,7 @@ impl SecretRepo for SqliteSecretRepo {
         key: &str,
         data: &str,
         master_key: crate::repo::MasterKey,
+        ttl: Option<i64>,
     ) -> Result<Secret> {
         info!("create_new_version");
 
@@ -142,7 +143,7 @@ impl SecretRepo for SqliteSecretRepo {
             latest_version.unwrap_or(0) + 1
         };
 
-        let secret = Secret::new(key, data, master_key, next_version)?;
+        let secret = Secret::new(key, data, master_key, next_version, ttl)?;
 
         tx.execute(
             "INSERT INTO secrets (

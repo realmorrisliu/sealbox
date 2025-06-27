@@ -1,13 +1,13 @@
 use axum::{
     Router,
     http::{HeaderName, Request},
+    middleware::from_fn_with_state,
     response::{IntoResponse, Response},
     routing::get,
 };
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tower::ServiceBuilder;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
@@ -16,6 +16,7 @@ use tracing::{error, info_span};
 
 use crate::{
     api::{
+        auth::static_auth,
         handler::{master_key, secret},
         state::AppState,
     },
@@ -31,8 +32,25 @@ mod state;
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
 pub fn create_app(config: &SealboxConfig) -> Result<Router> {
+    tracing::info!("Initializing API routes");
     let x_request_id = HeaderName::from_static(REQUEST_ID_HEADER);
-    let middleware = ServiceBuilder::new()
+
+    let state = AppState::new(config)?;
+
+    Ok(Router::new()
+        .route("/", get(root))
+        .route(
+            "/{version}/secrets/{secret_key}",
+            get(secret::get).put(secret::save).delete(secret::delete),
+        )
+        .route(
+            "/{version}/master-key",
+            get(master_key::list)
+                .put(master_key::rotate)
+                .post(master_key::create),
+        )
+        .route_layer(from_fn_with_state(state.clone(), static_auth))
+        .with_state(state)
         .layer(SetRequestIdLayer::new(
             x_request_id.clone(),
             MakeRequestUuid,
@@ -55,24 +73,7 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             }),
         )
         // send headers from request to response headers
-        .layer(PropagateRequestIdLayer::new(x_request_id));
-
-    tracing::info!("Initializing API routes");
-
-    Ok(Router::new()
-        .route("/", get(root))
-        .route(
-            "/{version}/secrets/{secret_key}",
-            get(secret::get).put(secret::save).delete(secret::delete),
-        )
-        .route(
-            "/{version}/master-key",
-            get(master_key::list)
-                .put(master_key::rotate)
-                .post(master_key::create),
-        )
-        .with_state(AppState::new(config)?)
-        .layer(middleware))
+        .layer(PropagateRequestIdLayer::new(x_request_id)))
 }
 
 async fn root() -> &'static str {

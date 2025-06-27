@@ -1,12 +1,32 @@
 [workspace]
 members = ["sealbox-server", "sealbox-cli"]
-
 resolver = "2"
 
-[workspace.package]
-edition = "2024"
-license = "Apache-2.0"
-authors = ["luckywood <morrisliu1994@outlook.com>"]
-description = "Sealbox: A Simple Secret Storage Service – self-hosted and developer-friendly."
-repository = "https://github.com/realmorrisliu/sealbox"
-readme = "README.md"
+[workspace.dependencies]
+anyhow = "1.0.98"
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_with = "3"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rusqlite = { version = "0.36.0", features = ["bundled", "uuid"] }
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
+aes-gcm = "0.10"
+base64 = "0.21"
+hmac = "0.12"
+sha2 = "0.10"
+dotenvy = "0.15"
+config = "0.14"
+clap = { version = "4.5", features = ["derive"] }
+time = "0.3"
+http = "1.0"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["request-id", "trace"] }
+uuid = { version = "1.17.0", features = ["v4", "serde"] }
+reqwest = { version = "0.12", features = ["json"] }
+assert_cmd = "2.0"
+tempfile = "3.10"

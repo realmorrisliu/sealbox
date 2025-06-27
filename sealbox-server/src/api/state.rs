@@ -10,6 +10,7 @@ use crate::{
 
 #[derive(Clone)]
 pub(crate) struct AppState {
+    pub(crate) config: Arc<SealboxConfig>,
     pub(crate) conn_pool: Arc<Mutex<rusqlite::Connection>>,
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
     pub(crate) master_key_repo: Arc<dyn MasterKeyRepo>,
@@ -23,6 +24,7 @@ impl AppState {
         SqliteMasterKeyRepo::init_table(&conn)?;
 
         Ok(Self {
+            config: Arc::new(config.clone()),
             conn_pool: Arc::new(Mutex::new(conn)),
             secret_repo: Arc::new(SqliteSecretRepo {}),
             master_key_repo: Arc::new(SqliteMasterKeyRepo {}),
