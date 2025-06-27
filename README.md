@@ -37,10 +37,11 @@ Sealbox doesn’t aim to replace Vault. It aims to be the 90% simpler alternativ
 - [x] Secret versioning
 - [x] PUT/GET/DELETE HTTP API
 - [x] TTL field support (no GC)
-- [x] REST API only (no CLI)
+- [x] REST API
+- [x] Sealbox CLI to create master key
 
 ### v1.0.0
-- [x] Sealbox CLI
+- [ ] Sealbox CLI
 - [ ] JWT authentication (with replay protection)
 - [ ] Automatic TTL expiration cleanup
 - [ ] Raft replication for multi-replica SQLite
