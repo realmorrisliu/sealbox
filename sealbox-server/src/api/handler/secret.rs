@@ -65,10 +65,7 @@ pub(crate) async fn save(
     match params.version() {
         Version::V1 => {
             let mut conn = state.conn_pool.lock()?;
-            let master_key = state
-                .master_key_repo
-                .get_valid_master_key(&conn)?
-                .ok_or_else(|| SealboxError::NotInitialized)?;
+            let master_key = state.master_key_repo.get_valid_master_key(&conn)?;
 
             let secret = state.secret_repo.create_new_version(
                 &mut conn,

@@ -107,7 +107,7 @@ impl IntoResponse for SealboxResponse {
                 .body(data)
                 .map(|response| response.into_response())
                 .unwrap_or_else(|err| {
-                    SealboxError::ResponseCreationError(err.to_string()).into_response()
+                    SealboxError::ResponseBuildFailed(err.to_string()).into_response()
                 }),
         }
     }

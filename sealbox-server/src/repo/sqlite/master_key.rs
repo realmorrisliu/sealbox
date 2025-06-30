@@ -2,7 +2,7 @@ use rusqlite::OptionalExtension;
 use uuid::Uuid;
 
 use crate::{
-    error::Result,
+    error::{Result, SealboxError},
     repo::{MasterKey, MasterKeyRepo, MasterKeyStatus},
 };
 
@@ -63,7 +63,7 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
         Ok(public_key)
     }
 
-    fn get_valid_master_key(&self, conn: &rusqlite::Connection) -> Result<Option<MasterKey>> {
+    fn get_valid_master_key(&self, conn: &rusqlite::Connection) -> Result<MasterKey> {
         let mut stmt = conn.prepare("SELECT * FROM master_keys WHERE status = ?1 LIMIT 1")?;
         let master_key = stmt
             .query_one([MasterKeyStatus::Active], |row| {
@@ -77,7 +77,12 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
                 })
             })
             .optional()?;
-        Ok(master_key)
+
+        if let Some(master_key) = master_key {
+            Ok(master_key)
+        } else {
+            Err(SealboxError::MissingValidMasterKey)
+        }
     }
 
     fn fetch_all_master_keys(&self, conn: &rusqlite::Connection) -> Result<Vec<MasterKey>> {

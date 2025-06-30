@@ -1,9 +1,14 @@
+use std::str::FromStr;
+
 use rusqlite::{ToSql, types::FromSql};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    crypto::{decrypt_data_key, encrypt_data, encrypt_data_key, generate_data_key},
+    crypto::{
+        data_key::DataKey,
+        master_key::{PrivateMasterKey, PublicMasterKey},
+    },
     error::{Result, SealboxError},
 };
 
@@ -56,9 +61,11 @@ impl Secret {
     ) -> Result<Self> {
         let data_bytes = data.as_bytes();
 
-        let data_key = generate_data_key()?;
-        let encrypted_data = encrypt_data(&data_bytes, &data_key)?;
-        let encrypted_data_key = encrypt_data_key(&data_key, &master_key.public_key)?;
+        let data_key = DataKey::new();
+        let encrypted_data = data_key.encrypt(&data_bytes)?;
+
+        let pub_key = PublicMasterKey::from_str(&master_key.public_key)?;
+        let encrypted_data_key = pub_key.encrypt(data_key.as_bytes())?;
 
         let now_timestamp = time::OffsetDateTime::now_utc().unix_timestamp();
 
@@ -92,15 +99,18 @@ impl Secret {
         }
 
         if secret.master_key_id != *old_master_key_id {
-            return Err(SealboxError::MasterKeyNotMatch(
+            return Err(SealboxError::MasterKeyMismatch(
                 secret.key,
                 old_master_key_id.to_string(),
                 secret.master_key_id.to_string(),
             ));
         }
 
-        let data_key = decrypt_data_key(&secret.encrypted_data_key, &old_private_key_pem)?;
-        let new_encrypted_data_key = encrypt_data_key(&data_key, &new_public_key_pem)?;
+        let old_priv_key = PrivateMasterKey::from_str(old_private_key_pem)?;
+        let new_pub_key = PublicMasterKey::from_str(new_public_key_pem)?;
+
+        let data_key = old_priv_key.decrypt(&secret.encrypted_data_key)?;
+        let new_encrypted_data_key = new_pub_key.encrypt(&data_key)?;
 
         secret.encrypted_data_key = new_encrypted_data_key;
         secret.master_key_id = new_master_key_id.clone();
@@ -212,5 +222,5 @@ pub(crate) trait MasterKeyRepo: Send + Sync {
     ) -> Result<Option<String>>;
 
     /// Fetch a valid master key.
-    fn get_valid_master_key(&self, conn: &rusqlite::Connection) -> Result<Option<MasterKey>>;
+    fn get_valid_master_key(&self, conn: &rusqlite::Connection) -> Result<MasterKey>;
 }

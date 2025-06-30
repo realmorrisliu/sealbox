@@ -6,51 +6,38 @@ use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub type Result<T, E = SealboxError> = anyhow::Result<T, E>;
+use crate::crypto::{data_key::DataKeyCryptoError, master_key::MasterKeyCryptoError};
+
+pub type Result<T, E = SealboxError> = std::result::Result<T, E>;
 
 #[derive(Error, Debug)]
 pub enum SealboxError {
-    #[error("Unauthorized")]
-    Unauthorized,
-
-    #[error("System is not initialized")]
-    NotInitialized,
-
     #[error("Secret not found: {0}")]
     SecretNotFound(String),
+
+    #[error("Missing valid master key")]
+    MissingValidMasterKey,
 
     #[error("Master key not found: {0}")]
     MasterKeyNotFound(Uuid),
 
-    #[error("Master key not match for {0}: expected {1}, got {2}")]
-    MasterKeyNotMatch(String, String, String),
+    #[error("Master key mismatch for {0}: expected {1}, got {2}")]
+    MasterKeyMismatch(String, String, String),
 
-    #[error("Storage failure: {0}")]
-    StorageError(String),
+    #[error("Crypto error: {0}")]
+    CryptoError(String),
 
-    #[error("Invalid request: {0}")]
-    BadRequest(String),
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
+    #[error("Response build failed: {0}")]
+    ResponseBuildFailed(String),
+
+    #[error("Unauthorized")]
+    Unauthorized,
 
     #[error("Invalid API version")]
     InvalidApiVersion,
-
-    #[error("Database error: {0}")]
-    DatabaseError(#[from] rusqlite::Error),
-
-    #[error("PKCS1 crypto error: {0}")]
-    PKCS1CryptoError(#[from] rsa::pkcs1::Error),
-
-    #[error("RSA crypto error: {0}")]
-    RSACryptoError(#[from] rsa::Error),
-
-    #[error("AES-GCM crypto error: {0}")]
-    AESGCMCryptoError(aes_gcm::Error),
-
-    #[error("Error creating response: {0}")]
-    ResponseCreationError(String),
-
-    #[error("Database connection error: {0}")]
-    DatabaseConnectionError(String),
 
     #[error("Unknown error")]
     Unknown,
@@ -63,30 +50,21 @@ fn errorfmt(error: &SealboxError) -> String {
 impl IntoResponse for SealboxError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            SealboxError::Unauthorized => (StatusCode::UNAUTHORIZED, errorfmt(&self)),
-            SealboxError::NotInitialized => (StatusCode::PRECONDITION_REQUIRED, errorfmt(&self)),
             SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::MissingValidMasterKey => {
+                (StatusCode::PRECONDITION_REQUIRED, errorfmt(&self))
+            }
             SealboxError::MasterKeyNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
-            SealboxError::MasterKeyNotMatch(_, _, _) => {
+            SealboxError::MasterKeyMismatch(_, _, _) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
             }
-            SealboxError::StorageError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
-            SealboxError::BadRequest(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
-            SealboxError::InvalidApiVersion => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::CryptoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
             SealboxError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
-            SealboxError::PKCS1CryptoError(_) => {
+            SealboxError::ResponseBuildFailed(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
             }
-            SealboxError::RSACryptoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
-            SealboxError::AESGCMCryptoError(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
-            }
-            SealboxError::ResponseCreationError(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
-            }
-            SealboxError::DatabaseConnectionError(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
-            }
+            SealboxError::Unauthorized => (StatusCode::UNAUTHORIZED, errorfmt(&self)),
+            SealboxError::InvalidApiVersion => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::Unknown => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
         };
 
@@ -98,9 +76,15 @@ impl IntoResponse for SealboxError {
     }
 }
 
-impl From<aes_gcm::Error> for SealboxError {
-    fn from(err: aes_gcm::Error) -> Self {
-        SealboxError::AESGCMCryptoError(err)
+impl From<MasterKeyCryptoError> for SealboxError {
+    fn from(err: MasterKeyCryptoError) -> Self {
+        SealboxError::CryptoError(err.to_string())
+    }
+}
+
+impl From<DataKeyCryptoError> for SealboxError {
+    fn from(err: DataKeyCryptoError) -> Self {
+        SealboxError::CryptoError(err.to_string())
     }
 }
 
@@ -108,6 +92,12 @@ impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, rusqlite::Connection>
     for SealboxError
 {
     fn from(err: std::sync::PoisonError<std::sync::MutexGuard<'_, rusqlite::Connection>>) -> Self {
-        SealboxError::DatabaseConnectionError(err.to_string())
+        SealboxError::DatabaseError(err.to_string())
+    }
+}
+
+impl From<rusqlite::Error> for SealboxError {
+    fn from(err: rusqlite::Error) -> Self {
+        SealboxError::DatabaseError(err.to_string())
     }
 }

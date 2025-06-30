@@ -1,12 +1,11 @@
+use std::{fs, path::Path};
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use reqwest::Client;
 use rsa::pkcs1::DecodeRsaPublicKey;
 use serde_json::json;
-use std::fs;
-use std::path::Path;
-use time::format_description::well_known::Rfc2822;
-use time::{OffsetDateTime, UtcOffset};
+use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc2822};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -56,7 +55,7 @@ async fn main() -> Result<()> {
                 if !Path::new(public_key_path).exists() || !Path::new(private_key_path).exists() {
                     println!("Key pair not found. Generating a new one...");
                     let (private_key, public_key) =
-                        sealbox_server::crypto::generate_master_key_pair()?;
+                        sealbox_server::crypto::master_key::generate_key_pair()?;
 
                     fs::write(private_key_path, private_key)?;
                     fs::write(public_key_path, public_key)?;
