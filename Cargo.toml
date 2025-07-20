@@ -16,7 +16,7 @@ rusqlite = { version = "0.36.0", features = ["bundled", "uuid"] }
 rsa = { version = "0.9", features = ["pem"] }
 rand = "0.8"
 aes-gcm = "0.10"
-base64 = "0.21"
+base64 = "0.22"
 hmac = "0.12"
 sha2 = "0.10"
 dotenvy = "0.15"
@@ -24,8 +24,8 @@ config = "0.14"
 clap = { version = "4.5", features = ["derive"] }
 time = "0.3"
 http = "1.0"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["request-id", "trace"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["request-id", "trace"] }
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
 reqwest = { version = "0.12", features = ["json"] }
 assert_cmd = "2.0"
