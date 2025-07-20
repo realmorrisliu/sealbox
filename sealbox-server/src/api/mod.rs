@@ -91,6 +91,7 @@ enum Version {
     V3,
 }
 
+#[derive(Debug)]
 pub enum SealboxResponse {
     Ok,
     Json(serde_json::Value),

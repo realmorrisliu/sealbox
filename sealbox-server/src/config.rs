@@ -54,3 +54,13 @@ impl SealboxConfig {
         })
     }
 }
+
+impl Default for SealboxConfig {
+    fn default() -> Self {
+        SealboxConfig {
+            auth_token: "test-token".to_string(),
+            store_path: ":memory:".to_string(),
+            listen_addr: "127.0.0.1:8080".to_string(),
+        }
+    }
+}
