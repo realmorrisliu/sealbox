@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# CI/CD
+.github/
+.travis.yml
+.appveyor.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+target/
+*.db
+*.sqlite
+
+# Rust
+**/*.rs.bk
+**/*.pdb
+
+# Docker
+Dockerfile*
+.dockerignore
+
+# Testing
+coverage/
+*.profraw
+
+# Development
+.env
+.env.*
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/

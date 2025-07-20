@@ -1,0 +1,109 @@
+name: Bug Report
+description: File a bug report to help us improve Sealbox
+title: "[Bug]: "
+labels: ["bug", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! 🐛
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear and concise description of what the bug is.
+      placeholder: Tell us what you see!
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      description: A clear and concise description of what you expected to happen.
+      placeholder: Tell us what you expected!
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Start sealbox-server with '...'
+        2. Create a secret with '...'
+        3. Try to retrieve with '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component is affected?
+      options:
+        - sealbox-server
+        - sealbox-cli
+        - API
+        - Crypto/Security
+        - Database/Storage
+        - Docker
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Sealbox Version
+      description: What version of Sealbox are you running?
+      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What operating system are you using?
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Docker
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Your Sealbox configuration (remove sensitive data!)
+      render: shell
+      placeholder: |
+        STORE_PATH=/var/lib/sealbox.db
+        LISTEN_ADDR=127.0.0.1:8080
+        # AUTH_TOKEN=[REDACTED]
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Please copy and paste any relevant log output (remove sensitive data!)
+      render: shell
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

@@ -1,0 +1,102 @@
+name: Security Vulnerability
+description: Report a security vulnerability (use private reporting if available)
+title: "[Security]: "
+labels: ["security", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **IMPORTANT SECURITY NOTICE** ⚠️
+        
+        If this is a critical security vulnerability, please consider using GitHub's private vulnerability reporting feature instead of creating a public issue.
+        
+        Go to: Security tab → Report a vulnerability
+        
+        For non-critical security improvements or questions, you can continue with this public issue.
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity Level
+      description: How severe is this security issue?
+      options:
+        - Low (security improvement)
+        - Medium (potential vulnerability)
+        - High (exploitable vulnerability)
+        - Critical (immediate threat)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Vulnerability Description
+      description: Describe the security issue (be careful not to include exploit details in public)
+      placeholder: |
+        Brief description of the security issue...
+        
+        For critical vulnerabilities, consider using private reporting instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which component is affected?
+      options:
+        - Cryptographic operations
+        - Authentication/Authorization
+        - API endpoints
+        - Database/Storage
+        - Configuration
+        - Dependencies
+        - Docker container
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Affected Version(s)
+      description: Which version(s) of Sealbox are affected?
+      placeholder: v0.1.0, main branch
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Potential Impact
+      description: What could an attacker potentially do?
+      placeholder: |
+        An attacker could potentially...
+        This could lead to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Suggested Mitigation
+      description: Do you have any suggestions for fixing this issue?
+      placeholder: |
+        This could be mitigated by...
+        Consider implementing...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: disclosure
+    attributes:
+      label: Responsible Disclosure
+      description: Security disclosure acknowledgment
+      options:
+        - label: I understand this is a public issue and will not include sensitive exploit details
+          required: true
+        - label: I agree to follow responsible disclosure practices
+          required: true

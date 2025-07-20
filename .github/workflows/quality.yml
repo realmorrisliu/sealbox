@@ -1,0 +1,174 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  rustfmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+    
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run Clippy
+      run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+    
+    - name: Run Clippy (pedantic)
+      run: cargo clippy --all-targets --all-features --workspace -- -W clippy::pedantic
+      continue-on-error: true
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-docs-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Check documentation
+      run: cargo doc --workspace --all-features --no-deps --document-private-items
+      env:
+        RUSTDOCFLAGS: "-D warnings"
+    
+    - name: Test documentation examples
+      run: cargo test --doc --workspace --all-features
+
+  unused-deps:
+    name: Unused Dependencies
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+    
+    - name: Install cargo-machete
+      run: cargo install cargo-machete
+    
+    - name: Check for unused dependencies
+      run: cargo machete
+      continue-on-error: true
+
+  bloat:
+    name: Binary Size Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Install cargo-bloat
+      run: cargo install cargo-bloat
+    
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-bloat-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Analyze binary bloat
+      run: |
+        cargo bloat --release --crates -p sealbox-server
+        cargo bloat --release --crates -p sealbox-cli
+      continue-on-error: true
+
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Run benchmarks
+      run: cargo bench --workspace
+      continue-on-error: true
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: target/criterion/
+      continue-on-error: true
+
+  msrv:
+    name: Minimum Supported Rust Version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [1.70.0, 1.75.0]  # Test MSRV and current stable
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust ${{ matrix.rust }}
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+    
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-msrv-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Test with Rust ${{ matrix.rust }}
+      run: cargo test --workspace --all-features
