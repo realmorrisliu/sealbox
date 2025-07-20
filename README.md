@@ -1,11 +1,11 @@
 # Sealbox
 
-[![CI](https://github.com/your-username/sealbox/workflows/CI/badge.svg)](https://github.com/your-username/sealbox/actions/workflows/ci.yml)
-[![Security](https://github.com/your-username/sealbox/workflows/Security/badge.svg)](https://github.com/your-username/sealbox/actions/workflows/security.yml)
-[![codecov](https://codecov.io/gh/your-username/sealbox/branch/main/graph/badge.svg)](https://codecov.io/gh/your-username/sealbox)
+[![CI](https://github.com/realmorrisliu/sealbox/workflows/CI/badge.svg)](https://github.com/realmorrisliu/sealbox/actions/workflows/ci.yml)
+[![Security](https://github.com/realmorrisliu/sealbox/workflows/Security/badge.svg)](https://github.com/realmorrisliu/sealbox/actions/workflows/security.yml)
+[![codecov](https://codecov.io/gh/realmorrisliu/sealbox/branch/main/graph/badge.svg)](https://codecov.io/gh/realmorrisliu/sealbox)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
-[![Docker](https://img.shields.io/badge/docker-available-blue.svg)](https://github.com/your-username/sealbox/pkgs/container/sealbox)
+[![Docker](https://img.shields.io/badge/docker-available-blue.svg)](https://github.com/realmorrisliu/sealbox/pkgs/container/sealbox)
 
 A Simple Secret Storage Service – self-hosted and developer-friendly.
 

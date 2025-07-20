@@ -60,7 +60,7 @@ jobs:
             -e AUTH_TOKEN=your-secret-token \
             -e STORE_PATH=/data/sealbox.db \
             -e LISTEN_ADDR=0.0.0.0:8080 \
-            ghcr.io/your-username/sealbox:${{ steps.get_version.outputs.version }}
+            ghcr.io/realmorrisliu/sealbox:${{ steps.get_version.outputs.version }}
           ```
         draft: false
         prerelease: false

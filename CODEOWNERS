@@ -1,0 +1,30 @@
+# CODEOWNERS file for Sealbox
+# This file defines who owns different parts of the codebase
+# and will be automatically requested for review on pull requests
+
+# Global ownership
+* @realmorrisliu
+
+# Specific ownership patterns
+# Security-sensitive files require additional review
+/sealbox-server/src/crypto/ @realmorrisliu
+/sealbox-server/src/api/auth.rs @realmorrisliu
+
+# CI/CD and infrastructure
+/.github/ @realmorrisliu
+/Dockerfile @realmorrisliu
+/docker-compose.yml @realmorrisliu
+
+# Configuration and build files
+/Cargo.toml @realmorrisliu
+/Cargo.lock @realmorrisliu
+/.github/workflows/ @realmorrisliu
+
+# Documentation
+/README.md @realmorrisliu
+/CHANGELOG.md @realmorrisliu
+/docs/ @realmorrisliu
+
+# Dependencies (Dependabot PRs will automatically request review from these owners)
+/Cargo.toml @realmorrisliu
+/.github/dependabot.yml @realmorrisliu
