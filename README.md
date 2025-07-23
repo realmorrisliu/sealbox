@@ -211,7 +211,6 @@ cargo audit
 
 ## Support
 
-- 📖 [Documentation](https://github.com/realmorrisliu/sealbox/wiki)
 - 🐛 [Issue Tracker](https://github.com/realmorrisliu/sealbox/issues)
 - 💬 [Discussions](https://github.com/realmorrisliu/sealbox/discussions)
 
