@@ -4,96 +4,176 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
-A Simple Secret Storage Service – self-hosted and developer-friendly.
+> A lightweight, self-hosted secret storage service with end-to-end encryption
 
-Sealbox is a lightweight, single-node secret storage service designed for developers and small teams. It supports envelope encryption, embedded storage via SQLite, and a simple REST API to manage secrets securely in local or edge environments.
-
----
-
-## Why Sealbox?
-
-Most secret management solutions like HashiCorp Vault, AWS Secrets Manager, or GCP Secret Manager are powerful—but also complex, over-engineered, and deeply cloud-integrated. They often assume enterprise-scale deployments, dynamic secret provisioning, complex ACLs, and heavy agent-based integrations.
-
-Sealbox is different.
-
-Sealbox is built for developers and small teams who value:
-- **Simplicity**: No servers to cluster (unless you want to), no plugins to configure, no cloud dependencies.
-- **Security by default**: AES-GCM envelope encryption, zero plaintext storage, and simple token-based auth.
-- **Single-binary, opinionated design**: Embedded SQLite, stateless API, and minimal configuration—all in one self-contained binary.
-- **Predictability**: Instead of flexible-but-complex policies, Sealbox favors convention: one secret = one key, with multiple versions.
-- **Designed for CI, containers, and local-first environments**: Works equally well in Docker, bare-metal, or Kubernetes.
-
-Sealbox doesn’t aim to replace Vault. It aims to be the 90% simpler alternative when you don’t need dynamic database credentials or secret leasing—but still want safe, verifiable secret storage.
-
-## When Not to Use Sealbox?
-- You need dynamic database credentials (use HashiCorp Vault).
-- You require fine-grained multi-tenant ACLs (future roadmap).
-- Your secrets must sync across regions (consider cloud-native solutions).
-
----
+Sealbox is a simple yet secure secret management solution designed for developers and small teams. Built with Rust, it provides envelope encryption, SQLite storage, and a REST API in a single binary with minimal configuration required.
 
 ## Features
 
-### MVP 0.1.0
-- [x] Envelope encryption
-- [x] Static token auth
-- [x] SQLite storage
-- [x] Secret versioning
-- [x] PUT/GET/DELETE HTTP API
-- [x] TTL field support (no GC)
-- [x] REST API
-- [x] Sealbox CLI to create master key
+- 🔐 **End-to-end encryption** - Your secrets are encrypted locally before reaching the server
+- 📦 **Single binary** - No complex setup, just run the executable
+- 🗃️ **SQLite storage** - Embedded database, no external dependencies
+- 🔑 **Secret versioning** - Keep track of secret history
+- 🌐 **REST API** - Standard HTTP interface for integration
+- 💻 **Full-featured CLI** - Complete command-line interface for key and secret management
+- 🔄 **Multiple output formats** - JSON, YAML, and table formats supported
 
-### v1.0.0 
-- [x] **Complete Sealbox CLI** - Full-featured command-line interface
-  - [x] Configuration management with TOML files and environment overrides
-  - [x] Key management (generate, register, list, rotate, status)  
-  - [x] Secret management with local encryption/decryption
-  - [x] Batch operations (import/export framework)
-  - [x] Multiple output formats (JSON, YAML, Table)
-  - [x] Comprehensive test coverage (69 test cases)
-  - [x] All text internationalized to English
-- [ ] JWT authentication (with replay protection)
-- [ ] Automatic TTL expiration cleanup
-- [ ] Raft replication for multi-replica SQLite
-- [ ] Docker Compose support
-- [ ] Helm Chart support (Kubernetes)
+## Quick Start
 
-### v1.1.0
-- [ ] Web UI
-- [ ] Access audit logging
-- [ ] CLI secret decryption cache
-- [ ] Metadata query API
+### Prerequisites
 
-### Future
-- [ ] External KMS support (AWS, Vault)
-- [ ] TPM/YubiKey hardware key support
-- [ ] Multi-tenant ACL
-- [ ] Pluggable crypto backend
-- [ ] CLI auto-login via OAuth2 Device Code Flow
-- [ ] Additional authentication strategies
+- Rust 1.85+ (for building from source)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/realmorrisliu/sealbox.git
+cd sealbox
+
+# Build the project
+cargo build --release
+```
+
+### Running the Server
+
+```bash
+# Set environment variables
+export STORE_PATH=/var/lib/sealbox.db
+export AUTH_TOKEN=your-secret-token
+export LISTEN_ADDR=127.0.0.1:8080
+
+# Start the server
+./target/release/sealbox-server
+```
+
+### Setting Up the CLI
+
+```bash
+# Initialize configuration
+./target/release/sealbox-cli config init
+
+# Generate RSA key pair
+./target/release/sealbox-cli key generate
+
+# Register public key with server
+./target/release/sealbox-cli key register --url http://localhost:8080 --token your-secret-token
+```
+
+### Managing Secrets
+
+```bash
+# Store a secret
+./target/release/sealbox-cli secret set mypassword "super-secret-value"
+
+# Retrieve a secret
+./target/release/sealbox-cli secret get mypassword
+
+# List all commands
+./target/release/sealbox-cli --help
+```
+
+## Configuration
+
+### Server Configuration
+
+Configure the server using environment variables:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `STORE_PATH` | SQLite database file path | `/var/lib/sealbox.db` |
+| `AUTH_TOKEN` | Static bearer token for API authentication | `your-secret-token` |
+| `LISTEN_ADDR` | Server listen address and port | `127.0.0.1:8080` |
+
+### CLI Configuration
+
+The CLI uses TOML configuration files with environment variable overrides:
+- Config file: `~/.config/sealbox/config.toml`
+- Supports server URL, authentication tokens, key paths, and output preferences
+
+## Security Model
+
+Sealbox implements end-to-end encryption using envelope encryption:
+
+1. **User Key Pair**: Each user generates an RSA key pair locally
+2. **Data Keys**: Random AES keys encrypt individual secrets
+3. **Envelope Encryption**: Data keys are encrypted with the user's public key
+4. **Zero Knowledge**: The server never has access to decrypt user secrets
+
+## How It Works
+
+```
+┌─────────────┐    encrypt    ┌──────────────┐    send     ┌──────────────┐
+│   Secret    │──────────────▶│ Encrypted    │────────────▶│    Server    │
+│             │               │ Secret +     │             │              │
+│             │               │ Encrypted    │             │              │
+│             │               │ Data Key     │             │              │
+└─────────────┘               └──────────────┘             └──────────────┘
+```
 
 ---
 
+## API Reference
+
+All endpoints require `Authorization: Bearer <token>` header.
+
+### Secrets Management
+```bash
+# Store a secret
+PUT /v1/secrets/:key
+Content-Type: application/json
+{ "secret": "value", "ttl": 3600 }
+
+# Retrieve a secret (latest version)
+GET /v1/secrets/:key
+
+# Retrieve specific version
+GET /v1/secrets/:key?version=1
+
+# Delete a secret version
+DELETE /v1/secrets/:key?version=1
+```
+
+### Key Management
+```bash
+# Register public key
+POST /v1/master-key
+Content-Type: application/json
+{ "public_key": "-----BEGIN PUBLIC KEY-----..." }
+
+# List public keys
+GET /v1/master-key
+
+# Rotate keys
+PUT /v1/master-key
+```
+
 ## Development
 
-### Running Tests
+### Building
 
-Sealbox includes comprehensive unit tests (69 total: 51 server + 18 CLI) covering encryption, storage, API functionality, and CLI operations:
+```bash
+# Build everything
+cargo build --release
+
+# Build server only
+cargo build --release -p sealbox-server
+
+# Build CLI only
+cargo build --release -p sealbox-cli
+```
+
+### Testing
 
 ```bash
 # Run all tests
 cargo test
 
-# Run tests with output
+# Run with output
 cargo test -- --nocapture
 
-# Run tests for specific package
+# Test specific package
 cargo test -p sealbox-server
-cargo test -p sealbox-cli
-
-# Run specific test
-cargo test test_encrypt_decrypt
 ```
 
 ### Code Quality
@@ -102,181 +182,38 @@ cargo test test_encrypt_decrypt
 # Format code
 cargo fmt
 
-# Run linter
+# Lint
 cargo clippy
 
-# Check for security vulnerabilities
+# Security audit
 cargo audit
 ```
 
----
+## Contributing
 
-## Getting Started
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass (`cargo test`)
+6. Run formatting and linting (`cargo fmt && cargo clippy`)
+7. Commit your changes (`git commit -m 'Add amazing feature'`)
+8. Push to the branch (`git push origin feature/amazing-feature`)
+9. Open a Pull Request
 
-### 1. Run Sealbox Server
-```bash
-# Build Sealbox (Rust required)
-cargo build --release
+## Roadmap
 
-# Run Sealbox Server (set required environment variables)
-STORE_PATH=/var/lib/sealbox.db \
-AUTH_TOKEN=secrettoken123 \
-LISTEN_ADDR=127.0.0.1:8080 \
-./target/release/sealbox-server
-```
+- [ ] JWT authentication with replay protection
+- [ ] Automatic TTL expiration cleanup  
+- [ ] Web UI for secret management
+- [ ] Docker and Kubernetes deployment guides
+- [ ] Multi-node replication support
 
-**Environment variables:**
-- `STORE_PATH`: SQLite database file path
-- `AUTH_TOKEN`: Static bearer token for API authentication (remember this for CLI commands)
-- `LISTEN_ADDR`: Server listen address and port
+## Support
 
-The server will start and be ready to serve requests.
-
-### 2. Set Up CLI and Master Key
-
-Sealbox uses an end-to-end encryption model where the client generates and holds the private key. The modern CLI provides a comprehensive interface for managing keys and secrets.
-
-```bash
-# Build the CLI
-cargo build --release -p sealbox-cli
-
-# Initialize CLI configuration
-./target/release/sealbox-cli config init
-
-# Generate RSA key pair
-./target/release/sealbox-cli key generate
-
-# Register public key with server  
-./target/release/sealbox-cli key register --url http://localhost:8080 --token secrettoken123
-
-# Check key status
-./target/release/sealbox-cli key status
-```
-
-**Alternative: Legacy single command (still supported)**
-```bash
-# Create master key (generates key pair if not found, then registers public key)
-./target/release/sealbox-cli master-key create \
-    --token secrettoken123 \
-    --url http://localhost:8080 \
-    --public-key-path my_public_key.pem \
-    --private-key-path my_private_key.pem
-```
-
-### 3. Manage Secrets
-
-Once your keys are set up, you can store and retrieve secrets:
-
-```bash
-# Store a secret (encrypted locally before sending to server)
-./target/release/sealbox-cli secret set mypassword "super-secret-value"
-
-# Retrieve and decrypt a secret  
-./target/release/sealbox-cli secret get mypassword
-
-# Import secrets from a JSON file
-./target/release/sealbox-cli secret import --file secrets.json
-
-# List available commands
-./target/release/sealbox-cli --help
-```
-
-The CLI automatically encrypts secrets on your machine before sending them to the server, ensuring true end-to-end encryption.
-
----
-
-## REST API
-
-All endpoints are protected and require an `Authorization: Bearer <token>` header.
-
-### Secrets
-| Method | Path               | Description                     |
-|--------|--------------------|---------------------------------|
-| `PUT`    | `/v1/secrets/:key`   | Creates a new version of a secret. |
-| `GET`    | `/v1/secrets/:key`   | Retrieves a secret. Defaults to the latest version. |
-| `DELETE` | `/v1/secrets/:key`   | Deletes a specific version of a secret. |
-
-### Master Keys
-| Method | Path               | Description                     |
-|--------|--------------------|---------------------------------|
-| `POST`   | `/v1/master-key`     | Registers a new public key for encrypting secrets. |
-| `GET`    | `/v1/master-key`     | Lists all registered public keys. |
-| `PUT`    | `/v1/master-key`     | Rotates secrets from an old key to a new one. |
-
----
-
-## Authentication
-
-For the current version, Sealbox uses a simple static bearer token for authentication. All API requests must include an `Authorization` header with the token specified in the `AUTH_TOKEN` environment variable.
-
-**Example Header:**
-`Authorization: Bearer secrettoken123`
-
-Future versions will introduce more advanced JWT-based authentication mechanisms as outlined in the roadmap.
-
----
-
-## Configuration
-
-Sealbox is configured via environment variables:
-
-```env
-# The path to the SQLite database file.
-STORE_PATH=/var/lib/sealbox.db
-
-# The address and port for the server to listen on.
-LISTEN_ADDR=127.0.0.1:8080
-
-# The static bearer token for API authentication.
-AUTH_TOKEN=secrettoken123
-```
-
----
-
-## Example (curl)
-
-### 1. Create a new secret version
-This creates a new version of the secret `db-password`. The optional `ttl` is in seconds.
-```bash
-curl -X PUT http://localhost:8080/v1/secrets/db-password \
-     -H "Authorization: Bearer secrettoken123" \
-     -H "Content-Type: application/json" \
-     -d '{ "secret": "supersecret", "ttl": 3600 }'
-```
-
-### 2. Get the latest version of a secret
-```bash
-curl -X GET http://localhost:8080/v1/secrets/db-password \
-     -H "Authorization: Bearer secrettoken123"
-```
-
-### 3. Get a specific version of a secret
-```bash
-curl -X GET "http://localhost:8080/v1/secrets/db-password?version=1" \
-     -H "Authorization: Bearer secrettoken123"
-```
-
-### 4. Delete a specific version of a secret
-```bash
-curl -X DELETE "http://localhost:8080/v1/secrets/db-password?version=1" \
-     -H "Authorization: Bearer secrettoken123"
-```
-
----
-
-## Storage Design
-
-Sealbox uses end-to-end encryption (E2EE) by default: secrets are always encrypted with a user-held private key model. The server never has access to the keys required to decrypt user data.
-
-### End-to-End Encryption (E2EE, User-Held Private Key)
-
-**How it works:**
-- Each user generates a key pair (public/private).
-- For each secret, a random Data Key is generated.
-- The secret value is encrypted with the Data Key (`encrypted_data`).
-- The Data Key is encrypted with the user’s public key (`encrypted_data_key`).
-- Only the user, holding the private key, can decrypt the Data Key and thus the secret.
-- The server only stores encrypted data and public keys.
+- 📖 [Documentation](https://github.com/realmorrisliu/sealbox/wiki)
+- 🐛 [Issue Tracker](https://github.com/realmorrisliu/sealbox/issues)
+- 💬 [Discussions](https://github.com/realmorrisliu/sealbox/discussions)
 
 ---
 
