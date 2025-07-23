@@ -139,10 +139,10 @@ pub(crate) async fn create(
 mod tests {
     use super::*;
     use crate::{
-        api::{state::AppState, Version, path::Path as SealboxPath},
+        api::{Version, path::Path as SealboxPath, state::AppState},
+        config::SealboxConfig,
         crypto::master_key::generate_key_pair,
         repo::{SqliteMasterKeyRepo, SqliteSecretRepo},
-        config::SealboxConfig,
     };
     use axum::extract::State;
     use std::sync::{Arc, Mutex};
@@ -151,7 +151,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
         crate::repo::SqliteMasterKeyRepo::init_table(&conn).expect("Should init master_keys table");
         crate::repo::SqliteSecretRepo::init_table(&conn).expect("Should init secrets table");
-        
+
         AppState {
             conn_pool: Arc::new(Mutex::new(conn)),
             master_key_repo: Arc::new(SqliteMasterKeyRepo),
@@ -164,20 +164,26 @@ mod tests {
     async fn test_create_master_key() {
         let state = setup_test_state();
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
-        
-        let path_params = MasterKeyPathParams { version: Version::V1 };
-        let payload = CreateMasterKeyPayload { public_key: public_pem.clone() };
-        
+
+        let path_params = MasterKeyPathParams {
+            version: Version::V1,
+        };
+        let payload = CreateMasterKeyPayload {
+            public_key: public_pem.clone(),
+        };
+
         let result = create(
             State(state.clone()),
             SealboxPath(path_params),
             Json(payload),
-        ).await;
-        
+        )
+        .await;
+
         assert!(result.is_ok());
         match result.unwrap() {
             SealboxResponse::Json(json_value) => {
-                let master_key: MasterKey = serde_json::from_value(json_value).expect("Should deserialize MasterKey");
+                let master_key: MasterKey =
+                    serde_json::from_value(json_value).expect("Should deserialize MasterKey");
                 assert_eq!(master_key.public_key, public_pem);
             }
             _ => panic!("Expected JSON response"),
@@ -188,19 +194,19 @@ mod tests {
     async fn test_create_master_key_invalid_version() {
         let state = setup_test_state();
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
-        
-        let path_params = MasterKeyPathParams { version: Version::V2 }; // Invalid version
-        let payload = CreateMasterKeyPayload { public_key: public_pem };
-        
-        let result = create(
-            State(state),
-            SealboxPath(path_params),
-            Json(payload),
-        ).await;
-        
+
+        let path_params = MasterKeyPathParams {
+            version: Version::V2,
+        }; // Invalid version
+        let payload = CreateMasterKeyPayload {
+            public_key: public_pem,
+        };
+
+        let result = create(State(state), SealboxPath(path_params), Json(payload)).await;
+
         assert!(result.is_err());
         match result.unwrap_err() {
-            SealboxError::InvalidApiVersion => {}, // Expected
+            SealboxError::InvalidApiVersion => {} // Expected
             _ => panic!("Expected InvalidApiVersion error"),
         }
     }
@@ -208,14 +214,17 @@ mod tests {
     #[tokio::test]
     async fn test_list_master_keys_empty() {
         let state = setup_test_state();
-        let path_params = MasterKeyPathParams { version: Version::V1 };
-        
+        let path_params = MasterKeyPathParams {
+            version: Version::V1,
+        };
+
         let result = list(State(state), Path(path_params)).await;
-        
+
         assert!(result.is_ok());
         match result.unwrap() {
             SealboxResponse::Json(json_value) => {
-                let keys: Vec<MasterKey> = serde_json::from_value(json_value).expect("Should deserialize Vec<MasterKey>");
+                let keys: Vec<MasterKey> =
+                    serde_json::from_value(json_value).expect("Should deserialize Vec<MasterKey>");
                 assert_eq!(keys.len(), 0);
             }
             _ => panic!("Expected JSON response"),
@@ -226,24 +235,31 @@ mod tests {
     async fn test_list_master_keys_with_data() {
         let state = setup_test_state();
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
-        
+
         // First create a master key
-        let path_params = MasterKeyPathParams { version: Version::V1 };
-        let payload = CreateMasterKeyPayload { public_key: public_pem.clone() };
-        
+        let path_params = MasterKeyPathParams {
+            version: Version::V1,
+        };
+        let payload = CreateMasterKeyPayload {
+            public_key: public_pem.clone(),
+        };
+
         let _create_result = create(
             State(state.clone()),
             Path(path_params.clone()),
             Json(payload),
-        ).await.expect("Should create master key");
-        
+        )
+        .await
+        .expect("Should create master key");
+
         // Then list all master keys
         let result = list(State(state), Path(path_params)).await;
-        
+
         assert!(result.is_ok());
         match result.unwrap() {
             SealboxResponse::Json(json_value) => {
-                let keys: Vec<MasterKey> = serde_json::from_value(json_value).expect("Should deserialize Vec<MasterKey>");
+                let keys: Vec<MasterKey> =
+                    serde_json::from_value(json_value).expect("Should deserialize Vec<MasterKey>");
                 assert_eq!(keys.len(), 1);
                 assert_eq!(keys[0].public_key, "[HIDDEN]"); // Public key is hidden in list API for security
             }
@@ -254,13 +270,15 @@ mod tests {
     #[tokio::test]
     async fn test_list_master_keys_invalid_version() {
         let state = setup_test_state();
-        let path_params = MasterKeyPathParams { version: Version::V2 }; // Invalid version
-        
+        let path_params = MasterKeyPathParams {
+            version: Version::V2,
+        }; // Invalid version
+
         let result = list(State(state), Path(path_params)).await;
-        
+
         assert!(result.is_err());
         match result.unwrap_err() {
-            SealboxError::InvalidApiVersion => {}, // Expected
+            SealboxError::InvalidApiVersion => {} // Expected
             _ => panic!("Expected InvalidApiVersion error"),
         }
     }
@@ -271,23 +289,21 @@ mod tests {
         let (old_private_pem, _) = generate_key_pair().expect("Should generate old key pair");
         let old_master_key_id = uuid::Uuid::new_v4();
         let new_master_key_id = uuid::Uuid::new_v4();
-        
-        let path_params = MasterKeyPathParams { version: Version::V1 };
+
+        let path_params = MasterKeyPathParams {
+            version: Version::V1,
+        };
         let payload = RotateMasterKeyPayload {
             old_master_key_id,
             new_master_key_id,
             old_private_key_pem: old_private_pem,
         };
-        
-        let result = rotate(
-            State(state),
-            SealboxPath(path_params),
-            Json(payload),
-        ).await;
-        
+
+        let result = rotate(State(state), SealboxPath(path_params), Json(payload)).await;
+
         assert!(result.is_err());
         match result.unwrap_err() {
-            SealboxError::MasterKeyNotFound(_) => {}, // Expected
+            SealboxError::MasterKeyNotFound(_) => {} // Expected
             _ => panic!("Expected MasterKeyNotFound error"),
         }
     }
@@ -298,23 +314,21 @@ mod tests {
         let (old_private_pem, _) = generate_key_pair().expect("Should generate old key pair");
         let old_master_key_id = uuid::Uuid::new_v4();
         let new_master_key_id = uuid::Uuid::new_v4();
-        
-        let path_params = MasterKeyPathParams { version: Version::V2 }; // Invalid version
+
+        let path_params = MasterKeyPathParams {
+            version: Version::V2,
+        }; // Invalid version
         let payload = RotateMasterKeyPayload {
             old_master_key_id,
             new_master_key_id,
             old_private_key_pem: old_private_pem,
         };
-        
-        let result = rotate(
-            State(state),
-            SealboxPath(path_params),
-            Json(payload),
-        ).await;
-        
+
+        let result = rotate(State(state), SealboxPath(path_params), Json(payload)).await;
+
         assert!(result.is_err());
         match result.unwrap_err() {
-            SealboxError::InvalidApiVersion => {}, // Expected
+            SealboxError::InvalidApiVersion => {} // Expected
             _ => panic!("Expected InvalidApiVersion error"),
         }
     }

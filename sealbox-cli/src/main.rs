@@ -104,10 +104,7 @@ async fn main() -> Result<()> {
                             .unwrap_or(created_at_local.to_string())
                     );
                 } else {
-                    println!(
-                        "Server returned an error ({})",
-                        status
-                    );
+                    println!("Server returned an error ({})", status);
                     println!("{}", body);
                 }
             }
