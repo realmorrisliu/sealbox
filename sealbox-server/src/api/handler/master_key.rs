@@ -60,7 +60,7 @@ pub(crate) async fn rotate(
             let new_public_key_pem = state
                 .master_key_repo
                 .fetch_public_key(&conn, &new_master_key_id)?
-                .ok_or_else(|| SealboxError::MasterKeyNotFound(new_master_key_id.clone()))?;
+                .ok_or(SealboxError::MasterKeyNotFound(new_master_key_id))?;
 
             let secrets = state
                 .secret_repo

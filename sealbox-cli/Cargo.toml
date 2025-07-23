@@ -11,4 +11,17 @@ tokio = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 rsa = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
 time = { workspace = true, features = ["formatting", "local-offset"] }
+toml = "0.8"
+dirs = "5.0"
+tabled = "0.16"
+rpassword = "7.0"
+aes-gcm = { workspace = true }
+base64 = { workspace = true }
+comfy-table = "7.1"
+uuid = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

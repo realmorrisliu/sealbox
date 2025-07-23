@@ -44,8 +44,15 @@ Sealbox doesn’t aim to replace Vault. It aims to be the 90% simpler alternativ
 - [x] REST API
 - [x] Sealbox CLI to create master key
 
-### v1.0.0
-- [ ] Sealbox CLI
+### v1.0.0 
+- [x] **Complete Sealbox CLI** - Full-featured command-line interface
+  - [x] Configuration management with TOML files and environment overrides
+  - [x] Key management (generate, register, list, rotate, status)  
+  - [x] Secret management with local encryption/decryption
+  - [x] Batch operations (import/export framework)
+  - [x] Multiple output formats (JSON, YAML, Table)
+  - [x] Comprehensive test coverage (69 test cases)
+  - [x] All text internationalized to English
 - [ ] JWT authentication (with replay protection)
 - [ ] Automatic TTL expiration cleanup
 - [ ] Raft replication for multi-replica SQLite
@@ -72,7 +79,7 @@ Sealbox doesn’t aim to replace Vault. It aims to be the 90% simpler alternativ
 
 ### Running Tests
 
-Sealbox includes comprehensive unit tests covering encryption, storage, and API functionality:
+Sealbox includes comprehensive unit tests (69 total: 51 server + 18 CLI) covering encryption, storage, API functionality, and CLI operations:
 
 ```bash
 # Run all tests
@@ -125,17 +132,30 @@ LISTEN_ADDR=127.0.0.1:8080 \
 
 The server will start and be ready to serve requests.
 
-### 2. Create and Register a Master Key
-Sealbox uses an end-to-end encryption model where the client generates and holds the private key. You must register your public key with the server before you can store secrets.
+### 2. Set Up CLI and Master Key
 
-Use the `sealbox-cli` to generate a new key pair and register the public key with the server in one step:
+Sealbox uses an end-to-end encryption model where the client generates and holds the private key. The modern CLI provides a comprehensive interface for managing keys and secrets.
 
 ```bash
 # Build the CLI
 cargo build --release -p sealbox-cli
 
-# Create a new master key (generates key pair if not found, then registers public key)
-# Note: --token is required and must match the AUTH_TOKEN from server configuration
+# Initialize CLI configuration
+./target/release/sealbox-cli config init
+
+# Generate RSA key pair
+./target/release/sealbox-cli key generate
+
+# Register public key with server  
+./target/release/sealbox-cli key register --url http://localhost:8080 --token secrettoken123
+
+# Check key status
+./target/release/sealbox-cli key status
+```
+
+**Alternative: Legacy single command (still supported)**
+```bash
+# Create master key (generates key pair if not found, then registers public key)
 ./target/release/sealbox-cli master-key create \
     --token secrettoken123 \
     --url http://localhost:8080 \
@@ -143,16 +163,25 @@ cargo build --release -p sealbox-cli
     --private-key-path my_private_key.pem
 ```
 
-**Command parameters:**
-- `--token`: Required. Authentication token that must match the server's `AUTH_TOKEN` environment variable
-- `--url`: Server URL (default: http://127.0.0.1:8080)
-- `--public-key-path`: Path for public key file (default: public_key.pem)
-- `--private-key-path`: Path for private key file (default: private_key.pem)
+### 3. Manage Secrets
 
-This command will:
-1. Check for `my_public_key.pem` and `my_private_key.pem`.
-2. If not found, generate a new RSA key pair and save them to these files.
-3. Register the public key with the running `sealbox-server`.
+Once your keys are set up, you can store and retrieve secrets:
+
+```bash
+# Store a secret (encrypted locally before sending to server)
+./target/release/sealbox-cli secret set mypassword "super-secret-value"
+
+# Retrieve and decrypt a secret  
+./target/release/sealbox-cli secret get mypassword
+
+# Import secrets from a JSON file
+./target/release/sealbox-cli secret import --file secrets.json
+
+# List available commands
+./target/release/sealbox-cli --help
+```
+
+The CLI automatically encrypts secrets on your machine before sending them to the server, ensuring true end-to-end encryption.
 
 ---
 

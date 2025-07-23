@@ -303,8 +303,7 @@ mod tests {
         for expected_col in expected_columns {
             assert!(
                 table_info.contains(&expected_col.to_string()),
-                "Missing column: {}",
-                expected_col
+                "Missing column: {expected_col}"
             );
         }
     }

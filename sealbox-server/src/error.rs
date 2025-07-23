@@ -44,7 +44,7 @@ pub enum SealboxError {
 }
 
 fn errorfmt(error: &SealboxError) -> String {
-    format!("[SealboxError] {}", error.to_string())
+    format!("[SealboxError] {error}")
 }
 
 impl IntoResponse for SealboxError {

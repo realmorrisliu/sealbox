@@ -62,7 +62,7 @@ impl Secret {
         let data_bytes = data.as_bytes();
 
         let data_key = DataKey::new();
-        let encrypted_data = data_key.encrypt(&data_bytes)?;
+        let encrypted_data = data_key.encrypt(data_bytes)?;
 
         let pub_key = PublicMasterKey::from_str(&master_key.public_key)?;
         let encrypted_data_key = pub_key.encrypt(data_key.as_bytes())?;
@@ -113,7 +113,7 @@ impl Secret {
         let new_encrypted_data_key = new_pub_key.encrypt(&data_key)?;
 
         secret.encrypted_data_key = new_encrypted_data_key;
-        secret.master_key_id = new_master_key_id.clone();
+        secret.master_key_id = *new_master_key_id;
         secret.updated_at = time::OffsetDateTime::now_utc().unix_timestamp();
 
         Ok(secret)
@@ -256,7 +256,7 @@ mod tests {
             .expect("Should convert to SQL");
 
         // Just test that conversion works without errors
-        assert!(true);
+        // Test placeholder - functionality verified by other tests
     }
 
     #[test]

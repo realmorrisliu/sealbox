@@ -27,22 +27,22 @@ pub(crate) struct GetSecretQueryParams {
     version: Option<i32>,
 }
 
-/// 获取秘密数据的API处理函数
+/// API handler function for retrieving secret data
 ///
 /// # Arguments
 ///
-/// * `state` - 应用状态，包含数据库连接池和仓库实例
-/// * `params` - 路径参数，包含API版本和秘密键名
-/// * `query` - 查询参数，可选的版本号用于获取特定版本
+/// * `state` - Application state containing database connection pool and repository instances
+/// * `params` - Path parameters containing API version and secret key name
+/// * `query` - Query parameters with optional version number for retrieving specific version
 ///
 /// # Returns
 ///
-/// 返回加密的秘密数据，包含加密内容和加密的数据密钥
+/// Returns encrypted secret data containing encrypted content and encrypted data key
 ///
 /// # Errors
 ///
-/// * `SealboxError::SecretNotFound` - 当秘密不存在时
-/// * `SealboxError::InvalidApiVersion` - 当API版本不支持时
+/// * `SealboxError::SecretNotFound` - When the secret does not exist
+/// * `SealboxError::InvalidApiVersion` - When the API version is not supported
 ///
 /// # HTTP Route
 ///
@@ -50,7 +50,7 @@ pub(crate) struct GetSecretQueryParams {
 ///
 /// # Security Notes
 ///
-/// 如果未指定版本号，返回最新版本。返回的数据仍然是加密状态，需要客户端使用对应的私钥解密。
+/// If no version number is specified, returns the latest version. The returned data is still encrypted and requires the client to decrypt it using the corresponding private key.
 pub(crate) async fn get(
     State(state): State<AppState>,
     Path(params): Path<SecretPathParams>,

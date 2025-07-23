@@ -1,41 +1,181 @@
-use std::{fs, path::Path};
+mod commands;
+mod config;
+mod crypto;
+mod output;
 
+use crate::commands::{config_commands, key_commands, secret_commands};
+use crate::config::{Config, OutputFormat};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use reqwest::Client;
-use rsa::pkcs1::DecodeRsaPublicKey;
-use serde_json::json;
-use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc2822};
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(name = "sealbox")]
+#[command(author = "Sealbox Team")]
+#[command(version = "1.0.0")]
+#[command(about = "Sealbox CLI - End-to-end encrypted secret management tool")]
+#[command(
+    long_about = "Sealbox is a lightweight, single-node secret storage service with end-to-end encryption using RSA key pairs."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+
+    /// Server URL
+    #[arg(long, global = true)]
+    url: Option<String>,
+
+    /// Authentication token
+    #[arg(long, global = true)]
+    token: Option<String>,
+
+    /// Public key file path
+    #[arg(long, global = true)]
+    public_key: Option<String>,
+
+    /// Private key file path
+    #[arg(long, global = true)]
+    private_key: Option<String>,
+
+    /// Output format
+    #[arg(long, global = true, value_enum)]
+    output: Option<OutputFormatArg>,
+}
+
+#[derive(clap::ValueEnum, Clone)]
+enum OutputFormatArg {
+    Json,
+    Yaml,
+    Table,
+}
+
+impl From<OutputFormatArg> for OutputFormat {
+    fn from(arg: OutputFormatArg) -> Self {
+        match arg {
+            OutputFormatArg::Json => OutputFormat::Json,
+            OutputFormatArg::Yaml => OutputFormat::Yaml,
+            OutputFormatArg::Table => OutputFormat::Table,
+        }
+    }
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Manage master keys
-    MasterKey {
+    /// Manage configuration
+    Config {
         #[command(subcommand)]
-        command: MasterKeyCommands,
+        command: ConfigCommands,
+    },
+    /// Manage keys
+    Key {
+        #[command(subcommand)]
+        command: KeyCommands,
+    },
+    /// Manage secrets
+    Secret {
+        #[command(subcommand)]
+        command: SecretCommands,
     },
 }
 
 #[derive(Subcommand)]
-enum MasterKeyCommands {
-    /// Create a new master key on the server.
-    /// If key files are not found at the specified paths, a new key pair will be generated.
-    Create {
-        #[arg(long, default_value = "http://127.0.0.1:8080")]
-        url: String,
+enum ConfigCommands {
+    /// Show current configuration
+    Show,
+    /// Set configuration value
+    Set {
+        /// Configuration key (e.g., server.url, server.token, keys.public_key_path)
+        key: String,
+        /// Configuration value
+        value: String,
+    },
+    /// Initialize configuration
+    Init,
+}
+
+#[derive(Subcommand)]
+enum KeyCommands {
+    /// Generate new key pair
+    Generate {
+        /// Public key file path
         #[arg(long)]
-        token: String,
-        #[arg(long, default_value = "public_key.pem")]
-        public_key_path: String,
-        #[arg(long, default_value = "private_key.pem")]
-        private_key_path: String,
+        public_key_path: Option<String>,
+        /// Private key file path
+        #[arg(long)]
+        private_key_path: Option<String>,
+        /// Overwrite existing key files
+        #[arg(long)]
+        force: bool,
+    },
+    /// Register public key to server
+    Register,
+    /// List master keys on server
+    List,
+    /// Rotate master key
+    Rotate {
+        /// New master key ID
+        #[arg(long)]
+        new_key_id: String,
+        /// Old master key ID
+        #[arg(long)]
+        old_key_id: String,
+    },
+    /// Check key status
+    Status,
+}
+
+#[derive(Subcommand)]
+enum SecretCommands {
+    /// Set secret
+    Set {
+        /// Secret key name
+        key: String,
+        /// Secret value (read from stdin if not provided)
+        value: Option<String>,
+        /// Time to live in seconds
+        #[arg(long)]
+        ttl: Option<i64>,
+    },
+    /// Get secret
+    Get {
+        /// Secret key name
+        key: String,
+        /// Specific version number
+        #[arg(long)]
+        version: Option<i32>,
+    },
+    /// Delete secret
+    Delete {
+        /// Secret key name
+        key: String,
+        /// Version number
+        #[arg(long)]
+        version: i32,
+    },
+    /// List all secret keys (requires server support)
+    List,
+    /// View secret version history
+    History {
+        /// Secret key name
+        key: String,
+    },
+    /// Import secrets from file
+    Import {
+        /// Input file path
+        file: String,
+        /// File format
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
+    /// Export secrets to file
+    Export {
+        /// Output file path
+        file: String,
+        /// Key pattern matching
+        #[arg(long)]
+        keys: Option<String>,
+        /// Output format
+        #[arg(long, default_value = "json")]
+        format: String,
     },
 }
 
@@ -43,73 +183,30 @@ enum MasterKeyCommands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    match &cli.command {
-        Commands::MasterKey { command } => match command {
-            MasterKeyCommands::Create {
-                url,
-                token,
-                public_key_path,
-                private_key_path,
-            } => {
-                // Check if keypair exists, generate if not
-                if !Path::new(public_key_path).exists() || !Path::new(private_key_path).exists() {
-                    println!("Key pair not found. Generating a new one...");
-                    let (private_key, public_key) =
-                        sealbox_server::crypto::master_key::generate_key_pair()?;
+    // Load configuration
+    let mut config = Config::load()?;
 
-                    fs::write(private_key_path, private_key)?;
-                    fs::write(public_key_path, public_key)?;
-
-                    println!("Key pair created successfully.");
-                    println!("Private key saved to: {}", private_key_path);
-                    println!("Public key saved to: {}", public_key_path);
-                }
-
-                let public_key_pem = fs::read_to_string(public_key_path)?;
-
-                // Validate the key format before sending
-                if let Err(_) = rsa::RsaPublicKey::from_pkcs1_pem(&public_key_pem) {
-                    anyhow::bail!(
-                        "Invalid public key format in file: {}. Please ensure it is a valid PKCS#1 PEM-encoded public key.",
-                        public_key_path
-                    );
-                }
-
-                println!("Registering public key with the server...");
-
-                let client = Client::new();
-                let res = client
-                    .post(format!("{}/v1/master-key", url))
-                    .bearer_auth(token)
-                    .json(&json!({ "public_key": public_key_pem }))
-                    .send()
-                    .await?;
-
-                let status = res.status();
-                let body = res.text().await?;
-
-                if status.is_success() {
-                    let master_key: sealbox_server::repo::MasterKey = serde_json::from_str(&body)?;
-                    let created_at = OffsetDateTime::from_unix_timestamp(master_key.created_at)?;
-                    let local_offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
-                    let created_at_local = created_at.to_offset(local_offset);
-
-                    println!("Master key registered successfully!");
-                    println!("  ID: {}", master_key.id);
-                    println!("  Status: {:?}", master_key.status);
-                    println!(
-                        "  Created At: {} (Local Time)",
-                        created_at_local
-                            .format(&Rfc2822)
-                            .unwrap_or(created_at_local.to_string())
-                    );
-                } else {
-                    println!("Server returned an error ({})", status);
-                    println!("{}", body);
-                }
-            }
-        },
+    // Command line arguments override configuration
+    if let Some(url) = cli.url {
+        config.server.url = url;
+    }
+    if let Some(token) = cli.token {
+        config.server.token = token;
+    }
+    if let Some(public_key) = cli.public_key {
+        config.keys.public_key_path = public_key.into();
+    }
+    if let Some(private_key) = cli.private_key {
+        config.keys.private_key_path = private_key.into();
+    }
+    if let Some(output) = cli.output {
+        config.output.format = output.into();
     }
 
-    Ok(())
+    // Execute command
+    match cli.command {
+        Commands::Config { command } => config_commands::handle_command(command, &mut config).await,
+        Commands::Key { command } => key_commands::handle_command(command, &config).await,
+        Commands::Secret { command } => secret_commands::handle_command(command, &config).await,
+    }
 }

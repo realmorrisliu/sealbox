@@ -19,12 +19,19 @@ pub type Result<T, E = DataKeyCryptoError> = std::result::Result<T, E>;
 
 #[derive(Debug)]
 pub struct DataKey(Vec<u8>);
+
+impl Default for DataKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DataKey {
-    /// 生成一个新的32字节随机数据密钥，用于AES-256-GCM加密
+    /// Generate a new 32-byte random data key for AES-256-GCM encryption
     ///
     /// # Returns
     ///
-    /// 返回一个包含随机生成的32字节密钥的 `DataKey` 实例
+    /// Returns a `DataKey` instance containing a randomly generated 32-byte key
     ///
     /// # Examples
     ///
@@ -41,19 +48,19 @@ impl DataKey {
         DataKey(data_key)
     }
 
-    /// 从提供的字节数组创建数据密钥
+    /// Create data key from provided byte array
     ///
     /// # Arguments
     ///
-    /// * `bytes` - 必须为32字节长度的密钥数据
+    /// * `bytes` - Must be 32 bytes in length for key data
     ///
     /// # Returns
     ///
-    /// 成功时返回 `Ok(DataKey)`，如果字节长度不是32则返回 `Err(DataKeyCryptoError::InvalidKeyLength)`
+    /// Returns `Ok(DataKey)` on success, or `Err(DataKeyCryptoError::InvalidKeyLength)` if byte length is not 32
     ///
     /// # Errors
     ///
-    /// * `DataKeyCryptoError::InvalidKeyLength` - 当输入字节长度不是32时
+    /// * `DataKeyCryptoError::InvalidKeyLength` - When input byte length is not 32
     ///
     /// # Examples
     ///
@@ -70,45 +77,44 @@ impl DataKey {
         Ok(DataKey(bytes.to_vec()))
     }
 
-    /// 返回数据密钥的字节表示
+    /// Return byte representation of data key
     ///
     /// # Returns
     ///
-    /// 返回包含32字节密钥数据的字节切片引用
+    /// Returns byte slice reference containing 32-byte key data
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
-    /// 创建用于AES-256-GCM加密/解密的密码器实例
+    /// Create cipher instance for AES-256-GCM encryption/decryption
     ///
     /// # Returns
     ///
-    /// 返回配置好的 `Aes256Gcm` 密码器实例，可用于后续的加密解密操作
+    /// Returns configured `Aes256Gcm` cipher instance for subsequent encryption/decryption operations
     pub fn cipher(&self) -> Aes256Gcm {
         let data_key = self.0.clone();
         let key = Key::<Aes256Gcm>::from_slice(&data_key);
-        let cipher = Aes256Gcm::new(key);
-        cipher
+        Aes256Gcm::new(key)
     }
 
-    /// 使用AES-256-GCM算法加密数据
+    /// Encrypt data using AES-256-GCM algorithm
     ///
     /// # Arguments
     ///
-    /// * `data` - 要加密的明文数据
+    /// * `data` - The plaintext data to encrypt
     ///
     /// # Returns
     ///
-    /// 成功时返回加密后的数据，格式为 [nonce(12字节) | ciphertext]
+    /// Returns encrypted data on success, format: [nonce(12 bytes) | ciphertext]
     ///
     /// # Errors
     ///
-    /// * `DataKeyCryptoError::FailedToEncrypt` - 加密操作失败时
+    /// * `DataKeyCryptoError::FailedToEncrypt` - When encryption operation fails
     ///
     /// # Security Notes
     ///
-    /// - 每次加密都使用随机生成的nonce，确保相同数据加密后的密文不同
-    /// - 输出格式包含12字节nonce + 密文 + 16字节认证标签
+    /// - Uses randomly generated nonce for each encryption, ensuring different ciphertext for same data
+    /// - Output format contains 12-byte nonce + ciphertext + 16-byte authentication tag
     pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
         // Generate a random nonce (12 bytes)
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
@@ -117,7 +123,7 @@ impl DataKey {
         let ciphertext = self
             .cipher()
             .encrypt(&nonce, data)
-            .map_err(|err| DataKeyCryptoError::FailedToEncrypt(err))?;
+            .map_err(DataKeyCryptoError::FailedToEncrypt)?;
 
         // Output: [nonce | ciphertext]
         let mut result = nonce.to_vec();
@@ -125,24 +131,24 @@ impl DataKey {
         Ok(result)
     }
 
-    /// 使用AES-256-GCM算法解密数据
+    /// Decrypt data using AES-256-GCM algorithm
     ///
     /// # Arguments
     ///
-    /// * `data` - 要解密的密文数据，必须是由本类 `encrypt` 方法产生的格式
+    /// * `data` - The ciphertext data to decrypt, must be in format produced by this class's `encrypt` method
     ///
     /// # Returns
     ///
-    /// 成功时返回解密后的明文数据
+    /// Returns decrypted plaintext data on success
     ///
     /// # Errors
     ///
-    /// * `DataKeyCryptoError::FailedToDecrypt` - 解密失败（密文损坏、认证失败或格式错误）
+    /// * `DataKeyCryptoError::FailedToDecrypt` - Decryption failed (corrupted ciphertext, authentication failure, or format error)
     ///
     /// # Security Notes
     ///
-    /// - 会验证数据完整性和认证标签
-    /// - 输入数据必须包含有效的nonce和认证标签
+    /// - Verifies data integrity and authentication tag
+    /// - Input data must contain valid nonce and authentication tag
     pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
         // Split nonce and ciphertext
         let (nonce_bytes, ciphertext) = data.split_at(12);
@@ -151,8 +157,8 @@ impl DataKey {
         // Decrypt
         let plaintext = self
             .cipher()
-            .decrypt(&nonce, ciphertext)
-            .map_err(|err| DataKeyCryptoError::FailedToDecrypt(err))?;
+            .decrypt(nonce, ciphertext)
+            .map_err(DataKeyCryptoError::FailedToDecrypt)?;
         Ok(plaintext)
     }
 }

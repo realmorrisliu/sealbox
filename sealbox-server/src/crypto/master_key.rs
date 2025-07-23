@@ -34,30 +34,30 @@ fn new_padding() -> Oaep {
 pub struct PrivateMasterKey(RsaPrivateKey);
 
 impl PrivateMasterKey {
-    /// 使用私钥解密数据
+    /// Decrypt data using private key
     ///
     /// # Arguments
     ///
-    /// * `ciphertext` - 要解密的密文数据
+    /// * `ciphertext` - The encrypted data to decrypt
     ///
     /// # Returns
     ///
-    /// 成功时返回解密后的明文数据
+    /// Returns the decrypted plaintext data on success
     ///
     /// # Errors
     ///
-    /// * `MasterKeyCryptoError::FailedToDecrypt` - 解密失败（可能是密文损坏或密钥不匹配）
+    /// * `MasterKeyCryptoError::FailedToDecrypt` - Decryption failed (possibly corrupted ciphertext or key mismatch)
     ///
     /// # Security Notes
     ///
-    /// - 使用RSA-OAEP-SHA256填充方案
-    /// - 对2048位RSA密钥，最大可解密的数据长度约为190字节
+    /// - Uses RSA-OAEP-SHA256 padding scheme
+    /// - For 2048-bit RSA keys, maximum decryptable data length is approximately 190 bytes
     pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
         let padding = new_padding();
         let decrypted = self
             .0
             .decrypt(padding, ciphertext)
-            .map_err(|err| MasterKeyCryptoError::FailedToDecrypt(err))?;
+            .map_err(MasterKeyCryptoError::FailedToDecrypt)?;
         Ok(decrypted)
     }
 }
@@ -65,22 +65,22 @@ impl PrivateMasterKey {
 impl std::str::FromStr for PrivateMasterKey {
     type Err = MasterKeyCryptoError;
 
-    /// 从PKCS#1 PEM格式字符串解析私钥
+    /// Parse private key from PKCS#1 PEM format string
     ///
     /// # Arguments
     ///
-    /// * `s` - PKCS#1 PEM格式的私钥字符串，必须以"-----BEGIN RSA PRIVATE KEY-----"开头
+    /// * `s` - PKCS#1 PEM format private key string, must start with "-----BEGIN RSA PRIVATE KEY-----"
     ///
     /// # Returns
     ///
-    /// 成功时返回 `PrivateMasterKey` 实例
+    /// Returns `PrivateMasterKey` instance on success
     ///
     /// # Errors
     ///
-    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey` - PEM格式无效或不是有效的RSA私钥
+    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey` - Invalid PEM format or not a valid RSA private key
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let priv_key = RsaPrivateKey::from_pkcs1_pem(s)
-            .map_err(|err| MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey(err))?;
+            .map_err(MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey)?;
         Ok(PrivateMasterKey(priv_key))
     }
 }
@@ -89,32 +89,32 @@ impl std::str::FromStr for PrivateMasterKey {
 pub struct PublicMasterKey(RsaPublicKey);
 
 impl PublicMasterKey {
-    /// 使用公钥加密数据
+    /// Encrypt data using public key
     ///
     /// # Arguments
     ///
-    /// * `plaintext` - 要加密的明文数据，长度不能超过RSA密钥支持的最大长度
+    /// * `plaintext` - The plaintext data to encrypt, length cannot exceed maximum supported by RSA key
     ///
     /// # Returns
     ///
-    /// 成功时返回加密后的密文数据
+    /// Returns the encrypted ciphertext data on success
     ///
     /// # Errors
     ///
-    /// * `MasterKeyCryptoError::FailedToEncrypt` - 加密失败（通常是数据过长或密钥格式错误）
+    /// * `MasterKeyCryptoError::FailedToEncrypt` - Encryption failed (usually data too long or key format error)
     ///
     /// # Security Notes
     ///
-    /// - 使用RSA-OAEP-SHA256填充方案
-    /// - 对2048位RSA密钥，最大可加密的数据长度约为190字节
-    /// - 每次加密同样的数据会产生不同的密文（由于随机填充）
+    /// - Uses RSA-OAEP-SHA256 padding scheme
+    /// - For 2048-bit RSA keys, maximum encryptable data length is approximately 190 bytes
+    /// - Each encryption of the same data produces different ciphertext (due to random padding)
     ///
     /// # Examples
     ///
     /// ```
     /// use sealbox_server::crypto::master_key::PublicMasterKey;
     ///
-    /// // 注意：此示例需要有效的PEM格式公钥字符串
+    /// // Note: This example requires a valid PEM format public key string
     /// // let public_key: PublicMasterKey = pem_string.parse()?;
     /// // let plaintext = b"Hello, World!";
     /// // let ciphertext = public_key.encrypt(plaintext)?;
@@ -124,7 +124,7 @@ impl PublicMasterKey {
         let encrypted = self
             .0
             .encrypt(&mut rand::thread_rng(), padding, plaintext)
-            .map_err(|err| MasterKeyCryptoError::FailedToEncrypt(err))?;
+            .map_err(MasterKeyCryptoError::FailedToEncrypt)?;
         Ok(encrypted)
     }
 }
@@ -132,22 +132,22 @@ impl PublicMasterKey {
 impl std::str::FromStr for PublicMasterKey {
     type Err = MasterKeyCryptoError;
 
-    /// 从PKCS#1 PEM格式字符串解析公钥
+    /// Parse public key from PKCS#1 PEM format string
     ///
     /// # Arguments
     ///
-    /// * `s` - PKCS#1 PEM格式的公钥字符串，必须以"-----BEGIN RSA PUBLIC KEY-----"开头
+    /// * `s` - PKCS#1 PEM format public key string, must start with "-----BEGIN RSA PUBLIC KEY-----"
     ///
     /// # Returns
     ///
-    /// 成功时返回 `PublicMasterKey` 实例
+    /// Returns `PublicMasterKey` instance on success
     ///
     /// # Errors
     ///
-    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPublicKey` - PEM格式无效或不是有效的RSA公钥
+    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPublicKey` - Invalid PEM format or not a valid RSA public key
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let pub_key = RsaPublicKey::from_pkcs1_pem(s)
-            .map_err(|err| MasterKeyCryptoError::InvalidPkcs1FormatPublicKey(err))?;
+            .map_err(MasterKeyCryptoError::InvalidPkcs1FormatPublicKey)?;
         Ok(PublicMasterKey(pub_key))
     }
 }
@@ -162,17 +162,17 @@ pub fn generate_key_pair() -> Result<(String, String), MasterKeyCryptoError> {
     let mut rng = rand::thread_rng();
     let bits = 2048;
     let priv_key = RsaPrivateKey::new(&mut rng, bits)
-        .map_err(|err| MasterKeyCryptoError::FailedToGeneratePrivateKey(err))?;
+        .map_err(MasterKeyCryptoError::FailedToGeneratePrivateKey)?;
     let pub_key = RsaPublicKey::from(&priv_key);
 
     // Export to PEM format
     let private_pem = priv_key
         .to_pkcs1_pem(LineEnding::LF)
-        .map_err(|err| MasterKeyCryptoError::FailedToExportPemFormat(err))?
+        .map_err(MasterKeyCryptoError::FailedToExportPemFormat)?
         .to_string();
     let public_pem = pub_key
         .to_pkcs1_pem(LineEnding::LF)
-        .map_err(|err| MasterKeyCryptoError::FailedToExportPemFormat(err))?
+        .map_err(MasterKeyCryptoError::FailedToExportPemFormat)?
         .to_string();
 
     Ok((private_pem, public_pem))
@@ -207,7 +207,7 @@ mod tests {
         let _private_key: PrivateMasterKey = private_pem.parse().expect("Should parse private key");
 
         // If we got here, the parsing worked
-        assert!(true);
+        // Test placeholder - functionality verified by integration tests
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
         let _public_key: PublicMasterKey = public_pem.parse().expect("Should parse public key");
 
         // If we got here, the parsing worked
-        assert!(true);
+        // Test placeholder - functionality verified by integration tests
     }
 
     #[test]
