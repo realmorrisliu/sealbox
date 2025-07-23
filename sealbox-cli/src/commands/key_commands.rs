@@ -148,7 +148,11 @@ async fn register_key(config: &Config, output: &OutputManager) -> Result<()> {
             .text()
             .await
             .unwrap_or_else(|_| "Unable to get error information".to_string());
-        anyhow::bail!("Server returned error (status code: {}):\n{}", status, error_body);
+        anyhow::bail!(
+            "Server returned error (status code: {}):\n{}",
+            status,
+            error_body
+        );
     }
 
     Ok(())
@@ -186,7 +190,11 @@ async fn list_keys(config: &Config, output: &OutputManager) -> Result<()> {
             .text()
             .await
             .unwrap_or_else(|_| "Unable to get error information".to_string());
-        anyhow::bail!("Server returned error (status code: {}):\n{}", status, error_body);
+        anyhow::bail!(
+            "Server returned error (status code: {}):\n{}",
+            status,
+            error_body
+        );
     }
 
     Ok(())
@@ -243,7 +251,10 @@ async fn rotate_keys(
 
     let status = response.status();
     if status.is_success() {
-        let result: serde_json::Value = response.json().await.context("Failed to parse server response")?;
+        let result: serde_json::Value = response
+            .json()
+            .await
+            .context("Failed to parse server response")?;
 
         output.print_success("Key rotation completed!");
         output.print_value(&result)?;
@@ -261,7 +272,11 @@ async fn rotate_keys(
             .text()
             .await
             .unwrap_or_else(|_| "Unable to get error information".to_string());
-        anyhow::bail!("Server returned error (status code: {}):\n{}", status, error_body);
+        anyhow::bail!(
+            "Server returned error (status code: {}):\n{}",
+            status,
+            error_body
+        );
     }
 
     Ok(())
@@ -350,7 +365,10 @@ async fn list_server_keys_internal(
         .context("Failed to request server")?;
 
     if response.status().is_success() {
-        response.json().await.context("Failed to parse server response")
+        response
+            .json()
+            .await
+            .context("Failed to parse server response")
     } else {
         anyhow::bail!("Server returned error: {}", response.status());
     }

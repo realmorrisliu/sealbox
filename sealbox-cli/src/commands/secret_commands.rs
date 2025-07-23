@@ -34,7 +34,9 @@ async fn set_secret(
     value: Option<String>,
     ttl: Option<i64>,
 ) -> Result<()> {
-    config.validate().context("Configuration validation failed")?;
+    config
+        .validate()
+        .context("Configuration validation failed")?;
 
     // Get secret value
     let secret_value = match value {
@@ -97,7 +99,11 @@ async fn set_secret(
             .text()
             .await
             .unwrap_or_else(|_| "Unable to get error information".to_string());
-        anyhow::bail!("Server returned error (status code: {}):\n{}", status, error_body);
+        anyhow::bail!(
+            "Server returned error (status code: {}):\n{}",
+            status,
+            error_body
+        );
     }
 
     Ok(())
@@ -109,7 +115,9 @@ async fn get_secret(
     key: String,
     version: Option<i32>,
 ) -> Result<()> {
-    config.validate().context("Configuration validation failed")?;
+    config
+        .validate()
+        .context("Configuration validation failed")?;
 
     // Build request URL
     let mut url = format!("{}/v1/secrets/{}", config.server.url, key);
@@ -133,7 +141,11 @@ async fn get_secret(
             .text()
             .await
             .unwrap_or_else(|_| "Unable to get error information".to_string());
-        anyhow::bail!("Server returned error (status code: {}):\n{}", status, error_body);
+        anyhow::bail!(
+            "Server returned error (status code: {}):\n{}",
+            status,
+            error_body
+        );
     }
 
     let secret_data: Value = response
@@ -187,7 +199,9 @@ async fn delete_secret(
     key: String,
     version: i32,
 ) -> Result<()> {
-    config.validate().context("Configuration validation failed")?;
+    config
+        .validate()
+        .context("Configuration validation failed")?;
 
     let url = format!(
         "{}/v1/secrets/{}?version={}",
@@ -214,7 +228,11 @@ async fn delete_secret(
             .text()
             .await
             .unwrap_or_else(|_| "Unable to get error information".to_string());
-        anyhow::bail!("Server returned error (status code: {}):\n{}", status, error_body);
+        anyhow::bail!(
+            "Server returned error (status code: {}):\n{}",
+            status,
+            error_body
+        );
     }
 
     Ok(())
