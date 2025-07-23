@@ -18,13 +18,14 @@ Sealbox is a lightweight, single-node secret storage service built in Rust. It p
 - **sealbox-cli/**: Command-line interface for key management and secret operations
   - `commands/`: Command handlers (config, key, secret management)
   - `config.rs`: TOML-based configuration management with environment overrides
-  - `crypto.rs`: Local encryption/decryption service for end-to-end encryption
   - `output.rs`: Multi-format output support (JSON, YAML, Table)
+  - **Note**: CLI reuses server's crypto modules for consistency
 
 ### Security Model
-- End-to-end encryption: Users generate RSA key pairs, server only stores encrypted data
-- Envelope encryption: Secrets encrypted with random data keys, data keys encrypted with user's public key
-- No plaintext storage: Server never has access to decrypt user secrets
+- **Server-side encryption**: CLI sends plaintext to server, server performs envelope encryption
+- **Envelope encryption**: Secrets encrypted with random data keys, data keys encrypted with user's public key
+- **RSA + AES-GCM**: 2048-bit RSA for key encryption, AES-256-GCM for data encryption
+- **End-to-end security**: Only clients with private keys can decrypt stored secrets
 
 ## Common Development Commands
 
@@ -55,7 +56,7 @@ export LISTEN_ADDR=127.0.0.1:8080
 ```
 
 ### Testing and Quality
-The project includes comprehensive unit tests (74 total: 51 server + 23 CLI) covering encryption, decryption, storage, API functionality, and CLI operations.
+The project includes comprehensive unit tests (71 total: 51 server + 20 CLI) covering encryption, decryption, storage, API functionality, and CLI operations.
 
 ```bash
 # Run all tests
@@ -76,7 +77,7 @@ cargo clippy --all-targets --all-features --workspace -- -D warnings
 ```
 
 ### CLI Usage
-The CLI provides comprehensive secret management with local encryption/decryption:
+The CLI provides comprehensive secret management by interfacing with the server's encryption system:
 
 ```bash
 # Initialize configuration with parameters (recommended)
@@ -93,7 +94,7 @@ The CLI provides comprehensive secret management with local encryption/decryptio
 # Register public key with server
 ./target/release/sealbox-cli key register
 
-# Store a secret (encrypted locally before sending)
+# Store a secret (sent as plaintext, encrypted by server)
 ./target/release/sealbox-cli secret set mypassword "super-secret-value"
 
 # Retrieve and decrypt a secret
@@ -154,11 +155,11 @@ All endpoints require `Authorization: Bearer <token>` header:
 ### Completed Features
 - ✅ Complete CLI architecture with robust configuration management
 - ✅ Full key management command set (generate, register, list, rotate, status)
-- ✅ Secret management with local encryption/decryption
+- ✅ Secret management with server-side encryption and client-side decryption
 - ✅ Batch operations (import/export functionality framework)
 - ✅ All Chinese text converted to English for global compatibility
 - ✅ Zero clippy warnings across entire codebase (strict linting)
-- ✅ Comprehensive test coverage (74 test cases)
+- ✅ Comprehensive test coverage (71 test cases)
 - ✅ Parameter-driven config initialization with interactive fallback
 - ✅ Automatic path expansion and standardized file locations
 - ✅ Production-ready code quality and error handling

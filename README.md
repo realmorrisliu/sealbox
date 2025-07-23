@@ -10,7 +10,7 @@ Sealbox is a simple yet secure secret management solution designed for developer
 
 ## Features
 
-- 🔐 **End-to-end encryption** - Your secrets are encrypted locally before reaching the server
+- 🔐 **Server-side encryption** - Secrets are encrypted using envelope encryption on the server
 - 📦 **Single binary** - No complex setup, just run the executable
 - 🗃️ **SQLite storage** - Embedded database, no external dependencies
 - 🔑 **Secret versioning** - Keep track of secret history
@@ -93,22 +93,23 @@ The CLI uses TOML configuration files with environment variable overrides:
 
 ## Security Model
 
-Sealbox implements end-to-end encryption using envelope encryption:
+Sealbox implements server-side envelope encryption with client-side decryption:
 
 1. **User Key Pair**: Each user generates an RSA key pair locally
-2. **Data Keys**: Random AES keys encrypt individual secrets
-3. **Envelope Encryption**: Data keys are encrypted with the user's public key
-4. **Zero Knowledge**: The server never has access to decrypt user secrets
+2. **Server Encryption**: Server receives plaintext and encrypts using envelope encryption
+3. **Data Keys**: Random AES keys encrypt individual secrets
+4. **Envelope Encryption**: Data keys are encrypted with the user's public key
+5. **Client Decryption**: Only clients with the private key can decrypt stored secrets
 
 ## How It Works
 
 ```
-┌─────────────┐    encrypt    ┌──────────────┐    send     ┌──────────────┐
-│   Secret    │──────────────▶│ Encrypted    │────────────▶│    Server    │
-│             │               │ Secret +     │             │              │
-│             │               │ Encrypted    │             │              │
-│             │               │ Data Key     │             │              │
-└─────────────┘               └──────────────┘             └──────────────┘
+┌─────────────┐    send       ┌──────────────┐    encrypt   ┌──────────────┐
+│   Secret    │──────────────▶│    Server    │─────────────▶│ Encrypted    │
+│ (plaintext) │               │              │              │ Secret +     │
+│             │               │              │              │ Encrypted    │
+│             │               │              │              │ Data Key     │
+└─────────────┘               └──────────────┘              └──────────────┘
 ```
 
 ---

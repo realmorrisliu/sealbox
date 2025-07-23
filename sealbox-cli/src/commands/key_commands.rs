@@ -5,7 +5,7 @@ use serde_json::json;
 use std::{fs, path::Path};
 use uuid::Uuid;
 
-use crate::{KeyCommands, config::Config, crypto::CryptoService, output::OutputManager};
+use crate::{KeyCommands, config::Config, output::OutputManager};
 
 pub async fn handle_command(command: KeyCommands, config: &Config) -> Result<()> {
     let output = OutputManager::new(config.output.format.clone());
@@ -303,27 +303,64 @@ async fn check_key_status(config: &Config, output: &OutputManager) -> Result<()>
         }
     });
 
-    // Check if key pair matches
+    // Check if key pair matches by reading and parsing both key files
     if Path::new(public_key_path).exists() && Path::new(private_key_path).exists() {
-        let mut crypto = CryptoService::new();
+        use std::str::FromStr;
 
-        match crypto.load_public_key(public_key_path) {
-            Ok(()) => match crypto.load_private_key(private_key_path) {
-                Ok(()) => match crypto.validate_key_pair() {
-                    Ok(()) => {
-                        status_info["local_keys"]["key_pair_valid"] = json!(true);
+        match fs::read_to_string(public_key_path) {
+            Ok(public_pem) => match fs::read_to_string(private_key_path) {
+                Ok(private_pem) => {
+                    // Try to parse both keys
+                    match (
+                        sealbox_server::crypto::master_key::PublicMasterKey::from_str(&public_pem),
+                        sealbox_server::crypto::master_key::PrivateMasterKey::from_str(
+                            &private_pem,
+                        ),
+                    ) {
+                        (Ok(public_key), Ok(private_key)) => {
+                            // Test key pair compatibility by encrypting and decrypting a test message
+                            match public_key.encrypt(b"test") {
+                                Ok(encrypted) => match private_key.decrypt(&encrypted) {
+                                    Ok(decrypted) if decrypted == b"test" => {
+                                        status_info["local_keys"]["key_pair_valid"] = json!(true);
+                                    }
+                                    Ok(_) => {
+                                        status_info["local_keys"]["key_pair_valid"] = json!(false);
+                                        status_info["local_keys"]["validation_error"] = json!(
+                                            "Key pair mismatch: decryption result doesn't match"
+                                        );
+                                    }
+                                    Err(e) => {
+                                        status_info["local_keys"]["key_pair_valid"] = json!(false);
+                                        status_info["local_keys"]["validation_error"] =
+                                            json!(format!("Decryption failed: {}", e));
+                                    }
+                                },
+                                Err(e) => {
+                                    status_info["local_keys"]["key_pair_valid"] = json!(false);
+                                    status_info["local_keys"]["validation_error"] =
+                                        json!(format!("Encryption failed: {}", e));
+                                }
+                            }
+                        }
+                        (Err(e), _) => {
+                            status_info["local_keys"]["public_key_error"] =
+                                json!(format!("Failed to parse public key: {}", e));
+                        }
+                        (_, Err(e)) => {
+                            status_info["local_keys"]["private_key_error"] =
+                                json!(format!("Failed to parse private key: {}", e));
+                        }
                     }
-                    Err(e) => {
-                        status_info["local_keys"]["key_pair_valid"] = json!(false);
-                        status_info["local_keys"]["validation_error"] = json!(e.to_string());
-                    }
-                },
+                }
                 Err(e) => {
-                    status_info["local_keys"]["private_key_error"] = json!(e.to_string());
+                    status_info["local_keys"]["private_key_error"] =
+                        json!(format!("Failed to read private key file: {}", e));
                 }
             },
             Err(e) => {
-                status_info["local_keys"]["public_key_error"] = json!(e.to_string());
+                status_info["local_keys"]["public_key_error"] =
+                    json!(format!("Failed to read public key file: {}", e));
             }
         }
     }

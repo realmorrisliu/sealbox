@@ -75,7 +75,7 @@ pub(crate) async fn get(
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub(crate) struct SaveSecretPayload {
-    secret: String,
+    secret: String, // Now receives plaintext instead of encrypted data
     ttl: Option<i64>,
 }
 

@@ -1,6 +1,5 @@
 mod commands;
 mod config;
-mod crypto;
 mod output;
 
 use crate::commands::{config_commands, key_commands, secret_commands};

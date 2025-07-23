@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde_json::{Value, json};
-use std::fs;
+use std::{fs, str::FromStr};
 
-use crate::{SecretCommands, config::Config, crypto::CryptoService, output::OutputManager};
+use crate::{SecretCommands, config::Config, output::OutputManager};
 
 pub async fn handle_command(command: SecretCommands, config: &Config) -> Result<()> {
     let output = OutputManager::new(config.output.format.clone());
@@ -51,28 +51,11 @@ async fn set_secret(
         anyhow::bail!("Secret value cannot be empty");
     }
 
-    // Load public key and encrypt
-    let mut crypto = CryptoService::new();
-    let public_key_path = config
-        .keys
-        .public_key_path
-        .to_str()
-        .context("Public key path contains invalid characters")?;
-
-    crypto
-        .load_public_key(public_key_path)
-        .context("Failed to load public key")?;
-
-    output.print_info("Encrypting secret...");
-    let (encrypted_secret, _encrypted_key) = crypto
-        .encrypt_secret(&secret_value)
-        .context("Failed to encrypt secret")?;
-
-    // Send to server
+    // Send plaintext to server (server will handle encryption)
     output.print_info("Saving to server...");
 
     let payload = json!({
-        "secret": encrypted_secret,
+        "secret": secret_value,
         "ttl": ttl
     });
 
@@ -153,33 +136,60 @@ async fn get_secret(
         .await
         .context("Failed to parse server response")?;
 
-    // Extract encrypted data
-    let encrypted_secret = secret_data
-        .get("secret")
-        .and_then(|v| v.as_str())
-        .context("Missing 'secret' field in response")?;
+    // Extract encrypted data from server response
+    let encrypted_data = secret_data
+        .get("encrypted_data")
+        .and_then(|v| v.as_array())
+        .context("Missing or invalid 'encrypted_data' field in response")?;
 
-    let encrypted_key = secret_data
+    let encrypted_data_key = secret_data
         .get("encrypted_data_key")
-        .and_then(|v| v.as_str())
-        .context("Missing 'encrypted_data_key' field in response")?;
+        .and_then(|v| v.as_array())
+        .context("Missing or invalid 'encrypted_data_key' field in response")?;
 
-    // Load private key and decrypt
-    let mut crypto = CryptoService::new();
+    // Convert JSON arrays to byte vectors
+    let encrypted_data_bytes: Vec<u8> = encrypted_data
+        .iter()
+        .map(|v| v.as_u64().unwrap_or(0) as u8)
+        .collect();
+
+    let encrypted_data_key_bytes: Vec<u8> = encrypted_data_key
+        .iter()
+        .map(|v| v.as_u64().unwrap_or(0) as u8)
+        .collect();
+
+    // Load private key and decrypt using server's crypto module
     let private_key_path = config
         .keys
         .private_key_path
         .to_str()
         .context("Private key path contains invalid characters")?;
 
-    crypto
-        .load_private_key(private_key_path)
-        .context("Failed to load private key. Please ensure the private key file exists and is in correct format")?;
+    let private_key_pem =
+        std::fs::read_to_string(private_key_path).context("Failed to read private key file")?;
 
     output.print_info("Decrypting secret...");
-    let decrypted_value = crypto
-        .decrypt_secret(encrypted_secret, encrypted_key)
-        .context("Failed to decrypt secret")?;
+
+    // Use server's crypto modules for decryption
+    let private_key =
+        sealbox_server::crypto::master_key::PrivateMasterKey::from_str(&private_key_pem)
+            .context("Failed to parse private key")?;
+
+    // Decrypt the data key using RSA private key
+    let decrypted_data_key = private_key
+        .decrypt(&encrypted_data_key_bytes)
+        .context("Failed to decrypt data key with RSA private key")?;
+
+    // Use the data key to decrypt the secret data
+    let data_key = sealbox_server::crypto::data_key::DataKey::from_bytes(&decrypted_data_key)
+        .context("Invalid data key format")?;
+
+    let decrypted_bytes = data_key
+        .decrypt(&encrypted_data_bytes)
+        .context("Failed to decrypt secret data")?;
+
+    let decrypted_value =
+        String::from_utf8(decrypted_bytes).context("Decrypted data is not valid UTF-8")?;
 
     // Display result
     let secret_version = secret_data
@@ -292,16 +302,7 @@ async fn import_secrets(
         "Import file must contain an object with keys as secret names and values as secret content",
     )?;
 
-    // Load public key
-    let mut crypto = CryptoService::new();
-    let public_key_path = config
-        .keys
-        .public_key_path
-        .to_str()
-        .context("Public key path contains invalid characters")?;
-    crypto
-        .load_public_key(public_key_path)
-        .context("Failed to load public key")?;
+    // No need to load public key since server handles encryption
 
     let mut success_count = 0;
     let mut error_count = 0;
@@ -318,7 +319,7 @@ async fn import_secrets(
             }
         };
 
-        match import_single_secret(config, &crypto, secret_key, value_str).await {
+        match import_single_secret(config, secret_key, value_str).await {
             Ok(()) => {
                 output.print_info(&format!("✓ Imported secret '{secret_key}'"));
                 success_count += 1;
@@ -337,16 +338,9 @@ async fn import_secrets(
     Ok(())
 }
 
-async fn import_single_secret(
-    config: &Config,
-    crypto: &CryptoService,
-    key: &str,
-    value: &str,
-) -> Result<()> {
-    let (encrypted_secret, _encrypted_key) = crypto.encrypt_secret(value)?;
-
+async fn import_single_secret(config: &Config, key: &str, value: &str) -> Result<()> {
     let payload = json!({
-        "secret": encrypted_secret,
+        "secret": value,
         "ttl": null
     });
 
