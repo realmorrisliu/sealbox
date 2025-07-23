@@ -34,6 +34,24 @@ fn new_padding() -> Oaep {
 pub struct PrivateMasterKey(RsaPrivateKey);
 
 impl PrivateMasterKey {
+    /// 使用私钥解密数据
+    /// 
+    /// # Arguments
+    /// 
+    /// * `ciphertext` - 要解密的密文数据
+    /// 
+    /// # Returns
+    /// 
+    /// 成功时返回解密后的明文数据
+    /// 
+    /// # Errors
+    /// 
+    /// * `MasterKeyCryptoError::FailedToDecrypt` - 解密失败（可能是密文损坏或密钥不匹配）
+    /// 
+    /// # Security Notes
+    /// 
+    /// - 使用RSA-OAEP-SHA256填充方案
+    /// - 对2048位RSA密钥，最大可解密的数据长度约为190字节
     pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
         let padding = new_padding();
         let decrypted = self
@@ -47,6 +65,19 @@ impl PrivateMasterKey {
 impl std::str::FromStr for PrivateMasterKey {
     type Err = MasterKeyCryptoError;
 
+    /// 从PKCS#1 PEM格式字符串解析私钥
+    /// 
+    /// # Arguments
+    /// 
+    /// * `s` - PKCS#1 PEM格式的私钥字符串，必须以"-----BEGIN RSA PRIVATE KEY-----"开头
+    /// 
+    /// # Returns
+    /// 
+    /// 成功时返回 `PrivateMasterKey` 实例
+    /// 
+    /// # Errors
+    /// 
+    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey` - PEM格式无效或不是有效的RSA私钥
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let priv_key = RsaPrivateKey::from_pkcs1_pem(s)
             .map_err(|err| MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey(err))?;
@@ -58,6 +89,36 @@ impl std::str::FromStr for PrivateMasterKey {
 pub struct PublicMasterKey(RsaPublicKey);
 
 impl PublicMasterKey {
+    /// 使用公钥加密数据
+    /// 
+    /// # Arguments
+    /// 
+    /// * `plaintext` - 要加密的明文数据，长度不能超过RSA密钥支持的最大长度
+    /// 
+    /// # Returns
+    /// 
+    /// 成功时返回加密后的密文数据
+    /// 
+    /// # Errors
+    /// 
+    /// * `MasterKeyCryptoError::FailedToEncrypt` - 加密失败（通常是数据过长或密钥格式错误）
+    /// 
+    /// # Security Notes
+    /// 
+    /// - 使用RSA-OAEP-SHA256填充方案
+    /// - 对2048位RSA密钥，最大可加密的数据长度约为190字节
+    /// - 每次加密同样的数据会产生不同的密文（由于随机填充）
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use sealbox_server::crypto::master_key::PublicMasterKey;
+    /// 
+    /// // 注意：此示例需要有效的PEM格式公钥字符串
+    /// // let public_key: PublicMasterKey = pem_string.parse()?;
+    /// // let plaintext = b"Hello, World!";
+    /// // let ciphertext = public_key.encrypt(plaintext)?;
+    /// ```
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
         let padding = new_padding();
         let encrypted = self
@@ -71,6 +132,19 @@ impl PublicMasterKey {
 impl std::str::FromStr for PublicMasterKey {
     type Err = MasterKeyCryptoError;
 
+    /// 从PKCS#1 PEM格式字符串解析公钥
+    /// 
+    /// # Arguments
+    /// 
+    /// * `s` - PKCS#1 PEM格式的公钥字符串，必须以"-----BEGIN RSA PUBLIC KEY-----"开头
+    /// 
+    /// # Returns
+    /// 
+    /// 成功时返回 `PublicMasterKey` 实例
+    /// 
+    /// # Errors
+    /// 
+    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPublicKey` - PEM格式无效或不是有效的RSA公钥
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let pub_key = RsaPublicKey::from_pkcs1_pem(s)
             .map_err(|err| MasterKeyCryptoError::InvalidPkcs1FormatPublicKey(err))?;

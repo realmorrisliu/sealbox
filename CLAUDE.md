@@ -51,14 +51,18 @@ export LISTEN_ADDR=127.0.0.1:8080
 ```
 
 ### Testing and Quality
-**CRITICAL**: This project currently has NO TESTS. This is a major security concern for a secret storage service.
+The project includes comprehensive unit tests (44 test cases) covering encryption, decryption, storage, and API functionality.
 
 ```bash
-# Run tests (when they exist)
+# Run all tests
 cargo test
 
 # Run tests in specific package
 cargo test -p sealbox-server
+cargo test -p sealbox-cli
+
+# Run tests with output
+cargo test -- --nocapture
 
 # Format code
 cargo fmt
@@ -106,7 +110,24 @@ All endpoints require `Authorization: Bearer <token>` header:
 
 ## Development Priorities
 
-1. **ADD TESTS IMMEDIATELY** - Critical security gap for a secret storage service
-2. Implement proper CI/CD pipeline  
-3. Add comprehensive logging and monitoring
-4. Implement TTL cleanup mechanism
+1. **Expand test coverage** - Add integration tests and API end-to-end testing
+2. Add comprehensive logging and monitoring
+3. Implement TTL cleanup mechanism
+4. Add OpenAPI documentation specification
+
+## CI/CD Pipeline
+
+The project uses a streamlined GitHub Actions workflow optimized for MVP development:
+
+### CI Workflow (.github/workflows/ci.yml)
+- **Code Quality**: Format checking (rustfmt), linting (clippy)
+- **Testing**: Unit tests, documentation tests
+- **Security**: Dependency audit (cargo audit)
+- **Build**: Release build verification on Linux
+
+### Release Workflow (.github/workflows/release.yml)
+- **Platform**: Linux x86_64 binary releases
+- **Automation**: Triggered by git tags (v*) or manual dispatch
+- **Artifacts**: Compressed binary archive with README and LICENSE
+
+The CI/CD setup prioritizes simplicity and speed for rapid development cycles while maintaining essential quality checks.

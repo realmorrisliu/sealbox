@@ -1,11 +1,8 @@
 # Sealbox
 
 [![CI](https://github.com/realmorrisliu/sealbox/workflows/CI/badge.svg)](https://github.com/realmorrisliu/sealbox/actions/workflows/ci.yml)
-[![Security](https://github.com/realmorrisliu/sealbox/workflows/Security/badge.svg)](https://github.com/realmorrisliu/sealbox/actions/workflows/security.yml)
-[![codecov](https://codecov.io/gh/realmorrisliu/sealbox/branch/main/graph/badge.svg)](https://codecov.io/gh/realmorrisliu/sealbox)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
-[![Docker](https://img.shields.io/badge/docker-available-blue.svg)](https://github.com/realmorrisliu/sealbox/pkgs/container/sealbox)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
 A Simple Secret Storage Service – self-hosted and developer-friendly.
 
@@ -71,6 +68,42 @@ Sealbox doesn’t aim to replace Vault. It aims to be the 90% simpler alternativ
 
 ---
 
+## Development
+
+### Running Tests
+
+Sealbox includes comprehensive unit tests covering encryption, storage, and API functionality:
+
+```bash
+# Run all tests
+cargo test
+
+# Run tests with output
+cargo test -- --nocapture
+
+# Run tests for specific package
+cargo test -p sealbox-server
+cargo test -p sealbox-cli
+
+# Run specific test
+cargo test test_encrypt_decrypt
+```
+
+### Code Quality
+
+```bash
+# Format code
+cargo fmt
+
+# Run linter
+cargo clippy
+
+# Check for security vulnerabilities
+cargo audit
+```
+
+---
+
 ## Getting Started
 
 ### 1. Run Sealbox Server
@@ -78,12 +111,18 @@ Sealbox doesn’t aim to replace Vault. It aims to be the 90% simpler alternativ
 # Build Sealbox (Rust required)
 cargo build --release
 
-# Run Sealbox Server
+# Run Sealbox Server (set required environment variables)
 STORE_PATH=/var/lib/sealbox.db \
 AUTH_TOKEN=secrettoken123 \
 LISTEN_ADDR=127.0.0.1:8080 \
 ./target/release/sealbox-server
 ```
+
+**Environment variables:**
+- `STORE_PATH`: SQLite database file path
+- `AUTH_TOKEN`: Static bearer token for API authentication (remember this for CLI commands)
+- `LISTEN_ADDR`: Server listen address and port
+
 The server will start and be ready to serve requests.
 
 ### 2. Create and Register a Master Key
@@ -96,17 +135,24 @@ Use the `sealbox-cli` to generate a new key pair and register the public key wit
 cargo build --release -p sealbox-cli
 
 # Create a new master key (generates key pair if not found, then registers public key)
+# Note: --token is required and must match the AUTH_TOKEN from server configuration
 ./target/release/sealbox-cli master-key create \
-    --url http://localhost:8080 \
     --token secrettoken123 \
+    --url http://localhost:8080 \
     --public-key-path my_public_key.pem \
     --private-key-path my_private_key.pem
 ```
 
+**Command parameters:**
+- `--token`: Required. Authentication token that must match the server's `AUTH_TOKEN` environment variable
+- `--url`: Server URL (default: http://127.0.0.1:8080)
+- `--public-key-path`: Path for public key file (default: public_key.pem)
+- `--private-key-path`: Path for private key file (default: private_key.pem)
+
 This command will:
-1.  Check for `my_public_key.pem` and `my_private_key.pem`.
-2.  If not found, generate a new RSA key pair and save them to these files.
-3.  Register the public key with the running `sealbox-server`.
+1. Check for `my_public_key.pem` and `my_private_key.pem`.
+2. If not found, generate a new RSA key pair and save them to these files.
+3. Register the public key with the running `sealbox-server`.
 
 ---
 

@@ -46,21 +46,19 @@ jobs:
           
           ## Download
           
-          Choose the appropriate binary for your platform:
+          Download the Linux x86_64 binary: `sealbox-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz`
           
-          - **Linux (x86_64)**: `sealbox-*-x86_64-unknown-linux-gnu.tar.gz`
-          - **macOS (x86_64)**: `sealbox-*-x86_64-apple-darwin.tar.gz`  
-          - **macOS (ARM64)**: `sealbox-*-aarch64-apple-darwin.tar.gz`
-          - **Windows (x86_64)**: `sealbox-*-x86_64-pc-windows-msvc.zip`
-          
-          ## Docker
+          ## Quick Start
           
           ```bash
-          docker run --rm -p 8080:8080 \
-            -e AUTH_TOKEN=your-secret-token \
-            -e STORE_PATH=/data/sealbox.db \
-            -e LISTEN_ADDR=0.0.0.0:8080 \
-            ghcr.io/realmorrisliu/sealbox:${{ steps.get_version.outputs.version }}
+          # Extract the archive
+          tar -xzf sealbox-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz
+          
+          # Run the server
+          STORE_PATH=/tmp/sealbox.db \
+          AUTH_TOKEN=your-secret-token \
+          LISTEN_ADDR=127.0.0.1:8080 \
+          ./sealbox-server
           ```
         draft: false
         prerelease: false
@@ -68,39 +66,12 @@ jobs:
   build-release:
     name: Build Release
     needs: create-release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            name: linux-x86_64
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            name: linux-aarch64
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            name: macos-x86_64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            name: macos-aarch64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            name: windows-x86_64
-    
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.target }}
-    
-    - name: Install cross-compilation tools
-      if: matrix.target == 'aarch64-unknown-linux-gnu'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-aarch64-linux-gnu
     
     - name: Cache cargo
       uses: actions/cache@v4
@@ -109,89 +80,26 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-${{ matrix.target }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Build release binary
-      run: cargo build --release --target ${{ matrix.target }} --all-features
-      env:
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      run: cargo build --release --all-features
     
-    - name: Create archive (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Create archive
       run: |
         mkdir -p release
-        cp target/${{ matrix.target }}/release/sealbox-server release/
-        cp target/${{ matrix.target }}/release/sealbox-cli release/
+        cp target/release/sealbox-server release/
+        cp target/release/sealbox-cli release/
         cp README.md LICENSE release/
         cd release
-        tar czf ../sealbox-${{ needs.create-release.outputs.version }}-${{ matrix.name }}.tar.gz *
+        tar czf ../sealbox-${{ needs.create-release.outputs.version }}-linux-x86_64.tar.gz *
     
-    - name: Create archive (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        mkdir release
-        cp target/${{ matrix.target }}/release/sealbox-server.exe release/
-        cp target/${{ matrix.target }}/release/sealbox-cli.exe release/
-        cp README.md release/
-        cp LICENSE release/
-        cd release
-        7z a ../sealbox-${{ needs.create-release.outputs.version }}-${{ matrix.name }}.zip *
-    
-    - name: Upload release asset (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Upload release asset
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./sealbox-${{ needs.create-release.outputs.version }}-${{ matrix.name }}.tar.gz
-        asset_name: sealbox-${{ needs.create-release.outputs.version }}-${{ matrix.name }}.tar.gz
+        asset_path: ./sealbox-${{ needs.create-release.outputs.version }}-linux-x86_64.tar.gz
+        asset_name: sealbox-${{ needs.create-release.outputs.version }}-linux-x86_64.tar.gz
         asset_content_type: application/gzip
-    
-    - name: Upload release asset (Windows)
-      if: matrix.os == 'windows-latest'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./sealbox-${{ needs.create-release.outputs.version }}-${{ matrix.name }}.zip
-        asset_name: sealbox-${{ needs.create-release.outputs.version }}-${{ matrix.name }}.zip
-        asset_content_type: application/zip
-
-  docker:
-    name: Build and Push Docker Image
-    needs: create-release
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ghcr.io/${{ github.repository }}
-        tags: |
-          type=ref,event=tag
-          type=raw,value=latest,enable={{is_default_branch}}
-    
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max

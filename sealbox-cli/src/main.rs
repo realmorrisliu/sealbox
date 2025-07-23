@@ -105,8 +105,7 @@ async fn main() -> Result<()> {
                     );
                 } else {
                     println!(
-                        "
-Server returned an error ({})",
+                        "Server returned an error ({})",
                         status
                     );
                     println!("{}", body);

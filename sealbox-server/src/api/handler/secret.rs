@@ -27,7 +27,30 @@ pub(crate) struct GetSecretQueryParams {
     version: Option<i32>,
 }
 
-// GET /{version}/secrets/{secret_key}
+/// 获取秘密数据的API处理函数
+/// 
+/// # Arguments
+/// 
+/// * `state` - 应用状态，包含数据库连接池和仓库实例
+/// * `params` - 路径参数，包含API版本和秘密键名
+/// * `query` - 查询参数，可选的版本号用于获取特定版本
+/// 
+/// # Returns
+/// 
+/// 返回加密的秘密数据，包含加密内容和加密的数据密钥
+/// 
+/// # Errors
+/// 
+/// * `SealboxError::SecretNotFound` - 当秘密不存在时
+/// * `SealboxError::InvalidApiVersion` - 当API版本不支持时
+/// 
+/// # HTTP Route
+/// 
+/// `GET /{version}/secrets/{secret_key}[?version=N]`
+/// 
+/// # Security Notes
+/// 
+/// 如果未指定版本号，返回最新版本。返回的数据仍然是加密状态，需要客户端使用对应的私钥解密。
 pub(crate) async fn get(
     State(state): State<AppState>,
     Path(params): Path<SecretPathParams>,
