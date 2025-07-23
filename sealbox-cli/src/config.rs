@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -37,14 +40,17 @@ pub enum OutputFormat {
 
 impl Default for Config {
     fn default() -> Self {
+        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let config_dir = home_dir.join(".config").join("sealbox");
+
         Self {
             server: ServerConfig {
                 url: "http://127.0.0.1:8080".to_string(),
                 token: String::new(),
             },
             keys: KeyConfig {
-                public_key_path: PathBuf::from("public_key.pem"),
-                private_key_path: PathBuf::from("private_key.pem"),
+                public_key_path: config_dir.join("public_key.pem"),
+                private_key_path: config_dir.join("private_key.pem"),
             },
             output: OutputConfig {
                 format: OutputFormat::Table,
@@ -70,6 +76,9 @@ impl Config {
         // Apply environment variable overrides
         config.apply_env_overrides();
 
+        // Expand home directory paths
+        config.expand_paths()?;
+
         Ok(config)
     }
 
@@ -94,14 +103,14 @@ impl Config {
     pub fn config_file_path() -> Result<PathBuf> {
         let home_dir = dirs::home_dir().context("Unable to determine home directory")?;
 
-        Ok(home_dir.join(".sealbox").join("config.toml"))
+        Ok(home_dir.join(".config").join("sealbox").join("config.toml"))
     }
 
     #[allow(dead_code)]
     pub fn config_dir() -> Result<PathBuf> {
         let home_dir = dirs::home_dir().context("Unable to determine home directory")?;
 
-        Ok(home_dir.join(".sealbox"))
+        Ok(home_dir.join(".config").join("sealbox"))
     }
 
     fn apply_env_overrides(&mut self) {
@@ -140,6 +149,22 @@ impl Config {
 
         Ok(())
     }
+
+    fn expand_paths(&mut self) -> Result<()> {
+        self.keys.public_key_path = Self::expand_home_dir(&self.keys.public_key_path)?;
+        self.keys.private_key_path = Self::expand_home_dir(&self.keys.private_key_path)?;
+        Ok(())
+    }
+
+    fn expand_home_dir(path: &Path) -> Result<PathBuf> {
+        if let Some(path_str) = path.to_str() {
+            if let Some(stripped) = path_str.strip_prefix("~/") {
+                let home_dir = dirs::home_dir().context("Unable to determine home directory")?;
+                return Ok(home_dir.join(stripped));
+            }
+        }
+        Ok(path.to_path_buf())
+    }
 }
 
 #[cfg(test)]
@@ -149,42 +174,110 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
+
+        // Should use ~/.config/sealbox for default paths
+        assert!(
+            config
+                .keys
+                .public_key_path
+                .to_string_lossy()
+                .contains(".config/sealbox")
+        );
+        assert!(
+            config
+                .keys
+                .private_key_path
+                .to_string_lossy()
+                .contains(".config/sealbox")
+        );
         assert_eq!(config.server.url, "http://127.0.0.1:8080");
-        assert_eq!(config.keys.public_key_path, PathBuf::from("public_key.pem"));
-        assert_eq!(
-            config.keys.private_key_path,
-            PathBuf::from("private_key.pem")
+        assert_eq!(config.server.token, "");
+    }
+
+    #[test]
+    fn test_expand_home_dir() {
+        let test_path = PathBuf::from("~/test/path");
+        let expanded = Config::expand_home_dir(&test_path).unwrap();
+
+        // Should expand ~ to home directory
+        assert!(!expanded.to_string_lossy().starts_with("~"));
+        assert!(expanded.to_string_lossy().ends_with("test/path"));
+    }
+
+    #[test]
+    fn test_expand_paths() {
+        let mut config = Config {
+            server: ServerConfig {
+                url: "http://test.com".to_string(),
+                token: "test-token".to_string(),
+            },
+            keys: KeyConfig {
+                public_key_path: PathBuf::from("~/test/public.pem"),
+                private_key_path: PathBuf::from("~/test/private.pem"),
+            },
+            output: OutputConfig {
+                format: OutputFormat::Json,
+            },
+        };
+
+        config.expand_paths().unwrap();
+
+        // Should expand ~ in all key paths
+        assert!(
+            !config
+                .keys
+                .public_key_path
+                .to_string_lossy()
+                .starts_with("~")
+        );
+        assert!(
+            !config
+                .keys
+                .private_key_path
+                .to_string_lossy()
+                .starts_with("~")
         );
     }
 
     #[test]
-    fn test_env_overrides() {
+    fn test_apply_env_overrides() {
+        let mut config = Config::default();
+
+        // Set environment variables
         unsafe {
-            std::env::set_var("SEALBOX_URL", "https://example.com");
-            std::env::set_var("SEALBOX_TOKEN", "test-token");
+            std::env::set_var("SEALBOX_URL", "http://env-test.com");
+            std::env::set_var("SEALBOX_TOKEN", "env-token");
+            std::env::set_var("SEALBOX_OUTPUT_FORMAT", "json");
         }
 
-        let mut config = Config::default();
         config.apply_env_overrides();
 
-        assert_eq!(config.server.url, "https://example.com");
-        assert_eq!(config.server.token, "test-token");
+        assert_eq!(config.server.url, "http://env-test.com");
+        assert_eq!(config.server.token, "env-token");
+        assert!(matches!(config.output.format, OutputFormat::Json));
 
-        // Clean up environment variables
+        // Clean up
         unsafe {
             std::env::remove_var("SEALBOX_URL");
             std::env::remove_var("SEALBOX_TOKEN");
+            std::env::remove_var("SEALBOX_OUTPUT_FORMAT");
         }
     }
 
     #[test]
-    fn test_config_validation() {
-        let mut config = Config::default();
-        config.server.token = "".to_string();
+    fn test_validate_empty_token() {
+        let config = Config::default();
 
+        // Should fail validation due to empty token
         assert!(config.validate().is_err());
+    }
 
-        config.server.token = "valid-token".to_string();
+    #[test]
+    fn test_validate_with_token() {
+        let mut config = Config::default();
+        config.server.token = "test-token".to_string();
+
+        // Should pass validation
         assert!(config.validate().is_ok());
     }
 }

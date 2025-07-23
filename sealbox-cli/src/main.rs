@@ -89,7 +89,26 @@ enum ConfigCommands {
         value: String,
     },
     /// Initialize configuration
-    Init,
+    Init {
+        /// Server URL
+        #[arg(long)]
+        url: Option<String>,
+        /// Authentication token
+        #[arg(long)]
+        token: Option<String>,
+        /// Public key file path
+        #[arg(long)]
+        public_key: Option<String>,
+        /// Private key file path
+        #[arg(long)]
+        private_key: Option<String>,
+        /// Output format
+        #[arg(long, value_enum)]
+        output: Option<OutputFormatArg>,
+        /// Force overwrite existing configuration
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]

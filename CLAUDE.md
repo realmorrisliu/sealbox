@@ -55,11 +55,11 @@ export LISTEN_ADDR=127.0.0.1:8080
 ```
 
 ### Testing and Quality
-The project includes comprehensive unit tests (69 total: 51 server + 18 CLI) covering encryption, decryption, storage, API functionality, and CLI operations.
+The project includes comprehensive unit tests (74 total: 51 server + 23 CLI) covering encryption, decryption, storage, API functionality, and CLI operations.
 
 ```bash
 # Run all tests
-cargo test
+cargo test --workspace
 
 # Run tests in specific package
 cargo test -p sealbox-server
@@ -71,18 +71,23 @@ cargo test -- --nocapture
 # Format code
 cargo fmt
 
-# Lint code
-cargo clippy
+# Lint code (strict mode - zero warnings)
+cargo clippy --all-targets --all-features --workspace -- -D warnings
 ```
 
 ### CLI Usage
 The CLI provides comprehensive secret management with local encryption/decryption:
 
 ```bash
-# Initialize configuration
-./target/release/sealbox-cli config init
+# Initialize configuration with parameters (recommended)
+./target/release/sealbox-cli config init \
+    --url http://localhost:8080 \
+    --token your-secure-token \
+    --public-key ~/.config/sealbox/public_key.pem \
+    --private-key ~/.config/sealbox/private_key.pem \
+    --output table
 
-# Generate RSA key pair
+# Generate RSA key pair (automatically saved to ~/.config/sealbox/)
 ./target/release/sealbox-cli key generate
 
 # Register public key with server
@@ -114,6 +119,8 @@ The CLI uses TOML configuration files with environment variable overrides:
 - Config file: `~/.config/sealbox/config.toml`
 - Supports server URL, authentication tokens, key paths, and output preferences
 - Command-line arguments override config file and environment variables
+- Automatic `~/` path expansion for key file paths
+- Can be initialized with parameters or interactively
 
 ## Key Dependencies
 
@@ -145,19 +152,23 @@ All endpoints require `Authorization: Bearer <token>` header:
 ## Development Status
 
 ### Completed Features
-- ✅ Complete CLI architecture with configuration management
+- ✅ Complete CLI architecture with robust configuration management
 - ✅ Full key management command set (generate, register, list, rotate, status)
 - ✅ Secret management with local encryption/decryption
 - ✅ Batch operations (import/export functionality framework)
 - ✅ All Chinese text converted to English for global compatibility
-- ✅ Zero clippy warnings across entire codebase
-- ✅ Comprehensive test coverage (69 test cases)
+- ✅ Zero clippy warnings across entire codebase (strict linting)
+- ✅ Comprehensive test coverage (74 test cases)
+- ✅ Parameter-driven config initialization with interactive fallback
+- ✅ Automatic path expansion and standardized file locations
+- ✅ Production-ready code quality and error handling
 
 ### Development Priorities
-1. **Expand integration testing** - Add end-to-end API testing
-2. Add comprehensive logging and monitoring
-3. Implement TTL cleanup mechanism
-4. Add OpenAPI documentation specification
+1. **JWT authentication** - Replace static token auth with JWT
+2. **TTL cleanup mechanism** - Automatic expiration of secrets
+3. **Integration testing** - Add end-to-end API testing
+4. **Monitoring and logging** - Add structured logging and metrics
+5. **Multi-node support** - Raft replication for high availability
 
 ## CI/CD Pipeline
 
