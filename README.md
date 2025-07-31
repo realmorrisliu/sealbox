@@ -11,6 +11,7 @@ Sealbox is a simple yet secure secret management solution designed for developer
 ## Features
 
 - 🔐 **Server-side encryption** - Secrets are encrypted using envelope encryption on the server
+- ⏰ **TTL Support** - Automatic expiration with lazy cleanup strategy
 - 📦 **Single binary** - No complex setup, just run the executable
 - 🗃️ **SQLite storage** - Embedded database, no external dependencies
 - 🔑 **Secret versioning** - Keep track of secret history
@@ -66,6 +67,9 @@ export LISTEN_ADDR=127.0.0.1:8080
 # Store a secret
 ./target/release/sealbox-cli secret set mypassword "super-secret-value"
 
+# Store a temporary secret (expires in 1 hour)
+./target/release/sealbox-cli secret set temp-token "abc123" --ttl 3600
+
 # Retrieve a secret
 ./target/release/sealbox-cli secret get mypassword
 
@@ -96,10 +100,13 @@ The CLI uses TOML configuration files with environment variable overrides:
 Sealbox implements server-side envelope encryption with client-side decryption:
 
 1. **User Key Pair**: Each user generates an RSA key pair locally
-2. **Server Encryption**: Server receives plaintext and encrypts using envelope encryption
-3. **Data Keys**: Random AES keys encrypt individual secrets
-4. **Envelope Encryption**: Data keys are encrypted with the user's public key
-5. **Client Decryption**: Only clients with the private key can decrypt stored secrets
+2. **Client Sends Plaintext**: CLI sends secrets as plaintext to the server over HTTPS
+3. **Server-Side Encryption**: Server encrypts secrets using envelope encryption
+4. **Data Keys**: Random AES-256-GCM keys encrypt individual secrets
+5. **Envelope Encryption**: Data keys are encrypted with the user's RSA public key
+6. **Client Decryption**: Only clients with the private key can decrypt retrieved secrets
+
+**Important**: While secrets are sent as plaintext to the server, only the user with the corresponding private key can decrypt stored data.
 
 ## How It Works
 
@@ -123,9 +130,12 @@ All endpoints require `Authorization: Bearer <token>` header.
 # Store a secret
 PUT /v1/secrets/:key
 Content-Type: application/json
-{ "secret": "value", "ttl": 3600 }
+{ 
+  "secret": "your-secret-value",
+  "ttl": 3600  # Optional: expires in 3600 seconds (1 hour)
+}
 
-# Retrieve a secret (latest version)
+# Retrieve a secret (latest version, automatically checks expiration)
 GET /v1/secrets/:key
 
 # Retrieve specific version
@@ -134,6 +144,12 @@ GET /v1/secrets/:key?version=1
 # Delete a secret version
 DELETE /v1/secrets/:key?version=1
 ```
+
+### TTL Behavior
+- **TTL**: Time-to-live in seconds from creation time
+- **Lazy Cleanup**: Expired secrets are deleted when accessed, not immediately when they expire
+- **Startup Cleanup**: Server removes expired secrets on startup
+- **Manual Cleanup**: Use admin endpoint to batch-remove expired secrets
 
 ### Key Management
 ```bash
@@ -147,6 +163,18 @@ GET /v1/master-key
 
 # Rotate keys
 PUT /v1/master-key
+```
+
+### Administration
+```bash
+# Manually clean up all expired secrets
+DELETE /v1/admin/cleanup-expired
+
+# Response:
+{
+  "deleted_count": 15,
+  "cleaned_at": 1640995200
+}
 ```
 
 ## Development
@@ -204,8 +232,8 @@ cargo audit
 
 ## Roadmap
 
+- [x] **TTL Support** - Automatic expiration with lazy cleanup strategy ✅
 - [ ] JWT authentication with replay protection
-- [ ] Automatic TTL expiration cleanup  
 - [ ] Web UI for secret management
 - [ ] Docker and Kubernetes deployment guides
 - [ ] Multi-node replication support

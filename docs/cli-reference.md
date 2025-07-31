@@ -139,17 +139,28 @@ sealbox-cli secret set <key> <value> [OPTIONS]
 - `<value>` - Secret value (use `-` to read from stdin)
 
 **Options:**
-- `--ttl <seconds>` - Time-to-live in seconds
+- `--ttl <seconds>` - Time-to-live in seconds (expires after creation time)
 - `--url <url>` - Server URL (overrides config)
 - `--token <token>` - Authentication token (overrides config)
 
+**TTL Behavior:**
+- Expired secrets are automatically deleted when accessed (lazy cleanup)
+- Server also cleans expired secrets on startup
+- Use admin cleanup endpoint for immediate batch removal
+
 **Examples:**
 ```bash
-# Store a simple secret
+# Store a simple secret (permanent)
 sealbox-cli secret set db_password "my-secret-password"
 
-# Store with TTL (expires in 1 hour)
+# Store with TTL (expires in 1 hour = 3600 seconds)
 sealbox-cli secret set temp_token "abc123" --ttl 3600
+
+# Store session data (expires in 30 minutes)
+sealbox-cli secret set session_data "user-session-123" --ttl 1800
+
+# Store short-lived API key (expires in 5 minutes)
+sealbox-cli secret set quick_key "temp-key-456" --ttl 300
 
 # Read secret from stdin
 echo "my-secret" | sealbox-cli secret set api_key -
@@ -171,6 +182,10 @@ sealbox-cli secret get <key> [OPTIONS]
 - `--url <url>` - Server URL (overrides config)
 - `--token <token>` - Authentication token (overrides config)
 
+**TTL Behavior:**
+- If the secret has expired, it will be automatically deleted and you'll get a "Secret not found" error
+- This is the lazy cleanup mechanism in action
+
 **Examples:**
 ```bash
 # Get latest version
@@ -178,6 +193,9 @@ sealbox-cli secret get db_password
 
 # Get specific version
 sealbox-cli secret get db_password --version 2
+
+# Expired secret will return "Secret not found"
+sealbox-cli secret get expired_token
 ```
 
 ### `secret list`
@@ -259,6 +277,41 @@ sealbox-cli secret export [OPTIONS]
 - `--format <format>` - Output format: `json` (default)
 - `--url <url>` - Server URL (overrides config)
 - `--token <token>` - Authentication token (overrides config)
+
+## TTL and Administration
+
+### TTL (Time-To-Live) Overview
+
+TTL allows secrets to automatically expire and be deleted:
+
+**How it works:**
+- Set TTL in seconds when storing secrets with `--ttl <seconds>`
+- Expired secrets are deleted when accessed (lazy cleanup)
+- Server cleans expired secrets on startup
+- Manual cleanup available via admin API
+
+**Use cases:**
+- **Temporary tokens**: API keys that should expire quickly
+- **Session data**: User sessions with automatic timeout
+- **One-time secrets**: Passwords that should be short-lived
+- **Development**: Temporary configurations for testing
+
+### Manual Cleanup (Admin)
+
+While the CLI doesn't have a direct admin command, you can manually trigger cleanup:
+
+```bash
+# Using curl to trigger manual cleanup
+curl -X DELETE \
+  -H "Authorization: Bearer your-token" \
+  http://localhost:8080/v1/admin/cleanup-expired
+
+# Response shows cleanup statistics
+{
+  "deleted_count": 15,
+  "cleaned_at": 1640995200
+}
+```
 
 ## Legacy Commands
 

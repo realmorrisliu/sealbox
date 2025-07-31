@@ -114,10 +114,45 @@ Now you can securely store secrets:
 
 ## Understanding the Security Model
 
-1. **Your private key never leaves your machine**
-2. **Secrets are encrypted locally** before being sent to the server
-3. **The server cannot decrypt your secrets** - it only stores encrypted data
-4. **Only you can decrypt** your secrets using your private key
+Sealbox uses **server-side envelope encryption** with **client-side decryption**:
+
+1. **Your private key never leaves your machine** - Generated and stored locally
+2. **CLI sends plaintext secrets** to the server over HTTPS
+3. **Server encrypts using envelope encryption**:
+   - Random AES-256-GCM key encrypts your secret
+   - Your RSA public key encrypts the AES key
+4. **Server stores encrypted data** - Cannot decrypt without your private key
+5. **Only you can decrypt** secrets when retrieving them using your private key
+
+**Key Point**: While secrets are sent as plaintext to the server, only you can decrypt the stored encrypted data.
+
+## TTL (Time-To-Live) Features
+
+Sealbox supports automatic expiration of secrets using TTL:
+
+### How TTL Works
+- **Set TTL**: Specify expiration time in seconds when storing secrets
+- **Lazy Cleanup**: Expired secrets are deleted when you try to access them
+- **Startup Cleanup**: Server removes expired secrets when it starts
+- **Manual Cleanup**: Use admin API to batch-remove expired secrets
+
+### TTL Examples
+```bash
+# Store a temporary API token (expires in 1 hour)
+./target/release/sealbox-cli secret set api_token "temp-token-123" --ttl 3600
+
+# Store a session key (expires in 30 minutes)
+./target/release/sealbox-cli secret set session_key "session-abc" --ttl 1800
+
+# Permanent secret (no TTL)
+./target/release/sealbox-cli secret set permanent_key "never-expires"
+```
+
+### TTL Behavior Notes
+- **Not Real-Time**: Expired secrets aren't deleted immediately when they expire
+- **Access-Triggered**: Deletion happens when you try to retrieve the expired secret
+- **Automatic**: No manual intervention needed for cleanup
+- **Storage Efficient**: Expired data is eventually removed from disk
 
 ## Next Steps
 
@@ -142,3 +177,8 @@ Now you can securely store secrets:
 - Use environment variables if needed: `SEALBOX_URL`, `SEALBOX_TOKEN`
 - Config file location: `~/.config/sealbox/config.toml`
 - Re-initialize if needed: `./target/release/sealbox-cli config init --force`
+
+### TTL-Related Issues
+- **Secret disappeared**: It may have expired, check if you set a TTL
+- **Unexpected cleanup**: Server cleans expired secrets on startup
+- **Storage not shrinking**: Use manual cleanup: `curl -X DELETE -H "Authorization: Bearer $TOKEN" $URL/v1/admin/cleanup-expired`
