@@ -16,7 +16,7 @@ pub(crate) use self::sqlite::{SqliteMasterKeyRepo, SqliteSecretRepo, create_db_c
 
 mod sqlite;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Secret {
     pub namespace: String,           // Secret namespace, used for logical grouping
     pub key: String,                 // Secret key identifier
@@ -121,10 +121,12 @@ impl Secret {
 }
 
 pub(crate) trait SecretRepo: Send + Sync {
-    fn get_secret(&self, conn: &rusqlite::Connection, key: &str) -> Result<Secret>;
+    /// Get latest secret with atomic lazy cleanup
+    fn get_secret(&self, conn: &mut rusqlite::Connection, key: &str) -> Result<Secret>;
+    /// Get specific version secret with atomic lazy cleanup
     fn get_secret_by_version(
         &self,
-        conn: &rusqlite::Connection,
+        conn: &mut rusqlite::Connection,
         key: &str,
         version: i32,
     ) -> Result<Secret>;

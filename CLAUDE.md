@@ -168,10 +168,15 @@ All endpoints require `Authorization: Bearer <token>` header:
 - ✅ Batch operations (import/export functionality framework)
 - ✅ All Chinese text converted to English for global compatibility
 - ✅ Zero clippy warnings across entire codebase (strict linting)
-- ✅ Comprehensive test coverage (79 test cases including TTL functionality)
+- ✅ Comprehensive test coverage (75 test cases including TTL functionality)
 - ✅ Parameter-driven config initialization with interactive fallback
 - ✅ Automatic path expansion and standardized file locations
 - ✅ Production-ready code quality and error handling
+- ✅ **Optimized database layer** - serde_rusqlite integration for automatic serialization
+  - Upgraded rusqlite from 0.36.0 to 0.37.0 for compatibility
+  - Implemented serde_rusqlite for automatic Secret struct mapping
+  - Follows official best practices: query_and_then() + from_row() for single records, from_rows() for batch queries
+  - Eliminated manual field mapping code, improving maintainability and type safety
 
 ### Development Priorities
 1. **JWT authentication** - Replace static token auth with JWT

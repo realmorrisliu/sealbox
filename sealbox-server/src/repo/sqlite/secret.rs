@@ -1,4 +1,4 @@
-use rusqlite::OptionalExtension;
+use serde_rusqlite::*;
 use tracing::info;
 use uuid::Uuid;
 
@@ -32,37 +32,76 @@ impl SqliteSecretRepo {
 
         Ok(())
     }
+}
 
-    /// Delete an expired secret immediately when detected during retrieval
-    fn delete_expired_secret(&self, conn: &rusqlite::Connection, key: &str, version: i32) -> Result<()> {
-        info!("delete_expired_secret: key={}, version={}", key, version);
-        conn.execute(
-            "DELETE FROM secrets WHERE key = ?1 AND version = ?2",
-            (key, version),
-        )?;
-        Ok(())
-    }
-
-    /// Check if a secret is expired and delete it if so
-    fn check_and_cleanup_expired(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<Option<Secret>> {
+impl SqliteSecretRepo {
+    /// Helper function to check expiry and clean up expired secrets atomically
+    fn check_and_cleanup_expired(
+        tx: &rusqlite::Transaction,
+        secret: &Secret,
+    ) -> Result<Option<Secret>> {
         if let Some(expires_at) = secret.expires_at {
             let now = time::OffsetDateTime::now_utc().unix_timestamp();
             if expires_at < now {
-                // Secret has expired, delete it immediately
-                self.delete_expired_secret(conn, &secret.key, secret.version)?;
-                info!("Secret '{}' version {} has expired and been deleted", secret.key, secret.version);
+                // Secret has expired, delete it atomically within transaction
+                tx.execute(
+                    "DELETE FROM secrets WHERE key = ?1 AND version = ?2",
+                    [&secret.key, &secret.version.to_string()],
+                )?;
+                info!(
+                    "Secret '{}' version {} has expired and been deleted",
+                    secret.key, secret.version
+                );
                 return Ok(None);
             }
         }
         Ok(Some(secret.clone()))
     }
+
+    /// Common implementation for getting secrets with atomic cleanup
+    fn get_secret_with_query(
+        &self,
+        conn: &mut rusqlite::Connection,
+        query: &str,
+        params: impl rusqlite::Params,
+        key: &str,
+    ) -> Result<Secret> {
+        let tx = conn.transaction()?;
+
+        let row = {
+            let mut stmt = tx.prepare_cached(query)?;
+            // Using query_and_then() and from_row() as shown in the official example
+            let mut rows = stmt.query_and_then(params, from_row::<Secret>)?;
+            rows.next()
+                .transpose()
+                .map_err(|e| SealboxError::DatabaseError(e.to_string()))?
+        };
+
+        match row {
+            Some(secret) => match Self::check_and_cleanup_expired(&tx, &secret)? {
+                Some(valid_secret) => {
+                    tx.commit()?;
+                    Ok(valid_secret)
+                }
+                None => {
+                    tx.commit()?;
+                    Err(SealboxError::SecretNotFound(key.to_string()))
+                }
+            },
+            None => {
+                tx.commit()?;
+                Err(SealboxError::SecretNotFound(key.to_string()))
+            }
+        }
+    }
 }
 
 impl SecretRepo for SqliteSecretRepo {
-    fn get_secret(&self, conn: &rusqlite::Connection, key: &str) -> Result<Secret> {
+    fn get_secret(&self, conn: &mut rusqlite::Connection, key: &str) -> Result<Secret> {
         info!("get_secret: key={}", key);
 
-        let mut stmt = conn.prepare(
+        self.get_secret_with_query(
+            conn,
             "SELECT
                 namespace,
                 key,
@@ -78,45 +117,21 @@ impl SecretRepo for SqliteSecretRepo {
             WHERE key = ?1
             ORDER BY version DESC
             LIMIT 1",
-        )?;
-        let row = stmt
-            .query_one([key], |row| {
-                Ok(Secret {
-                    namespace: row.get(0)?,
-                    key: row.get(1)?,
-                    version: row.get(2)?,
-                    encrypted_data: row.get(3)?,
-                    encrypted_data_key: row.get(4)?,
-                    master_key_id: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                    expires_at: row.get(8)?,
-                    metadata: row.get(9)?,
-                })
-            })
-            .optional()?;
-
-        match row {
-            Some(secret) => {
-                // Check if the secret is expired and clean it up if necessary
-                match self.check_and_cleanup_expired(conn, &secret)? {
-                    Some(valid_secret) => Ok(valid_secret),
-                    None => Err(SealboxError::SecretNotFound(key.to_string())),
-                }
-            }
-            None => Err(SealboxError::SecretNotFound(key.to_string())),
-        }
+            [key],
+            key,
+        )
     }
 
     fn get_secret_by_version(
         &self,
-        conn: &rusqlite::Connection,
+        conn: &mut rusqlite::Connection,
         key: &str,
         version: i32,
     ) -> Result<Secret> {
         info!("get_secret_by_version: key={}, version={}", key, version);
 
-        let mut stmt = conn.prepare(
+        self.get_secret_with_query(
+            conn,
             "SELECT
                 namespace,
                 key,
@@ -131,34 +146,9 @@ impl SecretRepo for SqliteSecretRepo {
             FROM secrets
             WHERE key = ?1 AND version = ?2
             LIMIT 1",
-        )?;
-        let row = stmt
-            .query_one((key, version), |row| {
-                Ok(Secret {
-                    namespace: row.get(0)?,
-                    key: row.get(1)?,
-                    version: row.get(2)?,
-                    encrypted_data: row.get(3)?,
-                    encrypted_data_key: row.get(4)?,
-                    master_key_id: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                    expires_at: row.get(8)?,
-                    metadata: row.get(9)?,
-                })
-            })
-            .optional()?;
-
-        match row {
-            Some(secret) => {
-                // Check if the secret is expired and clean it up if necessary
-                match self.check_and_cleanup_expired(conn, &secret)? {
-                    Some(valid_secret) => Ok(valid_secret),
-                    None => Err(SealboxError::SecretNotFound(key.to_string())),
-                }
-            }
-            None => Err(SealboxError::SecretNotFound(key.to_string())),
-        }
+            (key, version),
+            key,
+        )
     }
 
     fn create_new_version(
@@ -251,22 +241,11 @@ impl SecretRepo for SqliteSecretRepo {
             FROM secrets
             WHERE master_key_id = ?1",
         )?;
-        let secrets: Vec<Secret> = stmt
-            .query_map([master_key_id], |row| {
-                Ok(Secret {
-                    namespace: row.get(0)?,
-                    key: row.get(1)?,
-                    version: row.get(2)?,
-                    encrypted_data: row.get(3)?,
-                    encrypted_data_key: row.get(4)?,
-                    master_key_id: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                    expires_at: row.get(8)?,
-                    metadata: row.get(9)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+        // Using query() and from_rows(), the most efficient way as shown in the official example
+        let rows = stmt.query([master_key_id])?;
+        let secrets: Vec<Secret> = from_rows::<Secret>(rows)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| SealboxError::DatabaseError(e.to_string()))?;
         Ok(secrets)
     }
 
@@ -372,7 +351,7 @@ mod tests {
 
         // Get secret back
         let retrieved_secret = repo
-            .get_secret(&conn_mut, secret_key)
+            .get_secret(&mut conn_mut, secret_key)
             .expect("Should retrieve secret");
 
         assert_eq!(created_secret.key, retrieved_secret.key);
@@ -393,7 +372,8 @@ mod tests {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
 
-        let result = repo.get_secret(&conn, "nonexistent-key");
+        let mut conn = conn;
+        let result = repo.get_secret(&mut conn, "nonexistent-key");
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -439,7 +419,7 @@ mod tests {
 
         // Get latest version (should be v2)
         let latest = repo
-            .get_secret(&conn_mut, secret_key)
+            .get_secret(&mut conn_mut, secret_key)
             .expect("Should get latest version");
         assert_eq!(latest.version, 2);
         assert_eq!(latest.encrypted_data, secret_v2.encrypted_data);
@@ -477,7 +457,7 @@ mod tests {
 
         // Get specific version
         let retrieved_v1 = repo
-            .get_secret_by_version(&conn_mut, secret_key, 1)
+            .get_secret_by_version(&mut conn_mut, secret_key, 1)
             .expect("Should get version 1");
 
         assert_eq!(retrieved_v1.version, 1);
@@ -489,7 +469,8 @@ mod tests {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
 
-        let result = repo.get_secret_by_version(&conn, "nonexistent-key", 1);
+        let mut conn = conn;
+        let result = repo.get_secret_by_version(&mut conn, "nonexistent-key", 1);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -533,12 +514,12 @@ mod tests {
             .expect("Should delete version 1");
 
         // Version 1 should be gone
-        let result = repo.get_secret_by_version(&conn_mut, secret_key, 1);
+        let result = repo.get_secret_by_version(&mut conn_mut, secret_key, 1);
         assert!(result.is_err());
 
         // Version 2 should still exist and be the latest
         let latest = repo
-            .get_secret(&conn_mut, secret_key)
+            .get_secret(&mut conn_mut, secret_key)
             .expect("Should get latest version");
         assert_eq!(latest.version, 2);
         assert_eq!(latest.encrypted_data, secret_v2.encrypted_data);
@@ -624,7 +605,7 @@ mod tests {
 
         // Verify the update
         let updated_secret = repo
-            .get_secret(&conn_mut, "test-secret")
+            .get_secret(&mut conn_mut, "test-secret")
             .expect("Should retrieve updated secret");
 
         assert_eq!(updated_secret.master_key_id, new_master_key.id);
@@ -657,7 +638,7 @@ mod tests {
 
         // Retrieve and verify TTL is preserved
         let retrieved = repo
-            .get_secret(&conn_mut, "ttl-secret")
+            .get_secret(&mut conn_mut, "ttl-secret")
             .expect("Should retrieve secret");
         assert_eq!(retrieved.expires_at, secret.expires_at);
     }
@@ -684,7 +665,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         // Try to retrieve the expired secret
-        let result = repo.get_secret(&conn_mut, "expired-secret");
+        let result = repo.get_secret(&mut conn_mut, "expired-secret");
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -715,7 +696,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         // Try to retrieve the expired secret by version
-        let result = repo.get_secret_by_version(&conn_mut, "expired-secret-v", secret.version);
+        let result = repo.get_secret_by_version(&mut conn_mut, "expired-secret-v", secret.version);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -786,20 +767,20 @@ mod tests {
 
         // Verify that permanent and long-lived secrets are still retrievable
         let permanent = repo
-            .get_secret(&conn_mut, "permanent")
+            .get_secret(&mut conn_mut, "permanent")
             .expect("Permanent secret should still exist");
         assert_eq!(permanent.key, "permanent");
 
         let long_lived = repo
-            .get_secret(&conn_mut, "long-lived")
+            .get_secret(&mut conn_mut, "long-lived")
             .expect("Long-lived secret should still exist");
         assert_eq!(long_lived.key, "long-lived");
 
         // Verify expired secrets are gone
-        let expired1_result = repo.get_secret(&conn_mut, "expired1");
+        let expired1_result = repo.get_secret(&mut conn_mut, "expired1");
         assert!(expired1_result.is_err());
 
-        let expired2_result = repo.get_secret(&conn_mut, "expired2");
+        let expired2_result = repo.get_secret(&mut conn_mut, "expired2");
         assert!(expired2_result.is_err());
     }
 
@@ -835,9 +816,9 @@ mod tests {
         assert_eq!(deleted_count, 0);
 
         // All secrets should still be retrievable
-        repo.get_secret(&conn_mut, "permanent")
+        repo.get_secret(&mut conn_mut, "permanent")
             .expect("Permanent secret should still exist");
-        repo.get_secret(&conn_mut, "long-lived")
+        repo.get_secret(&mut conn_mut, "long-lived")
             .expect("Long-lived secret should still exist");
     }
 }

@@ -58,15 +58,17 @@ pub(crate) async fn get(
 ) -> Result<SealboxResponse> {
     match params.version() {
         Version::V1 => {
-            let conn = state.conn_pool.lock()?;
+            let mut conn = state.conn_pool.lock()?;
+            
             let secret = match query.version {
                 Some(version) => {
                     state
                         .secret_repo
-                        .get_secret_by_version(&conn, &params.secret_key(), version)?
+                        .get_secret_by_version(&mut conn, &params.secret_key(), version)?
                 }
-                None => state.secret_repo.get_secret(&conn, &params.secret_key())?,
+                None => state.secret_repo.get_secret(&mut conn, &params.secret_key())?,
             };
+            
             Ok(SealboxResponse::Json(json!(secret)))
         }
         _ => Err(SealboxError::InvalidApiVersion),

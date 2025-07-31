@@ -11,11 +11,12 @@ axum = { version = "0.8", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_rusqlite = "0.40.0"
 serde_with = "3"
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-rusqlite = { version = "0.36.0", features = ["bundled", "uuid"] }
+rusqlite = { version = "0.37.0", features = ["bundled", "uuid"] }
 rsa = { version = "0.9", features = ["pem"] }
 rand = "0.8"
 aes-gcm = "0.10"
