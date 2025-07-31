@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use tracing::info;
 
 use crate::{
     config::SealboxConfig,
@@ -23,11 +24,29 @@ impl AppState {
         SqliteSecretRepo::init_table(&conn)?;
         SqliteMasterKeyRepo::init_table(&conn)?;
 
-        Ok(Self {
+        let state = Self {
             config: Arc::new(config.clone()),
             conn_pool: Arc::new(Mutex::new(conn)),
             secret_repo: Arc::new(SqliteSecretRepo {}),
             master_key_repo: Arc::new(SqliteMasterKeyRepo {}),
-        })
+        };
+
+        // Perform startup cleanup of expired secrets
+        state.startup_cleanup()?;
+
+        Ok(state)
+    }
+
+    /// Clean up expired secrets during application startup
+    fn startup_cleanup(&self) -> Result<()> {
+        info!("Performing startup cleanup of expired secrets...");
+        let conn = self.conn_pool.lock()?;
+        let deleted_count = self.secret_repo.cleanup_expired_secrets(&conn)?;
+        if deleted_count > 0 {
+            info!("Startup cleanup completed: removed {} expired secrets", deleted_count);
+        } else {
+            info!("Startup cleanup completed: no expired secrets found");
+        }
+        Ok(())
     }
 }

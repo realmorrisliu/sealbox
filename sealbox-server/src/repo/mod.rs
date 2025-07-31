@@ -151,6 +151,8 @@ pub(crate) trait SecretRepo: Send + Sync {
     ) -> Result<Vec<Secret>>;
     /// Update the master_key_id, encrypted_data_key, and updated_at fields for a list of secrets in a single transaction.
     fn update_secret_master_key(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()>;
+    /// Batch delete all expired secrets and return the count of deleted records.
+    fn cleanup_expired_secrets(&self, conn: &rusqlite::Connection) -> Result<usize>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

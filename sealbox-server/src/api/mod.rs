@@ -18,7 +18,7 @@ use tracing::{error, info_span};
 use crate::{
     api::{
         auth::static_auth,
-        handler::{master_key, secret},
+        handler::{admin, master_key, secret},
         state::AppState,
     },
     config::SealboxConfig,
@@ -73,6 +73,10 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             get(master_key::list)
                 .put(master_key::rotate)
                 .post(master_key::create),
+        )
+        .route(
+            "/{version}/admin/cleanup-expired",
+            axum::routing::delete(admin::cleanup_expired),
         )
         .route_layer(from_fn_with_state(state.clone(), static_auth))
         .with_state(state)

@@ -97,6 +97,9 @@ The CLI provides comprehensive secret management by interfacing with the server'
 # Store a secret (sent as plaintext, encrypted by server)
 ./target/release/sealbox-cli secret set mypassword "super-secret-value"
 
+# Store a secret with TTL (expires in 3600 seconds / 1 hour)
+./target/release/sealbox-cli secret set temp-secret "temporary-value" --ttl 3600
+
 # Retrieve and decrypt a secret
 ./target/release/sealbox-cli secret get mypassword
 
@@ -143,12 +146,13 @@ The CLI uses TOML configuration files with environment variable overrides:
 
 All endpoints require `Authorization: Bearer <token>` header:
 
-- `PUT /v1/secrets/:key` - Create secret version
-- `GET /v1/secrets/:key[?version=N]` - Retrieve secret
+- `PUT /v1/secrets/:key` - Create secret version (supports TTL via `ttl` field)
+- `GET /v1/secrets/:key[?version=N]` - Retrieve secret (automatic expiry check)
 - `DELETE /v1/secrets/:key[?version=N]` - Delete secret version
 - `POST /v1/master-key` - Register public key
 - `GET /v1/master-key` - List public keys
 - `PUT /v1/master-key` - Rotate keys
+- `DELETE /v1/admin/cleanup-expired` - Manual cleanup of expired secrets
 
 ## Development Status
 
@@ -156,20 +160,24 @@ All endpoints require `Authorization: Bearer <token>` header:
 - ✅ Complete CLI architecture with robust configuration management
 - ✅ Full key management command set (generate, register, list, rotate, status)
 - ✅ Secret management with server-side encryption and client-side decryption
+- ✅ **TTL (Time-To-Live) support** - Lazy cleanup with automatic expiration
+  - Secrets can be created with optional TTL (time in seconds)
+  - Expired secrets are automatically deleted when accessed
+  - Manual cleanup API for batch removal of expired secrets
+  - Startup cleanup removes expired secrets on server restart
 - ✅ Batch operations (import/export functionality framework)
 - ✅ All Chinese text converted to English for global compatibility
 - ✅ Zero clippy warnings across entire codebase (strict linting)
-- ✅ Comprehensive test coverage (71 test cases)
+- ✅ Comprehensive test coverage (79 test cases including TTL functionality)
 - ✅ Parameter-driven config initialization with interactive fallback
 - ✅ Automatic path expansion and standardized file locations
 - ✅ Production-ready code quality and error handling
 
 ### Development Priorities
 1. **JWT authentication** - Replace static token auth with JWT
-2. **TTL cleanup mechanism** - Automatic expiration of secrets
-3. **Integration testing** - Add end-to-end API testing
-4. **Monitoring and logging** - Add structured logging and metrics
-5. **Multi-node support** - Raft replication for high availability
+2. **Integration testing** - Add end-to-end API testing
+3. **Monitoring and logging** - Add structured logging and metrics
+4. **Multi-node support** - Raft replication for high availability
 
 ## CI/CD Pipeline
 
