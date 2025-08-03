@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { LanguageSelector } from "@/components/ui/language-selector";
+import { LayeredBackground } from "@/components/ui/layered-background";
+import { SealboxIcon } from "@/components/ui/sealbox-logo";
 import { useAuthStore } from "@/stores/auth";
 import { useConfigStore } from "@/stores/config";
 import { createApiClient } from "@/lib/api";
@@ -49,7 +51,7 @@ function LoginPage() {
     },
   });
 
-  // 如果已经认证，跳转到首页
+  // If already authenticated, redirect to home page
   useEffect(() => {
     if (isAuthenticated) {
       router.navigate({ to: "/" });
@@ -58,15 +60,15 @@ function LoginPage() {
 
   const onSubmit = async (data: LoginForm) => {
     try {
-      // 测试连接 - 使用 readiness 端点来验证服务器状态和认证
+      // Test connection - use readiness endpoint to verify server status and authentication
       const api = createApiClient(data.serverUrl, data.token);
       await api.readiness();
       
-      // 连接成功，保存认证信息
+      // Connection successful, save authentication info
       login(data.token, data.serverUrl);
       setDefaultServerUrl(data.serverUrl);
       
-      // 跳转到首页
+      // Navigate to home page
       router.navigate({ to: "/" });
     } catch (error: any) {
       console.error("Login failed:", error);
@@ -84,67 +86,93 @@ function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="text-center space-y-2 flex-1">
-            <h1 className="text-2xl font-bold">{t('login.title')}</h1>
-            <p className="text-muted-foreground">
-              {t('login.subtitle')}
-            </p>
-          </div>
-          <LanguageSelector />
-        </div>
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="serverUrl">{t('login.serverUrl')}</Label>
-            <Input
-              id="serverUrl"
-              type="url"
-              placeholder={t('login.serverUrlPlaceholder')}
-              {...register("serverUrl")}
-            />
-            {errors.serverUrl && (
-              <Alert variant="destructive" className="py-2">
-                {errors.serverUrl.message}
-              </Alert>
-            )}
+    <LayeredBackground 
+      variant="rich" 
+      texture="dots" 
+      animated={true}
+      className="flex items-center justify-center"
+    >
+      <div className="w-full max-w-md p-4">
+        <Card className="bg-glass-enhanced p-8 space-content animate-slide-up">
+          <div className="flex items-start justify-between mb-6">
+            <div className="space-y-3 flex-1">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-button-primary rounded-xl flex items-center justify-center hover-scale">
+                  <SealboxIcon size="sm" className="text-white" />
+                </div>
+                <h1 className="heading-lg text-gradient">{t('login.title')}</h1>
+              </div>
+              <p className="body-sm text-muted-foreground text-balance">
+                {t('login.subtitle')}
+              </p>
+            </div>
+            <LanguageSelector />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="token">{t('login.token')}</Label>
-            <Input
-              id="token"
-              type="password"
-              placeholder={t('login.tokenPlaceholder')}
-              {...register("token")}
-            />
-            {errors.token && (
-              <Alert variant="destructive" className="py-2">
-                {errors.token.message}
-              </Alert>
-            )}
+          <form onSubmit={handleSubmit(onSubmit)} className="space-content">
+            <div className="space-tight">
+              <Label htmlFor="serverUrl" className="text-sm font-medium">
+                {t('login.serverUrl')}
+              </Label>
+              <Input
+                id="serverUrl"
+                type="url"
+                placeholder={t('login.serverUrlPlaceholder')}
+                className="h-11 bg-background/80 border-border/60 focus:bg-card focus:border-primary/40 transition-all duration-200"
+                {...register("serverUrl")}
+              />
+              {errors.serverUrl && (
+                <Alert variant="destructive" className="py-2 text-sm">
+                  {errors.serverUrl.message}
+                </Alert>
+              )}
+            </div>
+
+            <div className="space-tight">
+              <Label htmlFor="token" className="text-sm font-medium">
+                {t('login.token')}
+              </Label>
+              <Input
+                id="token"
+                type="password"
+                placeholder={t('login.tokenPlaceholder')}
+                className="h-11 bg-background/80 border-border/60 focus:bg-card focus:border-primary/40 transition-all duration-200"
+                {...register("token")}
+              />
+              {errors.token && (
+                <Alert variant="destructive" className="py-2 text-sm">
+                  {errors.token.message}
+                </Alert>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full bg-button-primary text-white button-gradient-hover font-medium"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>{t('login.connecting')}</span>
+                </div>
+              ) : (
+                t('login.connect')
+              )}
+            </Button>
+          </form>
+
+          <div className="p-4 bg-textured-muted rounded-lg border border-border/30 space-tight">
+            <p className="text-sm font-medium text-foreground">{t('login.firstTime')}</p>
+            <ol className="list-decimal list-inside space-minimal text-sm text-muted-foreground">
+              <li>{t('login.steps.start')}</li>
+              <li>{t('login.steps.setToken')}</li>
+              <li>{t('login.steps.enterDetails')}</li>
+            </ol>
           </div>
-
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? t('login.connecting') : t('login.connect')}
-          </Button>
-        </form>
-
-        <div className="text-sm text-muted-foreground space-y-1">
-          <p>{t('login.firstTime')}</p>
-          <ol className="list-decimal list-inside space-y-1 text-xs">
-            <li>{t('login.steps.start')}</li>
-            <li>{t('login.steps.setToken')}</li>
-            <li>{t('login.steps.enterDetails')}</li>
-          </ol>
-        </div>
-      </Card>
-    </div>
+        </Card>
+      </div>
+    </LayeredBackground>
   );
 }

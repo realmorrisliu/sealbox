@@ -73,5 +73,16 @@
     "chinese": "中文",
     "japanese": "日本語",
     "german": "Deutsch"
+  },
+  "theme": {
+    "toggle": "テーマを切り替え",
+    "light": "ライト",
+    "dark": "ダーク",
+    "system": "システム"
+  },
+  "status": {
+    "online": "オンライン",
+    "offline": "オフライン",
+    "checking": "チェック中..."
   }
 }

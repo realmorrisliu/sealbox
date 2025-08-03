@@ -2,11 +2,11 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 interface ConfigState {
-  // UI 设置
+  // UI settings
   theme: "light" | "dark" | "system";
   language: "en" | "zh";
   
-  // 默认配置
+  // Default configuration
   defaultServerUrl: string;
   
   // Actions

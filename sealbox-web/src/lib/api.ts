@@ -26,7 +26,7 @@ export class SealboxApi {
   private token?: string;
 
   constructor(baseUrl: string, token?: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, ""); // 移除尾部斜杠
+    this.baseUrl = baseUrl.replace(/\/$/, ""); // Remove trailing slash
     this.token = token;
   }
 
@@ -80,7 +80,7 @@ export class SealboxApi {
     return response.json();
   }
 
-  // 密钥管理 API
+  // Secret management API
   async listSecrets(): Promise<SecretsListResponse> {
     return this.request<SecretsListResponse>("/v1/secrets");
   }
@@ -103,7 +103,7 @@ export class SealboxApi {
     });
   }
 
-  // 主密钥管理 API
+  // Master key management API
   async listMasterKeys(): Promise<MasterKeysListResponse> {
     return this.request<MasterKeysListResponse>("/v1/master-key");
   }
@@ -122,30 +122,30 @@ export class SealboxApi {
     });
   }
 
-  // 管理员 API
+  // Admin API
   async cleanupExpiredSecrets(): Promise<CleanupExpiredResponse> {
     return this.request<CleanupExpiredResponse>("/v1/admin/cleanup-expired", {
       method: "DELETE",
     });
   }
 
-  // 健康检查
+  // Health check
   async health(): Promise<{ status: string; service: string; timestamp: number }> {
     return this.request<{ status: string; service: string; timestamp: number }>("/healthz/live");
   }
 
-  // 就绪检查
+  // Readiness check
   async readiness(): Promise<{ status: string; service: string; database: string; timestamp: number }> {
     return this.request<{ status: string; service: string; database: string; timestamp: number }>("/healthz/ready");
   }
 }
 
-// 创建默认实例
+// Create default instance
 export const createApiClient = (baseUrl: string, token?: string) => {
   return new SealboxApi(baseUrl, token);
 };
 
-// 用于 React Query 的查询键
+// Query keys for React Query
 export const queryKeys = {
   secrets: ["secrets"] as const,
   secret: (key: string, version?: number) => ["secret", key, version] as const,

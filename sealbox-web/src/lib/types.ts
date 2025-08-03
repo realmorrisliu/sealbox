@@ -1,4 +1,4 @@
-// 与 sealbox-server API 对应的类型定义
+// Type definitions corresponding to sealbox-server API
 
 export interface SecretInfo {
   key: string;
@@ -30,7 +30,7 @@ export interface MasterKey {
   metadata?: string;
 }
 
-// API 请求/响应类型
+// API request/response types
 export interface SecretsListResponse {
   secrets: SecretInfo[];
 }
@@ -53,19 +53,19 @@ export interface CleanupExpiredResponse {
   cleaned_at: number;
 }
 
-// 错误响应类型
+// Error response types
 export interface ApiError {
   error: string;
   message?: string;
 }
 
-// 配置类型
+// Configuration types
 export interface AppConfig {
   serverUrl: string;
   token?: string;
 }
 
-// 认证状态类型
+// Authentication state types
 export interface AuthState {
   isAuthenticated: boolean;
   token?: string;

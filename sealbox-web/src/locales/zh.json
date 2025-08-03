@@ -73,5 +73,16 @@
     "chinese": "中文",
     "japanese": "日本語",
     "german": "Deutsch"
+  },
+  "theme": {
+    "toggle": "切换主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统"
+  },
+  "status": {
+    "online": "在线",
+    "offline": "离线",
+    "checking": "检查中..."
   }
 }
