@@ -5,7 +5,8 @@ use crate::{
     config::SealboxConfig,
     error::Result,
     repo::{
-        MasterKeyRepo, SecretRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+        HealthRepo, MasterKeyRepo, SecretRepo, SqliteHealthRepo, SqliteMasterKeyRepo,
+        SqliteSecretRepo, create_db_connection,
     },
 };
 
@@ -13,6 +14,7 @@ use crate::{
 pub(crate) struct AppState {
     pub(crate) config: Arc<SealboxConfig>,
     pub(crate) conn_pool: Arc<Mutex<rusqlite::Connection>>,
+    pub(crate) health_repo: Arc<dyn HealthRepo>,
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
     pub(crate) master_key_repo: Arc<dyn MasterKeyRepo>,
 }
@@ -27,6 +29,7 @@ impl AppState {
         let state = Self {
             config: Arc::new(config.clone()),
             conn_pool: Arc::new(Mutex::new(conn)),
+            health_repo: Arc::new(SqliteHealthRepo {}),
             secret_repo: Arc::new(SqliteSecretRepo {}),
             master_key_repo: Arc::new(SqliteMasterKeyRepo {}),
         };
@@ -43,7 +46,10 @@ impl AppState {
         let conn = self.conn_pool.lock()?;
         let deleted_count = self.secret_repo.cleanup_expired_secrets(&conn)?;
         if deleted_count > 0 {
-            info!("Startup cleanup completed: removed {} expired secrets", deleted_count);
+            info!(
+                "Startup cleanup completed: removed {} expired secrets",
+                deleted_count
+            );
         } else {
             info!("Startup cleanup completed: no expired secrets found");
         }

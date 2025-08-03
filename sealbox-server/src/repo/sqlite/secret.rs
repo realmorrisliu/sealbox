@@ -278,6 +278,39 @@ impl SecretRepo for SqliteSecretRepo {
         info!("Cleaned up {} expired secrets", deleted_count);
         Ok(deleted_count)
     }
+
+    fn list_secrets(&self, conn: &rusqlite::Connection) -> Result<Vec<crate::repo::SecretInfo>> {
+        info!("list_secrets");
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+
+        let mut stmt = conn.prepare(
+            "SELECT 
+                key,
+                MAX(version) as version,
+                created_at,
+                MAX(updated_at) as updated_at,
+                expires_at
+            FROM secrets 
+            WHERE expires_at IS NULL OR expires_at > ?1
+            GROUP BY key
+            ORDER BY updated_at DESC",
+        )?;
+
+        let secret_infos = stmt
+            .query_map([now], |row| {
+                Ok(crate::repo::SecretInfo {
+                    key: row.get(0)?,
+                    version: row.get(1)?,
+                    created_at: row.get(2)?,
+                    updated_at: row.get(3)?,
+                    expires_at: row.get(4)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| SealboxError::DatabaseError(e.to_string()))?;
+
+        Ok(secret_infos)
+    }
 }
 
 #[cfg(test)]
@@ -820,5 +853,105 @@ mod tests {
             .expect("Permanent secret should still exist");
         repo.get_secret(&mut conn_mut, "long-lived")
             .expect("Long-lived secret should still exist");
+    }
+
+    #[test]
+    fn test_list_secrets() {
+        let conn = setup_test_db();
+        let repo = SqliteSecretRepo;
+        let master_key = create_test_master_key();
+
+        let mut conn_mut = conn;
+
+        // Create several secrets
+        let _secret1 = repo
+            .create_new_version(&mut conn_mut, "secret1", "data1", master_key.clone(), None)
+            .expect("Should create secret1");
+
+        let _secret2 = repo
+            .create_new_version(
+                &mut conn_mut,
+                "secret2",
+                "data2",
+                master_key.clone(),
+                Some(3600),
+            )
+            .expect("Should create secret2 with TTL");
+
+        let _secret3 = repo
+            .create_new_version(&mut conn_mut, "secret3", "data3", master_key.clone(), None)
+            .expect("Should create secret3");
+
+        // Create multiple versions of secret1
+        let _secret1_v2 = repo
+            .create_new_version(&mut conn_mut, "secret1", "data1-v2", master_key, None)
+            .expect("Should create secret1 version 2");
+
+        // List all secrets
+        let secret_list = repo.list_secrets(&conn_mut).expect("Should list secrets");
+
+        // Should return 3 unique secrets (secret1, secret2, secret3)
+        assert_eq!(secret_list.len(), 3);
+
+        // Find secret1 - should have version 2 (latest)
+        let secret1_info = secret_list
+            .iter()
+            .find(|s| s.key == "secret1")
+            .expect("Should find secret1");
+        assert_eq!(secret1_info.version, 2);
+
+        // Find secret2 - should have TTL set
+        let secret2_info = secret_list
+            .iter()
+            .find(|s| s.key == "secret2")
+            .expect("Should find secret2");
+        assert!(secret2_info.expires_at.is_some());
+
+        // All secrets should have valid timestamps
+        for secret_info in &secret_list {
+            assert!(secret_info.created_at > 0);
+            assert!(secret_info.updated_at > 0);
+            assert!(secret_info.updated_at >= secret_info.created_at);
+        }
+    }
+
+    #[test]
+    fn test_list_secrets_excludes_expired() {
+        let conn = setup_test_db();
+        let repo = SqliteSecretRepo;
+        let master_key = create_test_master_key();
+
+        let mut conn_mut = conn;
+
+        // Create a secret that expires immediately
+        let _expired_secret = repo
+            .create_new_version(
+                &mut conn_mut,
+                "expired-secret",
+                "temporary-data",
+                master_key.clone(),
+                Some(1i64), // 1 second
+            )
+            .expect("Should create expired secret");
+
+        // Create a permanent secret
+        let _permanent_secret = repo
+            .create_new_version(
+                &mut conn_mut,
+                "permanent-secret",
+                "permanent-data",
+                master_key,
+                None,
+            )
+            .expect("Should create permanent secret");
+
+        // Wait for the secret to expire
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        // List secrets should only return the permanent one
+        let secret_list = repo.list_secrets(&conn_mut).expect("Should list secrets");
+
+        assert_eq!(secret_list.len(), 1);
+        assert_eq!(secret_list[0].key, "permanent-secret");
     }
 }

@@ -134,6 +134,7 @@ The CLI uses TOML configuration files with environment variable overrides:
 - **rsa**: RSA cryptography implementation
 - **aes-gcm**: AES-GCM symmetric encryption
 - **tokio**: Async runtime
+- **tower-http**: CORS support for web development
 
 ### CLI
 - **clap**: CLI argument parsing and command structure
@@ -142,10 +143,24 @@ The CLI uses TOML configuration files with environment variable overrides:
 - **tabled**: Table formatting for output
 - **anyhow**: Error handling with context
 
+### Web UI (sealbox-web)
+- **React 19**: Modern React framework
+- **TanStack Start**: Full-stack React framework
+- **TanStack Query**: Data fetching and caching
+- **TanStack Router**: File-based routing
+- **Zustand**: Lightweight state management
+- **React Hook Form + Zod**: Form handling and validation
+- **TailwindCSS + shadcn/ui**: Modern design system
+- **date-fns**: Date/time formatting
+
 ## API Endpoints
 
-All endpoints require `Authorization: Bearer <token>` header:
+### Health Check Endpoints (No Authentication Required)
+- `GET /healthz/live` - Liveness probe for Kubernetes
+- `GET /healthz/ready` - Readiness probe with database connection check
 
+### Business Endpoints (Require `Authorization: Bearer <token>` header)
+- `GET /v1/secrets` - List all secrets with metadata (key, version, timestamps, TTL)
 - `PUT /v1/secrets/:key` - Create secret version (supports TTL via `ttl` field)
 - `GET /v1/secrets/:key[?version=N]` - Retrieve secret (automatic expiry check)
 - `DELETE /v1/secrets/:key[?version=N]` - Delete secret version
@@ -166,9 +181,13 @@ All endpoints require `Authorization: Bearer <token>` header:
   - Manual cleanup API for batch removal of expired secrets
   - Startup cleanup removes expired secrets on server restart
 - ✅ Batch operations (import/export functionality framework)
-- ✅ All Chinese text converted to English for global compatibility
+- ✅ **Complete English internationalization** - All text and code in English
+  - All UI components, error messages, and user-facing text in English
+  - All code comments and documentation in English
+  - English locale (enUS) for date formatting
+  - Ready for future i18n implementation
 - ✅ Zero clippy warnings across entire codebase (strict linting)
-- ✅ Comprehensive test coverage (75 test cases including TTL functionality)
+- ✅ Comprehensive test coverage (77 test cases including TTL functionality)
 - ✅ Parameter-driven config initialization with interactive fallback
 - ✅ Automatic path expansion and standardized file locations
 - ✅ Production-ready code quality and error handling
@@ -177,12 +196,31 @@ All endpoints require `Authorization: Bearer <token>` header:
   - Implemented serde_rusqlite for automatic Secret struct mapping
   - Follows official best practices: query_and_then() + from_row() for single records, from_rows() for batch queries
   - Eliminated manual field mapping code, improving maintainability and type safety
+- ✅ **Web UI (sealbox-web)** - Modern React-based web interface
+  - Complete authentication system with Bearer Token
+  - Responsive secret list with TTL status indicators
+  - Real-time expiration warnings and countdown
+  - Secret deletion with confirmation dialogs
+  - Mobile-friendly responsive design
+  - CORS support for development environment
+  - Integration with all existing server APIs
+  - **English-first interface** with modern TailwindCSS + shadcn/ui design
+- ✅ **Kubernetes-standard health checks** - Production-ready monitoring
+  - `/healthz/live` - Liveness probe for service availability
+  - `/healthz/ready` - Readiness probe with database connection testing
+  - No authentication required for health endpoints
+  - Proper HTTP status codes and JSON responses
 
 ### Development Priorities
-1. **JWT authentication** - Replace static token auth with JWT
-2. **Integration testing** - Add end-to-end API testing
-3. **Monitoring and logging** - Add structured logging and metrics
-4. **Multi-node support** - Raft replication for high availability
+1. **i18n Framework** - Implement proper internationalization support
+   - Add react-i18next or similar framework
+   - Create translation files for multiple languages
+   - Add language switching functionality
+2. **Web UI enhancements** - Add secret creation, editing, and master key management
+3. **JWT authentication** - Replace static token auth with JWT
+4. **Integration testing** - Add end-to-end API testing
+5. **Monitoring and logging** - Add structured logging and metrics
+6. **Multi-node support** - Raft replication for high availability
 
 ## CI/CD Pipeline
 

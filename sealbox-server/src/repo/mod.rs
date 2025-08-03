@@ -12,9 +12,20 @@ use crate::{
     error::{Result, SealboxError},
 };
 
-pub(crate) use self::sqlite::{SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection};
+pub(crate) use self::sqlite::{
+    SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+};
 
 mod sqlite;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretInfo {
+    pub key: String,             // Secret key identifier
+    pub version: i32,            // Latest version number
+    pub created_at: i64,         // Creation timestamp (Unix time)
+    pub updated_at: i64,         // Last update timestamp (Unix time)
+    pub expires_at: Option<i64>, // Expiry timestamp (Unix time), optional for TTL
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Secret {
@@ -155,6 +166,8 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn update_secret_master_key(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()>;
     /// Batch delete all expired secrets and return the count of deleted records.
     fn cleanup_expired_secrets(&self, conn: &rusqlite::Connection) -> Result<usize>;
+    /// List all secrets with basic information (key, latest version, timestamps)
+    fn list_secrets(&self, conn: &rusqlite::Connection) -> Result<Vec<SecretInfo>>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,6 +240,10 @@ pub(crate) trait MasterKeyRepo: Send + Sync {
 
     /// Fetch a valid master key.
     fn get_valid_master_key(&self, conn: &rusqlite::Connection) -> Result<MasterKey>;
+}
+
+pub(crate) trait HealthRepo: Send + Sync {
+    fn check_health(&self, conn: &rusqlite::Connection) -> Result<bool>;
 }
 
 #[cfg(test)]

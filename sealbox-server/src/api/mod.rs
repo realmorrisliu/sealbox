@@ -1,5 +1,6 @@
 use axum::{
     Router,
+    extract::State,
     http::{HeaderName, Request},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceBuilder;
 use tower_http::{
+    cors::{Any, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
 };
@@ -62,8 +64,25 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
 
     let state = AppState::new(config)?;
 
+    // CORS configuration - allow cross-origin requests in development mode
+    let cors_layer = if cfg!(debug_assertions) || std::env::var("SEALBOX_ALLOW_CORS").is_ok() {
+        tracing::info!("CORS enabled for development");
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    } else {
+        tracing::info!("CORS disabled for production");
+        CorsLayer::new().allow_origin([])
+    };
+
     Ok(Router::new()
+        // Health check endpoints without authentication (Kubernetes standard)
         .route("/", get(root))
+        .route("/healthz/live", get(liveness_probe))
+        .route("/healthz/ready", get(readiness_probe))
+        // Business endpoints requiring authentication
+        .route("/{version}/secrets", get(secret::list))
         .route(
             "/{version}/secrets/{secret_key}",
             get(secret::get).put(secret::save).delete(secret::delete),
@@ -80,11 +99,34 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         )
         .route_layer(from_fn_with_state(state.clone(), static_auth))
         .with_state(state)
+        .layer(cors_layer)
         .layer(request_id_middleware))
 }
 
 async fn root() -> &'static str {
     "Hello, Sealbox!"
+}
+
+/// Liveness probe - check if service is alive
+/// Returns simple status information for Kubernetes liveness probe
+async fn liveness_probe() -> SealboxResponse {
+    SealboxResponse::Ok
+}
+
+/// Readiness probe - check if service is ready to receive traffic
+/// Checks database connection and other critical dependencies for Kubernetes readiness probe
+async fn readiness_probe(State(state): State<AppState>) -> Result<SealboxResponse> {
+    let conn = state.conn_pool.lock().map_err(|e| {
+        error!("{}", e);
+        SealboxError::DatabaseError("Database connection unavailable".to_string())
+    })?;
+
+    state.health_repo.check_health(&conn).map_err(|e| {
+        error!("{}", e);
+        SealboxError::DatabaseError("Database health check failed".to_string())
+    })?;
+
+    Ok(SealboxResponse::Ok)
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -103,8 +145,11 @@ pub enum SealboxResponse {
 }
 impl IntoResponse for SealboxResponse {
     fn into_response(self) -> Response {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
         match self {
-            SealboxResponse::Ok => axum::Json(json!({"result": "Ok"})).into_response(),
+            SealboxResponse::Ok => {
+                axum::Json(json!({"result": "Ok","timestamp": now})).into_response()
+            }
             SealboxResponse::Json(data) => axum::Json(data).into_response(),
             SealboxResponse::Text(data) => axum::response::Response::builder()
                 .status(StatusCode::OK)

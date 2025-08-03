@@ -59,16 +59,18 @@ pub(crate) async fn get(
     match params.version() {
         Version::V1 => {
             let mut conn = state.conn_pool.lock()?;
-            
+
             let secret = match query.version {
-                Some(version) => {
-                    state
-                        .secret_repo
-                        .get_secret_by_version(&mut conn, &params.secret_key(), version)?
-                }
-                None => state.secret_repo.get_secret(&mut conn, &params.secret_key())?,
+                Some(version) => state.secret_repo.get_secret_by_version(
+                    &mut conn,
+                    &params.secret_key(),
+                    version,
+                )?,
+                None => state
+                    .secret_repo
+                    .get_secret(&mut conn, &params.secret_key())?,
             };
-            
+
             Ok(SealboxResponse::Json(json!(secret)))
         }
         _ => Err(SealboxError::InvalidApiVersion),
@@ -126,6 +128,53 @@ pub(crate) async fn delete(
                 query.version,
             )?;
             Ok(SealboxResponse::Ok)
+        }
+        _ => Err(SealboxError::InvalidApiVersion),
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct ListSecretsPathParams {
+    version: Version,
+}
+
+impl ListSecretsPathParams {
+    fn version(&self) -> Version {
+        self.version.clone()
+    }
+}
+
+/// API handler function for listing all secrets
+///
+/// # Arguments
+///
+/// * `state` - Application state containing database connection pool and repository instances
+/// * `params` - Path parameters containing API version
+///
+/// # Returns
+///
+/// Returns a list of secrets with basic information (key, version, timestamps)
+///
+/// # Errors
+///
+/// * `SealboxError::InvalidApiVersion` - When the API version is not supported
+///
+/// # HTTP Route
+///
+/// `GET /{version}/secrets`
+///
+/// # Security Notes
+///
+/// Returns only metadata about secrets, not the encrypted content. Automatically filters out expired secrets.
+pub(crate) async fn list(
+    State(state): State<AppState>,
+    Path(params): Path<ListSecretsPathParams>,
+) -> Result<SealboxResponse> {
+    match params.version() {
+        Version::V1 => {
+            let conn = state.conn_pool.lock()?;
+            let secrets = state.secret_repo.list_secrets(&conn)?;
+            Ok(SealboxResponse::Json(json!({ "secrets": secrets })))
         }
         _ => Err(SealboxError::InvalidApiVersion),
     }

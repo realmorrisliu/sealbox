@@ -18,6 +18,8 @@ Sealbox is a simple yet secure secret management solution designed for developer
 - 🌐 **REST API** - Standard HTTP interface for integration
 - 💻 **Full-featured CLI** - Complete command-line interface for key and secret management
 - 🔄 **Multiple output formats** - JSON, YAML, and table formats supported
+- 🖥️ **Modern Web UI** - React-based web interface with real-time TTL indicators
+- 🌍 **Internationalization Ready** - All text and UI elements use English by default
 
 ## Quick Start
 
@@ -63,6 +65,7 @@ export LISTEN_ADDR=127.0.0.1:8080
 
 ### Managing Secrets
 
+#### Using the CLI
 ```bash
 # Store a secret
 ./target/release/sealbox-cli secret set mypassword "super-secret-value"
@@ -76,6 +79,24 @@ export LISTEN_ADDR=127.0.0.1:8080
 # List all commands
 ./target/release/sealbox-cli --help
 ```
+
+#### Using the Web UI
+1. Navigate to the `sealbox-web` directory
+2. Install dependencies: `pnpm install`
+3. Start the development server: `pnpm run dev`
+4. Open http://localhost:3000 in your browser
+5. Enter your server URL and AUTH_TOKEN to login
+6. Manage secrets through the intuitive web interface
+
+**Web UI Features:**
+- 🔐 Secure token-based authentication
+- 📋 Secret list with TTL status indicators
+- ⏰ Real-time expiration warnings
+- 🗑️ Delete secrets with confirmation
+- 📱 Responsive design for mobile devices
+- 🌐 CORS support for development
+- 🌍 **English-first interface** - All UI elements use clear English text
+- 🎨 Modern design with TailwindCSS and shadcn/ui components
 
 ## Configuration
 
@@ -127,6 +148,10 @@ All endpoints require `Authorization: Bearer <token>` header.
 
 ### Secrets Management
 ```bash
+# List all secrets with metadata
+GET /v1/secrets
+# Returns: {"secrets": [{"key": "...", "version": 1, "created_at": ..., "updated_at": ..., "expires_at": ...}]}
+
 # Store a secret
 PUT /v1/secrets/:key
 Content-Type: application/json
@@ -163,6 +188,18 @@ GET /v1/master-key
 
 # Rotate keys
 PUT /v1/master-key
+```
+
+### Health Check Endpoints
+```bash
+# Liveness probe (no authentication required)
+GET /healthz/live
+# Returns: {"result": "Ok", "timestamp": 1640995200}
+
+# Readiness probe (no authentication required)  
+GET /healthz/ready
+# Returns: {"result": "Ok", "timestamp": 1640995200} if ready
+# Returns: 503 status with error details if not ready
 ```
 
 ### Administration
@@ -233,10 +270,16 @@ cargo audit
 ## Roadmap
 
 - [x] **TTL Support** - Automatic expiration with lazy cleanup strategy ✅
-- [ ] JWT authentication with replay protection
-- [ ] Web UI for secret management
-- [ ] Docker and Kubernetes deployment guides
-- [ ] Multi-node replication support
+- [x] **Web UI for secret management** - React-based web interface ✅
+- [x] **CORS Support** - Cross-origin requests for web development ✅
+- [x] **Kubernetes Health Checks** - Standard `/healthz/live` and `/healthz/ready` endpoints ✅
+- [x] **English-first Internationalization** - All UI and code comments in English ✅
+- [ ] **i18n Support** - Multi-language interface with language switching
+- [ ] **JWT Authentication** - Replace static token with JWT-based auth
+- [ ] **Advanced Secret Operations** - Create, edit, and manage secrets via Web UI
+- [ ] **Master Key Management UI** - Complete key management through web interface
+- [ ] **Docker and Kubernetes** - Production deployment guides and manifests
+- [ ] **Multi-node Replication** - High availability with Raft consensus
 
 ## Support
 

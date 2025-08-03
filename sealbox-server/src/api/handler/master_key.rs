@@ -142,7 +142,7 @@ mod tests {
         api::{Version, path::Path as SealboxPath, state::AppState},
         config::SealboxConfig,
         crypto::master_key::generate_key_pair,
-        repo::{SqliteMasterKeyRepo, SqliteSecretRepo},
+        repo::{SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo},
     };
     use axum::extract::State;
     use std::sync::{Arc, Mutex};
@@ -156,6 +156,7 @@ mod tests {
             conn_pool: Arc::new(Mutex::new(conn)),
             master_key_repo: Arc::new(SqliteMasterKeyRepo),
             secret_repo: Arc::new(SqliteSecretRepo),
+            health_repo: Arc::new(SqliteHealthRepo),
             config: Arc::new(SealboxConfig::default()),
         }
     }
