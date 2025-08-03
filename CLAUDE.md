@@ -151,7 +151,9 @@ The CLI uses TOML configuration files with environment variable overrides:
 - **Zustand**: Lightweight state management
 - **React Hook Form + Zod**: Form handling and validation
 - **TailwindCSS + shadcn/ui**: Modern design system
-- **date-fns**: Date/time formatting
+- **date-fns**: Date/time formatting and localization
+- **react-i18next**: Internationalization framework
+- **i18next-browser-languagedetector**: Automatic language detection
 
 ## API Endpoints
 
@@ -181,11 +183,14 @@ The CLI uses TOML configuration files with environment variable overrides:
   - Manual cleanup API for batch removal of expired secrets
   - Startup cleanup removes expired secrets on server restart
 - ✅ Batch operations (import/export functionality framework)
-- ✅ **Complete English internationalization** - All text and code in English
-  - All UI components, error messages, and user-facing text in English
-  - All code comments and documentation in English
-  - English locale (enUS) for date formatting
-  - Ready for future i18n implementation
+- ✅ **Complete internationalization (i18n)** - Full multi-language support
+  - **4 languages supported**: English (default), Chinese (中文), Japanese (日本語), German (Deutsch)
+  - **react-i18next framework** with automatic language detection
+  - **Smart language switching** with dropdown selector and country flags
+  - **Full UI translation** including forms, buttons, error messages, and tooltips
+  - **Date localization** with date-fns for proper regional date formatting
+  - **Brand consistency** - "Sealbox" name preserved across all languages
+  - **Persistent language preference** stored in localStorage
 - ✅ Zero clippy warnings across entire codebase (strict linting)
 - ✅ Comprehensive test coverage (77 test cases including TTL functionality)
 - ✅ Parameter-driven config initialization with interactive fallback
@@ -204,7 +209,8 @@ The CLI uses TOML configuration files with environment variable overrides:
   - Mobile-friendly responsive design
   - CORS support for development environment
   - Integration with all existing server APIs
-  - **English-first interface** with modern TailwindCSS + shadcn/ui design
+  - **Multi-language interface** with modern TailwindCSS + shadcn/ui design
+  - **Internationalized UI** supporting English, Chinese, Japanese, and German
 - ✅ **Kubernetes-standard health checks** - Production-ready monitoring
   - `/healthz/live` - Liveness probe for service availability
   - `/healthz/ready` - Readiness probe with database connection testing
@@ -212,15 +218,11 @@ The CLI uses TOML configuration files with environment variable overrides:
   - Proper HTTP status codes and JSON responses
 
 ### Development Priorities
-1. **i18n Framework** - Implement proper internationalization support
-   - Add react-i18next or similar framework
-   - Create translation files for multiple languages
-   - Add language switching functionality
-2. **Web UI enhancements** - Add secret creation, editing, and master key management
-3. **JWT authentication** - Replace static token auth with JWT
-4. **Integration testing** - Add end-to-end API testing
-5. **Monitoring and logging** - Add structured logging and metrics
-6. **Multi-node support** - Raft replication for high availability
+1. **Web UI enhancements** - Add secret creation, editing, and master key management
+2. **JWT authentication** - Replace static token auth with JWT
+3. **Integration testing** - Add end-to-end API testing
+4. **Monitoring and logging** - Add structured logging and metrics
+5. **Multi-node support** - Raft replication for high availability
 
 ## CI/CD Pipeline
 

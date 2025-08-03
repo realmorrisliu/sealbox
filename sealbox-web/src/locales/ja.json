@@ -1,0 +1,77 @@
+{
+  "app": {
+    "title": "Sealbox",
+    "description": "シークレット管理システム"
+  },
+  "nav": {
+    "secretManagement": "シークレット管理",
+    "logout": "ログアウト"
+  },
+  "login": {
+    "title": "Sealbox",
+    "subtitle": "シークレット管理サーバーに接続",
+    "serverUrl": "サーバーURL",
+    "serverUrlPlaceholder": "http://localhost:8080",
+    "token": "認証トークン",
+    "tokenPlaceholder": "Bearer Tokenを入力してください",
+    "connect": "接続",
+    "connecting": "接続中...",
+    "firstTime": "初回使用ですか？",
+    "steps": {
+      "start": "sealbox-serverを起動",
+      "setToken": "AUTH_TOKEN環境変数を設定",
+      "enterDetails": "上記にサーバーURLとトークンを入力"
+    },
+    "errors": {
+      "invalidUrl": "有効なサーバーURLを入力してください",
+      "tokenRequired": "認証トークンを入力してください",
+      "authFailed": "認証に失敗しました。トークンを確認してください",
+      "authError": "認証エラー：{{message}}",
+      "connectionFailed": "サーバーに接続できません。URLを確認してください",
+      "connectionError": "接続エラー：{{message}}"
+    }
+  },
+  "secrets": {
+    "title": "シークレット管理",
+    "description": "暗号化されたシークレットと機密データを管理",
+    "newSecret": "新しいシークレット",
+    "newSecretComingSoon": "新しいシークレット（準備中）",
+    "createFirst": "最初のシークレットを作成（準備中）",
+    "noSecretsFound": "シークレットが見つかりません",
+    "secretName": "シークレット名",
+    "version": "バージョン",
+    "createdAt": "作成日時",
+    "updatedAt": "更新日時",
+    "expiresAt": "有効期限",
+    "actions": "操作",
+    "neverExpires": "無期限",
+    "expired": "期限切れ",
+    "expiresInMinutes": "{{minutes}}分後に期限切れ",
+    "expiresInHours": "{{hours}}時間後に期限切れ",
+    "expiresInDays": "{{days}}日後に期限切れ",
+    "deleteConfirm": "シークレット \"{{key}}\" バージョン {{version}} を削除してもよろしいですか？",
+    "deleteFailed": "削除に失敗しました。再試行してください"
+  },
+  "common": {
+    "loading": "読み込み中...",
+    "loadingFailed": "読み込み失敗",
+    "retry": "再試行",
+    "delete": "削除",
+    "view": "表示",
+    "cancel": "キャンセル",
+    "confirm": "確認",
+    "error": "エラー",
+    "success": "成功"
+  },
+  "errors": {
+    "pageNotFound": "ページが見つかりません",
+    "pageNotFoundDescription": "お探しのページは存在しないか、開発中です"
+  },
+  "language": {
+    "switch": "言語を切り替え",
+    "english": "English",
+    "chinese": "中文",
+    "japanese": "日本語",
+    "german": "Deutsch"
+  }
+}

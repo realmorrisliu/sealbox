@@ -1,0 +1,77 @@
+{
+  "app": {
+    "title": "Sealbox",
+    "description": "Geheimnis-Verwaltungssystem"
+  },
+  "nav": {
+    "secretManagement": "Geheimnis-Verwaltung",
+    "logout": "Abmelden"
+  },
+  "login": {
+    "title": "Sealbox",
+    "subtitle": "Mit Ihrem Geheimnis-Verwaltungsserver verbinden",
+    "serverUrl": "Server-URL",
+    "serverUrlPlaceholder": "http://localhost:8080",
+    "token": "Authentifizierungs-Token",
+    "tokenPlaceholder": "Geben Sie Ihren Bearer Token ein",
+    "connect": "Verbinden",
+    "connecting": "Verbinde...",
+    "firstTime": "Erste Nutzung?",
+    "steps": {
+      "start": "sealbox-server starten",
+      "setToken": "AUTH_TOKEN Umgebungsvariable setzen",
+      "enterDetails": "Server-URL und Token oben eingeben"
+    },
+    "errors": {
+      "invalidUrl": "Bitte geben Sie eine gültige Server-URL ein",
+      "tokenRequired": "Bitte geben Sie einen Authentifizierungs-Token ein",
+      "authFailed": "Authentifizierung fehlgeschlagen, bitte prüfen Sie Ihren Token",
+      "authError": "Authentifizierungsfehler: {{message}}",
+      "connectionFailed": "Verbindung zum Server nicht möglich, bitte prüfen Sie die URL",
+      "connectionError": "Verbindungsfehler: {{message}}"
+    }
+  },
+  "secrets": {
+    "title": "Geheimnis-Verwaltung",
+    "description": "Verwalten Sie Ihre verschlüsselten Geheimnisse und sensiblen Daten",
+    "newSecret": "Neues Geheimnis",
+    "newSecretComingSoon": "Neues Geheimnis (Bald verfügbar)",
+    "createFirst": "Ihr erstes Geheimnis erstellen (Bald verfügbar)",
+    "noSecretsFound": "Keine Geheimnisse gefunden",
+    "secretName": "Geheimnis-Name",
+    "version": "Version",
+    "createdAt": "Erstellt am",
+    "updatedAt": "Aktualisiert am",
+    "expiresAt": "Läuft ab am",
+    "actions": "Aktionen",
+    "neverExpires": "Läuft nie ab",
+    "expired": "Abgelaufen",
+    "expiresInMinutes": "Läuft in {{minutes}}m ab",
+    "expiresInHours": "Läuft in {{hours}}h ab",
+    "expiresInDays": "Läuft in {{days}}d ab",
+    "deleteConfirm": "Sind Sie sicher, dass Sie Geheimnis \"{{key}}\" Version {{version}} löschen möchten?",
+    "deleteFailed": "Löschen fehlgeschlagen, bitte versuchen Sie es erneut"
+  },
+  "common": {
+    "loading": "Laden...",
+    "loadingFailed": "Laden fehlgeschlagen",
+    "retry": "Wiederholen",
+    "delete": "Löschen",
+    "view": "Anzeigen",
+    "cancel": "Abbrechen",
+    "confirm": "Bestätigen",
+    "error": "Fehler",
+    "success": "Erfolgreich"
+  },
+  "errors": {
+    "pageNotFound": "Seite nicht gefunden",
+    "pageNotFoundDescription": "Die gesuchte Seite existiert nicht oder ist in Entwicklung"
+  },
+  "language": {
+    "switch": "Sprache wechseln",
+    "english": "English",
+    "chinese": "中文",
+    "japanese": "日本語",
+    "german": "Deutsch"
+  }
+}

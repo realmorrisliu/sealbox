@@ -1,7 +1,8 @@
 // src/routes/index.tsx
 import { createFileRoute } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { enUS } from "date-fns/locale";
+import { enUS, zhCN, ja, de } from "date-fns/locale";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,21 +31,31 @@ function HomePage() {
 function SecretsPage() {
   const { data: secretsData, isLoading, error, refetch } = useSecrets();
   const deleteSecret = useDeleteSecret();
+  const { t, i18n } = useTranslation();
 
   const handleDeleteSecret = async (key: string, version: number) => {
-    if (confirm(`Are you sure you want to delete secret "${key}" version ${version}?`)) {
+    if (confirm(t('secrets.deleteConfirm', { key, version }))) {
       try {
         await deleteSecret.mutateAsync({ key, version });
       } catch (error) {
         console.error("Delete failed:", error);
-        alert("Delete failed, please try again");
+        alert(t('secrets.deleteFailed'));
       }
     }
   };
 
   const formatTimestamp = (timestamp: number) => {
+    const getLocale = () => {
+      switch (i18n.language) {
+        case 'zh': return zhCN;
+        case 'ja': return ja;
+        case 'de': return de;
+        default: return enUS;
+      }
+    };
+    
     return format(new Date(timestamp * 1000), "yyyy-MM-dd HH:mm:ss", {
-      locale: enUS,
+      locale: getLocale(),
     });
   };
 
@@ -55,13 +66,13 @@ function SecretsPage() {
     const timeUntilExpiry = expiresAt - now;
     
     if (timeUntilExpiry <= 0) {
-      return { status: "expired", text: "Expired", color: "text-red-500" };
+      return { status: "expired", text: t('secrets.expired'), color: "text-red-500" };
     }
     
     if (timeUntilExpiry < 3600) { // Within 1 hour
       return { 
         status: "warning", 
-        text: `Expires in ${Math.ceil(timeUntilExpiry / 60)}m`, 
+        text: t('secrets.expiresInMinutes', { minutes: Math.ceil(timeUntilExpiry / 60) }), 
         color: "text-orange-500" 
       };
     }
@@ -69,7 +80,7 @@ function SecretsPage() {
     if (timeUntilExpiry < 86400) { // Within 24 hours
       return { 
         status: "warning", 
-        text: `Expires in ${Math.ceil(timeUntilExpiry / 3600)}h`, 
+        text: t('secrets.expiresInHours', { hours: Math.ceil(timeUntilExpiry / 3600) }), 
         color: "text-orange-500" 
       };
     }
@@ -77,7 +88,7 @@ function SecretsPage() {
     const days = Math.ceil(timeUntilExpiry / 86400);
     return { 
       status: "normal", 
-      text: `Expires in ${days}d`, 
+      text: t('secrets.expiresInDays', { days }), 
       color: "text-muted-foreground" 
     };
   };
@@ -85,7 +96,7 @@ function SecretsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p>Loading...</p>
+        <p>{t('common.loading')}</p>
       </div>
     );
   }
@@ -96,11 +107,11 @@ function SecretsPage() {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <div>
-            <p className="font-medium">Loading Failed</p>
+            <p className="font-medium">{t('common.loadingFailed')}</p>
             <p className="text-sm">{error.message}</p>
           </div>
         </Alert>
-        <Button onClick={() => refetch()}>Retry</Button>
+        <Button onClick={() => refetch()}>{t('common.retry')}</Button>
       </div>
     );
   }
@@ -112,14 +123,14 @@ function SecretsPage() {
       {/* Page title and actions */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Secret Management</h1>
+          <h1 className="text-3xl font-bold">{t('secrets.title')}</h1>
           <p className="text-muted-foreground">
-            Manage your encrypted secrets and sensitive data
+            {t('secrets.description')}
           </p>
         </div>
         <Button disabled>
           <Plus className="h-4 w-4 mr-2" />
-          New Secret (Coming Soon)
+          {t('secrets.newSecretComingSoon')}
         </Button>
       </div>
 
@@ -127,22 +138,22 @@ function SecretsPage() {
       <Card>
         {secrets.length === 0 ? (
           <div className="p-8 text-center">
-            <p className="text-muted-foreground mb-4">No secrets found</p>
+            <p className="text-muted-foreground mb-4">{t('secrets.noSecretsFound')}</p>
             <Button disabled>
               <Plus className="h-4 w-4 mr-2" />
-              Create Your First Secret (Coming Soon)
+              {t('secrets.createFirst')}
             </Button>
           </div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Secret Name</TableHead>
-                <TableHead>Version</TableHead>
-                <TableHead>Created At</TableHead>
-                <TableHead>Updated At</TableHead>
-                <TableHead>Expires At</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{t('secrets.secretName')}</TableHead>
+                <TableHead>{t('secrets.version')}</TableHead>
+                <TableHead>{t('secrets.createdAt')}</TableHead>
+                <TableHead>{t('secrets.updatedAt')}</TableHead>
+                <TableHead>{t('secrets.expiresAt')}</TableHead>
+                <TableHead className="text-right">{t('secrets.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -170,7 +181,7 @@ function SecretsPage() {
                           </span>
                         </div>
                       ) : (
-                        <span className="text-xs text-muted-foreground">Never expires</span>
+                        <span className="text-xs text-muted-foreground">{t('secrets.neverExpires')}</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">

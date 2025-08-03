@@ -1,0 +1,77 @@
+{
+  "app": {
+    "title": "Sealbox",
+    "description": "密钥管理系统"
+  },
+  "nav": {
+    "secretManagement": "密钥管理",
+    "logout": "退出登录"
+  },
+  "login": {
+    "title": "Sealbox",
+    "subtitle": "连接到您的密钥管理服务器",
+    "serverUrl": "服务器地址",
+    "serverUrlPlaceholder": "http://localhost:8080",
+    "token": "认证令牌",
+    "tokenPlaceholder": "输入您的 Bearer Token",
+    "connect": "连接",
+    "connecting": "连接中...",
+    "firstTime": "初次使用？",
+    "steps": {
+      "start": "启动 sealbox-server",
+      "setToken": "设置 AUTH_TOKEN 环境变量",
+      "enterDetails": "在上方输入服务器地址和令牌"
+    },
+    "errors": {
+      "invalidUrl": "请输入有效的服务器地址",
+      "tokenRequired": "请输入认证令牌",
+      "authFailed": "认证失败，请检查您的令牌",
+      "authError": "认证错误：{{message}}",
+      "connectionFailed": "无法连接到服务器，请检查地址",
+      "connectionError": "连接错误：{{message}}"
+    }
+  },
+  "secrets": {
+    "title": "密钥管理",
+    "description": "管理您的加密密钥和敏感数据",
+    "newSecret": "新建密钥",
+    "newSecretComingSoon": "新建密钥（即将推出）",
+    "createFirst": "创建您的第一个密钥（即将推出）",
+    "noSecretsFound": "未找到密钥",
+    "secretName": "密钥名称",
+    "version": "版本",
+    "createdAt": "创建时间",
+    "updatedAt": "更新时间",
+    "expiresAt": "过期时间",
+    "actions": "操作",
+    "neverExpires": "永不过期",
+    "expired": "已过期",
+    "expiresInMinutes": "{{minutes}} 分钟后过期",
+    "expiresInHours": "{{hours}} 小时后过期",
+    "expiresInDays": "{{days}} 天后过期",
+    "deleteConfirm": "确定要删除密钥 \"{{key}}\" 版本 {{version}} 吗？",
+    "deleteFailed": "删除失败，请重试"
+  },
+  "common": {
+    "loading": "加载中...",
+    "loadingFailed": "加载失败",
+    "retry": "重试",
+    "delete": "删除",
+    "view": "查看",
+    "cancel": "取消",
+    "confirm": "确认",
+    "error": "错误",
+    "success": "成功"
+  },
+  "errors": {
+    "pageNotFound": "页面未找到",
+    "pageNotFoundDescription": "您访问的页面不存在或正在开发中"
+  },
+  "language": {
+    "switch": "切换语言",
+    "english": "English",
+    "chinese": "中文",
+    "japanese": "日本語",
+    "german": "Deutsch"
+  }
+}

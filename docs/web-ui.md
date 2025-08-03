@@ -10,7 +10,7 @@ Sealbox Web UI is a modern React-based web interface for managing secrets throug
 - 📱 **Responsive Design** - Works seamlessly on desktop and mobile devices
 - 🌐 **CORS Support** - Development-friendly cross-origin request handling
 - 🎨 **Modern UI** - Built with TailwindCSS and shadcn/ui components
-- 🌍 **English-First Interface** - Clean, professional English text throughout
+- 🌍 **Internationalization** - Support for English, Chinese, Japanese, and German
 - 🚀 **Production Ready** - Optimized builds and proper error handling
 
 ## Technology Stack
@@ -23,6 +23,7 @@ Sealbox Web UI is a modern React-based web interface for managing secrets throug
 - **Styling**: TailwindCSS + shadcn/ui
 - **Build Tool**: Vite
 - **Language**: TypeScript
+- **Internationalization**: react-i18next + i18next-browser-languagedetector
 
 ## Quick Start
 
@@ -55,7 +56,7 @@ open http://localhost:3000
 3. **Login** with your server URL and AUTH_TOKEN:
    - Server URL: `http://localhost:8080`
    - Token: Your `AUTH_TOKEN` environment variable value
-4. **Experience the English interface** - All text is clear and professional
+4. **Choose your language** - Interface available in English, Chinese, Japanese, and German
 
 ## Project Structure
 
@@ -68,13 +69,20 @@ sealbox-web/
 │   │   ├── layout/
 │   │   │   └── main-layout.tsx     # Main app layout
 │   │   └── ui/                     # shadcn/ui components
+│   │       └── language-selector.tsx # Language switching
 │   ├── hooks/
 │   │   └── use-api.ts              # API integration hooks
 │   ├── lib/
 │   │   ├── api.ts                  # API client
+│   │   ├── i18n.ts                 # Internationalization config
 │   │   ├── types.ts                # TypeScript definitions
 │   │   ├── utils.ts                # Utilities
 │   │   └── query-client.ts         # React Query config
+│   ├── locales/
+│   │   ├── en.json                 # English translations
+│   │   ├── zh.json                 # Chinese translations
+│   │   ├── ja.json                 # Japanese translations
+│   │   └── de.json                 # German translations
 │   ├── routes/
 │   │   ├── __root.tsx              # Root route + providers
 │   │   ├── index.tsx               # Secret list page
@@ -111,7 +119,9 @@ sealbox-web/
 ### User Interface
 
 - **Responsive**: Adapts to different screen sizes
-- **Dark Mode**: Supports light/dark theme preferences
+- **Multi-language**: Support for 4 languages with smart switching
+- **Language Persistence**: Remembers user's language preference
+- **Localized Dates**: Date formatting according to user's language
 - **Accessible**: WCAG compliant components
 - **Fast**: Optimized loading and caching
 
@@ -223,7 +233,7 @@ Enable React Query Devtools for debugging:
 
 ## Future Enhancements
 
-- [ ] **i18n Support** - Multi-language interface with language switching
+- [x] **i18n Support** - Multi-language interface with language switching
 - [ ] Secret creation and editing interface
 - [ ] Master key management UI
 - [ ] Bulk secret operations

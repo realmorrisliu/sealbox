@@ -1,0 +1,77 @@
+{
+  "app": {
+    "title": "Sealbox",
+    "description": "Secret Management System"
+  },
+  "nav": {
+    "secretManagement": "Secret Management",
+    "logout": "Logout"
+  },
+  "login": {
+    "title": "Sealbox",
+    "subtitle": "Connect to your secret management server",
+    "serverUrl": "Server URL",
+    "serverUrlPlaceholder": "http://localhost:8080",
+    "token": "Authentication Token",
+    "tokenPlaceholder": "Enter your Bearer Token",
+    "connect": "Connect",
+    "connecting": "Connecting...",
+    "firstTime": "First time using?",
+    "steps": {
+      "start": "Start sealbox-server",
+      "setToken": "Set AUTH_TOKEN environment variable", 
+      "enterDetails": "Enter server URL and token above"
+    },
+    "errors": {
+      "invalidUrl": "Please enter a valid server URL",
+      "tokenRequired": "Please enter authentication token",
+      "authFailed": "Authentication failed, please check your token",
+      "authError": "Authentication error: {{message}}",
+      "connectionFailed": "Unable to connect to server, please check the URL",
+      "connectionError": "Connection error: {{message}}"
+    }
+  },
+  "secrets": {
+    "title": "Secret Management",
+    "description": "Manage your encrypted secrets and sensitive data",
+    "newSecret": "New Secret",
+    "newSecretComingSoon": "New Secret (Coming Soon)",
+    "createFirst": "Create Your First Secret (Coming Soon)",
+    "noSecretsFound": "No secrets found",
+    "secretName": "Secret Name",
+    "version": "Version",
+    "createdAt": "Created At",
+    "updatedAt": "Updated At",
+    "expiresAt": "Expires At",
+    "actions": "Actions",
+    "neverExpires": "Never expires",
+    "expired": "Expired",
+    "expiresInMinutes": "Expires in {{minutes}}m",
+    "expiresInHours": "Expires in {{hours}}h", 
+    "expiresInDays": "Expires in {{days}}d",
+    "deleteConfirm": "Are you sure you want to delete secret \"{{key}}\" version {{version}}?",
+    "deleteFailed": "Delete failed, please try again"
+  },
+  "common": {
+    "loading": "Loading...",
+    "loadingFailed": "Loading Failed",
+    "retry": "Retry",
+    "delete": "Delete",
+    "view": "View",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "error": "Error",
+    "success": "Success"
+  },
+  "errors": {
+    "pageNotFound": "Page Not Found",
+    "pageNotFoundDescription": "The page you are looking for does not exist or is under development"
+  },
+  "language": {
+    "switch": "Switch Language",
+    "english": "English",
+    "chinese": "中文",
+    "japanese": "日本語",
+    "german": "Deutsch"
+  }
+}
