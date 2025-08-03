@@ -120,31 +120,30 @@ function SecretsPage() {
   const secrets = secretsData?.secrets || [];
 
   return (
-    <div className="space-section animate-fade-in">
-      {/* Page title and actions */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between space-y-4 sm:space-y-0">
+    <div className="space-section">
+      {/* [顶层] 页面标题 + 主要操作 - 按指南Step 4 */}
+      <div className="flex items-start justify-between">
         <div className="space-tight">
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-balance">{t('secrets.title')}</h1>
-          <p className="text-base sm:text-lg text-muted-foreground text-balance">
+          <h1 className="text-4xl font-bold tracking-tight">{t('secrets.title')}</h1>
+          <p className="text-sm text-muted-foreground">
             {t('secrets.description')}
           </p>
         </div>
-        <Button disabled variant="outline" className="bg-gradient-warm border-primary/20 w-full sm:w-auto gradient-transition">
+        <Button disabled variant="outline" className="border-border">
           <Plus className="h-4 w-4 mr-2" />
-          <span className="sm:hidden">{t('secrets.newSecret')}</span>
-          <span className="hidden sm:inline">{t('secrets.newSecretComingSoon')}</span>
+          {t('secrets.newSecretComingSoon')}
         </Button>
       </div>
 
-      {/* Secrets list */}
-      <Card className="bg-glass-enhanced overflow-hidden animate-scale-in card-hover-effect">
+      {/* [中层] 内容分区 - Section卡片 */}
+      <Card className="bg-card border border-border">
         {secrets.length === 0 ? (
           <div className="padding-section text-center space-content">
-            <div className="w-16 h-16 bg-gradient-vibrant rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20 pulse-glow">
-              <Plus className="h-6 w-6 text-primary" />
+            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+              <Plus className="h-6 w-6 text-muted-foreground" />
             </div>
-            <p className="text-muted-foreground heading-sm">{t('secrets.noSecretsFound')}</p>
-            <Button disabled variant="outline" className="bg-gradient-cool border-primary/20">
+            <p className="text-muted-foreground text-sm">{t('secrets.noSecretsFound')}</p>
+            <Button disabled variant="outline">
               <Plus className="h-4 w-4 mr-2" />
               {t('secrets.createFirst')}
             </Button>
@@ -152,20 +151,17 @@ function SecretsPage() {
         ) : (
           <>
             {/* Mobile Card View */}
-            <div className="block sm:hidden space-y-3 p-4">
+            <div className="block sm:hidden space-y-4 p-6">
               {secrets.map((secret: SecretInfo) => {
                 const expiryStatus = getExpiryStatus(secret.expires_at);
                 
                 return (
                   <div 
                     key={`${secret.key}-${secret.version}`}
-                    className="bg-textured-card border border-border/40 rounded-lg p-4 space-y-3 interactive-glow texture-hover"
+                    className="bg-card border border-border rounded-md p-4 space-y-4 hover:bg-accent/50 transition-colors duration-150"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-button-primary rounded-full shadow-sm" />
-                        <span className="font-mono text-sm font-medium">{secret.key}</span>
-                      </div>
+                      <span className="font-mono text-sm font-medium">{secret.key}</span>
                       <Badge variant="secondary" className="font-mono text-xs">
                         v{secret.version}
                       </Badge>
@@ -200,12 +196,12 @@ function SecretsPage() {
                       </div>
                     </div>
                     
-                    <div className="flex items-center justify-end space-x-2 pt-2 border-t border-border/20">
+                    <div className="flex items-center justify-end space-x-2 pt-2 border-t border-border">
                       <Button 
                         variant="ghost" 
                         size="sm" 
                         disabled
-                        className="h-8 px-3 hover:bg-accent/50 button-press"
+                        className="h-8 px-3 hover:bg-accent transition-colors duration-150"
                       >
                         <Eye className="h-3 w-3 mr-1" />
                         <span className="text-xs">{t('common.view')}</span>
@@ -215,7 +211,7 @@ function SecretsPage() {
                         size="sm"
                         onClick={() => handleDeleteSecret(secret.key, secret.version)}
                         disabled={deleteSecret.isPending}
-                        className="h-8 px-3 hover:bg-destructive/10 hover:text-destructive button-press"
+                        className="h-8 px-3 hover:bg-destructive/10 hover:text-destructive transition-colors duration-150"
                       >
                         <Trash2 className="h-3 w-3 mr-1" />
                         <span className="text-xs">{t('common.delete')}</span>
@@ -226,17 +222,17 @@ function SecretsPage() {
               })}
             </div>
 
-            {/* Desktop Table View */}
+            {/* Desktop Table View - Linear风格表格 */}
             <div className="hidden sm:block overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="border-b border-primary/10 hover:bg-transparent bg-gradient-cool backdrop-blur-sm">
-                    <TableHead className="font-semibold text-foreground/90">{t('secrets.secretName')}</TableHead>
-                    <TableHead className="font-semibold text-foreground/90">{t('secrets.version')}</TableHead>
-                    <TableHead className="font-semibold text-foreground/90 hidden md:table-cell">{t('secrets.createdAt')}</TableHead>
-                    <TableHead className="font-semibold text-foreground/90 hidden lg:table-cell">{t('secrets.updatedAt')}</TableHead>
-                    <TableHead className="font-semibold text-foreground/90">{t('secrets.expiresAt')}</TableHead>
-                    <TableHead className="font-semibold text-foreground/90 text-right">{t('secrets.actions')}</TableHead>
+                  <TableRow className="border-b border-border hover:bg-transparent">
+                    <TableHead className="font-medium text-foreground">{t('secrets.secretName')}</TableHead>
+                    <TableHead className="font-medium text-foreground">{t('secrets.version')}</TableHead>
+                    <TableHead className="font-medium text-foreground hidden md:table-cell">{t('secrets.createdAt')}</TableHead>
+                    <TableHead className="font-medium text-foreground hidden lg:table-cell">{t('secrets.updatedAt')}</TableHead>
+                    <TableHead className="font-medium text-foreground">{t('secrets.expiresAt')}</TableHead>
+                    <TableHead className="font-medium text-foreground text-right">{t('secrets.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -246,26 +242,23 @@ function SecretsPage() {
                     return (
                       <TableRow 
                         key={`${secret.key}-${secret.version}`}
-                        className="border-b border-border/20 hover:bg-gradient-warm interactive-element backdrop-blur-sm"
+                        className="h-12 border-b border-border hover:bg-accent/50 transition-colors duration-150 cursor-pointer"
                       >
-                        <TableCell className="font-medium py-4">
-                          <div className="flex items-center space-x-2">
-                            <div className="w-2 h-2 bg-button-primary rounded-full shadow-sm" />
-                            <span className="font-mono text-sm">{secret.key}</span>
-                          </div>
+                        <TableCell className="font-medium">
+                          <span className="font-mono text-sm">{secret.key}</span>
                         </TableCell>
-                        <TableCell className="py-4">
+                        <TableCell>
                           <Badge variant="secondary" className="font-mono text-xs">
                             v{secret.version}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground py-4 hidden md:table-cell">
+                        <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
                           {formatTimestamp(secret.created_at)}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground py-4 hidden lg:table-cell">
+                        <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">
                           {formatTimestamp(secret.updated_at)}
                         </TableCell>
-                        <TableCell className="py-4">
+                        <TableCell>
                           {secret.expires_at ? (
                             <Badge 
                               variant={
@@ -285,13 +278,13 @@ function SecretsPage() {
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="text-right py-4">
-                          <div className="flex items-center justify-end space-x-1">
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end space-x-2">
                             <Button 
                               variant="ghost" 
                               size="sm" 
                               disabled
-                              className="h-8 w-8 p-0 hover:bg-accent/50 button-press"
+                              className="h-8 w-8 p-0 hover:bg-accent transition-colors duration-150"
                             >
                               <Eye className="h-3 w-3" />
                             </Button>
@@ -300,7 +293,7 @@ function SecretsPage() {
                               size="sm"
                               onClick={() => handleDeleteSecret(secret.key, secret.version)}
                               disabled={deleteSecret.isPending}
-                              className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive button-press"
+                              className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive transition-colors duration-150"
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>

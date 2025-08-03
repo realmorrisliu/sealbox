@@ -201,7 +201,7 @@ The CLI uses TOML configuration files with environment variable overrides:
   - Implemented serde_rusqlite for automatic Secret struct mapping
   - Follows official best practices: query_and_then() + from_row() for single records, from_rows() for batch queries
   - Eliminated manual field mapping code, improving maintainability and type safety
-- ✅ **Web UI (sealbox-web)** - Modern React-based web interface
+- ✅ **Web UI (sealbox-web)** - Modern React-based web interface with industrial design
   - Complete authentication system with Bearer Token
   - Responsive secret list with TTL status indicators
   - Real-time expiration warnings and countdown
@@ -211,6 +211,13 @@ The CLI uses TOML configuration files with environment variable overrides:
   - Integration with all existing server APIs
   - **Multi-language interface** with modern TailwindCSS + shadcn/ui design
   - **Internationalized UI** supporting English, Chinese, Japanese, and German
+  - **2025 Modern Industrial UI Design** following Linear/Superhuman style principles:
+    - Strict 8pt grid spacing system (64px→32px→16px→8px hierarchy)
+    - Function-first color system with minimal gradient usage
+    - 3-layer page architecture (Header→Content→Footer)
+    - Fixed table row heights (h-12) with consistent spacing
+    - Visual restraint with 150ms transition duration standard
+    - Clean typography using Inter font with optimized tracking
 - ✅ **Kubernetes-standard health checks** - Production-ready monitoring
   - `/healthz/live` - Liveness probe for service availability
   - `/healthz/ready` - Readiness probe with database connection testing

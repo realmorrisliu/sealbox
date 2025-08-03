@@ -203,469 +203,117 @@
     @apply text-sm leading-relaxed;
   }
   
-  /* Modern spacing system */
+  /* 8pt Grid Spacing System - Function First */
   .space-section {
-    @apply space-y-8;
+    @apply space-y-16; /* 64px = 8pt × 8 */
   }
   
   .space-content {
-    @apply space-y-6;
+    @apply space-y-8; /* 32px = 8pt × 4 */
   }
   
   .space-compact {
-    @apply space-y-4;
+    @apply space-y-4; /* 16px = 8pt × 2 */
   }
   
   .space-tight {
-    @apply space-y-3;
+    @apply space-y-2; /* 8px = 8pt × 1 */
   }
   
-  .space-minimal {
-    @apply space-y-2;
-  }
-  
-  /* Container sizes */
-  .container-sm {
-    @apply max-w-sm mx-auto;
-  }
-  
-  .container-md {
-    @apply max-w-md mx-auto;
-  }
-  
-  .container-lg {
-    @apply max-w-lg mx-auto;
+  /* Container System - 1280px max-width + 5vw margins */
+  .container-main {
+    @apply max-w-screen-xl mx-auto px-[5vw];
   }
   
   .container-content {
-    @apply max-w-3xl mx-auto;
+    @apply max-w-4xl mx-auto;
   }
   
-  /* Enhanced padding system */
+  /* 8pt Grid Padding System */
   .padding-section {
-    @apply px-6 py-8 sm:px-8 sm:py-12;
+    @apply p-12; /* 48px = 8pt × 6 */
   }
   
   .padding-content {
-    @apply px-4 py-6 sm:px-6 sm:py-8;
+    @apply p-6; /* 24px = 8pt × 3 */
   }
   
   .padding-compact {
-    @apply px-3 py-4 sm:px-4 sm:py-5;
+    @apply p-4; /* 16px = 8pt × 2 */
   }
   
-  /* Micro-interactions and animations */
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-out;
+  .padding-tight {
+    @apply p-2; /* 8px = 8pt × 1 */
   }
   
-  .animate-slide-up {
-    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
-  .animate-scale-in {
-    animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
+  /* Simple Interactions - Visual Restraint */
   .hover-lift {
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 0.15s ease-out;
   }
   
   .hover-lift:hover {
-    transform: translateY(-2px);
-  }
-  
-  .hover-scale {
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
-  .hover-scale:hover {
-    transform: scale(1.02);
-  }
-  
-  .interactive-element {
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
-  .interactive-element:hover {
     transform: translateY(-1px);
-    background-color: var(--accent)/10;
   }
   
-  .pulse-glow {
-    animation: pulseGlow 2s ease-in-out infinite;
+  
+  
+  /* Simple Glass Effects - Function First */
+  .bg-glass {
+    background: var(--card);
+    border: 1px solid var(--border);
   }
   
-  /* Background Texture System */
-  .bg-texture-dots {
-    background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
-    background-size: 20px 20px;
+  /* Minimal Backgrounds - Visual Restraint */
+  .bg-section {
+    background: var(--card);
   }
   
-  .bg-texture-dots-subtle {
-    background-image: radial-gradient(circle, var(--border)/30 0.5px, transparent 0.5px);
-    background-size: 16px 16px;
+  .bg-muted {
+    background: var(--muted);
   }
   
-  .bg-texture-grid {
-    background-image: 
-      linear-gradient(var(--border)/40 1px, transparent 1px),
-      linear-gradient(90deg, var(--border)/40 1px, transparent 1px);
-    background-size: 24px 24px;
+  .bg-accent {
+    background: var(--accent);
   }
   
-  .bg-texture-grid-fine {
-    background-image: 
-      linear-gradient(var(--border)/20 0.5px, transparent 0.5px),
-      linear-gradient(90deg, var(--border)/20 0.5px, transparent 0.5px);
-    background-size: 16px 16px;
-  }
-  
-  .bg-texture-diagonal {
-    background-image: repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 8px,
-      var(--border)/15 8px,
-      var(--border)/15 9px
-    );
-  }
-  
-  .bg-texture-squares {
-    background-image: 
-      linear-gradient(45deg, var(--border)/20 25%, transparent 25%, transparent 75%, var(--border)/20 75%),
-      linear-gradient(45deg, var(--border)/20 25%, transparent 25%, transparent 75%, var(--border)/20 75%);
-    background-position: 0 0, 12px 12px;
-    background-size: 24px 24px;
-  }
-  
-  .bg-texture-hexagon {
-    background-image: 
-      radial-gradient(circle at 50% 50%, var(--border)/25 2px, transparent 2px),
-      radial-gradient(circle at 25% 25%, var(--border)/15 1.5px, transparent 1.5px),
-      radial-gradient(circle at 75% 75%, var(--border)/15 1.5px, transparent 1.5px);
-    background-size: 32px 32px, 16px 16px, 16px 16px;
-  }
-  
-  /* Layered background system */
-  .bg-layered-base {
-    background: 
-      var(--background),
-      linear-gradient(135deg, var(--muted)/10 0%, transparent 50%, var(--accent)/5 100%);
-  }
-  
-  .bg-layered-subtle {
-    background: 
-      radial-gradient(circle at 20% 50%, var(--primary)/8 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, var(--accent)/8 0%, transparent 50%),
-      linear-gradient(135deg, var(--background) 0%, var(--muted)/30 100%);
-  }
-  
-  .bg-layered-rich {
-    background: 
-      radial-gradient(circle at 25% 25%, var(--primary)/5 0%, transparent 60%),
-      radial-gradient(circle at 75% 75%, var(--accent)/5 0%, transparent 60%),
-      linear-gradient(45deg, var(--background) 0%, var(--secondary)/20 50%, var(--background) 100%);
-  }
-  
-  /* Enhanced glass effects with better backdrop */
-  .bg-glass-enhanced {
-    background: var(--card)/85;
-    backdrop-filter: blur(16px) saturate(1.1);
-    border: 1px solid var(--border)/50;
-    box-shadow: 
-      0 8px 32px rgba(0, 0, 0, 0.08),
-      inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  }
-  
-  .bg-glass-frosted {
-    background: var(--background)/95;
-    backdrop-filter: blur(20px) saturate(1.2);
-    border: 1px solid var(--border)/40;
-    box-shadow: 
-      0 12px 40px rgba(0, 0, 0, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  }
-  
-  /* Enhanced gradient backgrounds */
-  .bg-gradient-soft {
-    background: linear-gradient(135deg, var(--card)/95 0%, var(--muted)/80 100%);
-  }
-  
-  .bg-gradient-warm {
-    background: linear-gradient(135deg, var(--accent)/15 0%, var(--primary)/10 50%, var(--secondary)/15 100%);
-  }
-  
-  .bg-gradient-cool {
-    background: linear-gradient(135deg, var(--primary)/8 0%, var(--card)/90 50%, var(--accent)/12 100%);
-  }
-  
-  .bg-gradient-vibrant {
-    background: linear-gradient(135deg, var(--primary)/20 0%, var(--accent)/20 100%);
-  }
-  
-  /* Enhanced button gradients */
+  /* Simple Button Backgrounds */
   .bg-button-primary {
-    background: linear-gradient(135deg, var(--primary) 0%, oklch(from var(--primary) calc(l + 0.05) c h) 100%);
-    box-shadow: 
-      0 4px 12px var(--primary)/25,
-      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    background: var(--primary);
   }
   
   .bg-button-secondary {
-    background: linear-gradient(135deg, var(--secondary) 0%, var(--muted) 100%);
-    box-shadow: 
-      0 2px 8px var(--secondary)/20,
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    background: var(--secondary);
   }
   
-  .bg-button-accent {
-    background: linear-gradient(135deg, var(--accent) 0%, oklch(from var(--accent) calc(l + 0.08) c h) 100%);
-    box-shadow: 
-      0 2px 8px var(--accent)/20,
-      inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  }
-  
-  /* Badge gradients */
+  /* Simple Badge Backgrounds */
   .bg-badge-primary {
-    background: linear-gradient(135deg, var(--primary) 0%, oklch(from var(--primary) calc(l + 0.1) c h) 100%);
-    border: 1px solid var(--primary)/30;
+    background: var(--primary);
   }
   
   .bg-badge-secondary {
-    background: linear-gradient(135deg, var(--secondary) 0%, var(--muted) 100%);
-    border: 1px solid var(--secondary)/40;
+    background: var(--secondary);
   }
   
-  .bg-badge-accent {
-    background: linear-gradient(135deg, var(--accent)/90 0%, var(--accent) 100%);
-    border: 1px solid var(--accent)/30;
-  }
-  
-  /* Status indicator gradients */
+  /* Simple Status Backgrounds */
   .bg-status-success {
-    background: linear-gradient(135deg, var(--success) 0%, oklch(from var(--success) calc(l + 0.1) c h) 100%);
+    background: var(--success);
   }
   
   .bg-status-warning {
-    background: linear-gradient(135deg, var(--warning) 0%, oklch(from var(--warning) calc(l + 0.1) c h) 100%);
+    background: var(--warning);
   }
   
   .bg-status-error {
-    background: linear-gradient(135deg, var(--destructive) 0%, oklch(from var(--destructive) calc(l + 0.1) c h) 100%);
+    background: var(--destructive);
   }
   
   .bg-status-checking {
-    background: linear-gradient(135deg, var(--muted) 0%, var(--secondary) 100%);
+    background: var(--muted);
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
   
-  /* Textured backgrounds */
-  .bg-textured-card {
-    background: 
-      radial-gradient(circle at 20% 80%, var(--primary)/5 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, var(--accent)/5 0%, transparent 50%),
-      radial-gradient(circle at 40% 40%, var(--secondary)/3 0%, transparent 50%),
-      var(--card);
-  }
   
-  .bg-textured-muted {
-    background: 
-      linear-gradient(135deg, var(--muted)/80 0%, var(--background)/90 50%, var(--accent)/8 100%),
-      radial-gradient(circle at 25% 25%, var(--primary)/3 0%, transparent 50%);
-  }
   
-  .bg-textured-surface {
-    background: 
-      var(--background),
-      radial-gradient(circle at 50% 0%, var(--primary)/4 0%, transparent 50%),
-      radial-gradient(circle at 0% 50%, var(--accent)/4 0%, transparent 50%);
-  }
-  
-  /* Advanced Interactive Effects */
-  .interactive-glow {
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    position: relative;
-  }
-  
-  .interactive-glow:hover {
-    box-shadow: 
-      0 10px 40px rgba(0, 0, 0, 0.1),
-      0 0 0 1px var(--primary)/20,
-      0 0 20px var(--primary)/10;
-    transform: translateY(-2px);
-  }
-  
-  .card-hover-effect {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    position: relative;
-  }
-  
-  .card-hover-effect:hover {
-    transform: translateY(-4px) scale(1.01);
-    box-shadow: 
-      0 20px 60px rgba(0, 0, 0, 0.12),
-      0 0 0 1px var(--border)/60,
-      inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  }
-  
-  .button-press {
-    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
-  .button-press:active {
-    transform: scale(0.98);
-  }
-  
-  /* Parallax and scroll effects */
-  .parallax-bg {
-    will-change: transform;
-    transition: transform 0.1s linear;
-  }
-  
-  .scroll-fade-in {
-    opacity: 0;
-    transform: translateY(30px);
-    transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
-  .scroll-fade-in.visible {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  
-  /* Enhanced texture animations */
-  .texture-animate {
-    animation: textureShift 20s ease-in-out infinite;
-  }
-  
-  @keyframes textureShift {
-    0%, 100% {
-      background-position: 0% 0%;
-    }
-    50% {
-      background-position: 100% 100%;
-    }
-  }
-  
-  /* Glassmorphism hover states */
-  .glass-hover {
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
-  .glass-hover:hover {
-    background: var(--card)/95;
-    backdrop-filter: blur(24px) saturate(1.3);
-    border-color: var(--primary)/30;
-    box-shadow: 
-      0 16px 50px rgba(0, 0, 0, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  }
-  
-  /* Smooth gradient transitions */
-  .gradient-transition {
-    background-size: 200% 200%;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
-  .gradient-transition:hover {
-    background-position: 100% 100%;
-    transform: translateY(-1px);
-  }
-  
-  /* Enhanced texture hover effects */
-  .texture-hover {
-    position: relative;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
-  .texture-hover::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: 
-      radial-gradient(circle at 50% 50%, var(--primary)/8 0%, transparent 70%),
-      var(--accent)/5;
-    opacity: 0;
-    transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    border-radius: inherit;
-  }
-  
-  .texture-hover:hover::before {
-    opacity: 1;
-  }
-  
-  /* Button gradient animations */
-  .button-gradient-hover {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary) 50%, var(--accent) 100%);
-    background-size: 200% 200%;
-    background-position: 0% 0%;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  
-  .button-gradient-hover:hover {
-    background-position: 100% 100%;
-    box-shadow: 
-      0 8px 25px var(--primary)/30,
-      inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  }
-  
-  /* Background pattern animations */
-  .bg-animate-float {
-    animation: floatAnimation 6s ease-in-out infinite;
-  }
-  
-  @keyframes floatAnimation {
-    0%, 100% {
-      transform: translateY(0px) rotate(0deg);
-    }
-    33% {
-      transform: translateY(-10px) rotate(1deg);
-    }
-    66% {
-      transform: translateY(5px) rotate(-0.5deg);
-    }
-  }
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes pulseGlow {
-  0%, 100% {
-    box-shadow: 0 0 5px var(--primary)/20;
-  }
-  50% {
-    box-shadow: 0 0 20px var(--primary)/40, 0 0 30px var(--primary)/20;
-  }
-}
+/* Simple keyframes only */

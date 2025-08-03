@@ -9,7 +9,7 @@ Sealbox Web UI is a modern React-based web interface for managing secrets throug
 - ⏰ **TTL Indicators** - Visual countdown and expiration warnings
 - 📱 **Responsive Design** - Works seamlessly on desktop and mobile devices
 - 🌐 **CORS Support** - Development-friendly cross-origin request handling
-- 🎨 **Modern UI** - Built with TailwindCSS and shadcn/ui components
+- 🎨 **Modern Industrial UI** - 2025 design following Linear/Superhuman principles with strict 8pt grid system
 - 🌍 **Internationalization** - Support for English, Chinese, Japanese, and German
 - 🚀 **Production Ready** - Optimized builds and proper error handling
 
@@ -118,7 +118,13 @@ sealbox-web/
 
 ### User Interface
 
-- **Responsive**: Adapts to different screen sizes
+- **2025 Modern Industrial Design**: Following Linear/Superhuman style principles
+  - **8pt Grid System**: Strict spacing hierarchy (64px→32px→16px→8px)
+  - **Function-First Colors**: Minimal gradient usage, strong grayscale hierarchy
+  - **3-Layer Architecture**: Clear page information structure (Header→Content→Footer)
+  - **Visual Restraint**: Clean typography with Inter font and optimized tracking
+  - **Consistent Interactions**: 150ms transition duration standard
+- **Responsive**: Adapts to different screen sizes with mobile-first approach
 - **Multi-language**: Support for 4 languages with smart switching
 - **Language Persistence**: Remembers user's language preference
 - **Localized Dates**: Date formatting according to user's language
@@ -233,7 +239,8 @@ Enable React Query Devtools for debugging:
 
 ## Future Enhancements
 
-- [x] **i18n Support** - Multi-language interface with language switching
+- [x] **i18n Support** - Multi-language interface with language switching  
+- [x] **Industrial UI Design** - 2025 modern design system with Linear/Superhuman principles
 - [ ] Secret creation and editing interface
 - [ ] Master key management UI
 - [ ] Bulk secret operations

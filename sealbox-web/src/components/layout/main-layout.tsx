@@ -40,25 +40,21 @@ export function MainLayout({ children }: MainLayoutProps) {
   const serverStatus = getServerStatus();
 
   return (
-    <LayeredBackground 
-      variant="subtle" 
-      texture="grid" 
-      animated={false}
-    >
-      {/* Top navigation bar */}
-      <header className="sticky top-0 z-50 bg-glass-bright border-b border-border/30">
-        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4">
+    <div className="bg-background min-h-screen">
+      {/* Top navigation bar - Fixed height, clean */}
+      <header className="sticky top-0 z-50 bg-card border-b border-border">
+        <div className="container-main py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4 sm:space-x-8">
+            <div className="flex items-center space-x-8">
               <Link to="/" className="group">
-                <SealboxLogo size="md" className="group-hover:scale-105 transition-transform" />
+                <SealboxLogo size="md" className="group-hover:translate-y-[-1px] transition-transform duration-150" />
               </Link>
               
-              <nav className="hidden sm:flex items-center space-x-1">
+              <nav className="hidden sm:flex items-center space-x-2">
                 <Link
                   to="/"
-                  className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gradient-warm transition-all"
-                  activeProps={{ className: "bg-gradient-vibrant text-primary border border-primary/20" }}
+                  className="px-4 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors duration-150"
+                  activeProps={{ className: "bg-primary text-primary-foreground" }}
                 >
                   {t('nav.secretManagement')}
                 </Link>
@@ -82,16 +78,12 @@ export function MainLayout({ children }: MainLayoutProps) {
               </nav>
             </div>
 
-            <div className="flex items-center space-x-2 sm:space-x-3">
+            <div className="flex items-center space-x-4">
               {/* Server status */}
               <div className="flex items-center space-x-2">
                 <Badge 
                   variant={serverStatus.variant}
-                  className={`flex items-center space-x-1 px-2 py-1 ${
-                    serverStatus.status === 'online' ? 'bg-status-success' : 
-                    serverStatus.status === 'offline' ? 'bg-status-error' : 
-                    'bg-status-checking'
-                  } border-0`}
+                  className="flex items-center space-x-1 px-2 py-1"
                 >
                   {serverStatus.status === 'checking' ? (
                     <div className="w-3 h-3 border border-foreground/40 border-t-foreground rounded-full animate-spin" />
@@ -116,7 +108,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <LanguageSelector />
 
               {/* Settings button - hidden on mobile */}
-              <Button variant="ghost" size="icon" className="hover:bg-accent/50 transition-colors hidden sm:flex">
+              <Button variant="ghost" size="icon" className="hover:bg-accent transition-colors duration-150 hidden sm:flex">
                 <Settings className="h-4 w-4" />
               </Button>
 
@@ -126,7 +118,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 size="icon" 
                 onClick={handleLogout} 
                 title={t('nav.logout')}
-                className="hover:bg-destructive/10 hover:text-destructive transition-colors"
+                className="hover:bg-destructive/10 hover:text-destructive transition-colors duration-150"
               >
                 <LogOut className="h-4 w-4" />
               </Button>
@@ -135,10 +127,10 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
       </header>
 
-      {/* Main content area */}
-      <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8 space-section">
+      {/* Main content area - 3 layer architecture */}
+      <main className="container-main py-16">
         {children}
       </main>
-    </LayeredBackground>
+    </div>
   );
 }
