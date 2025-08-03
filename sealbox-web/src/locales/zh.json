@@ -50,7 +50,11 @@
     "expiresInHours": "{{hours}} 小时后过期",
     "expiresInDays": "{{days}} 天后过期",
     "deleteConfirm": "确定要删除密钥 \"{{key}}\" 版本 {{version}} 吗？",
-    "deleteFailed": "删除失败，请重试"
+    "deleteConfirmTitle": "删除密钥",
+    "deleteFailed": "删除失败",
+    "deleteFailedDescription": "无法删除密钥，请重试。",
+    "deleteSuccess": "密钥已删除",
+    "deleteSuccessDescription": "密钥 \"{{key}}\" 版本 {{version}} 已成功删除"
   },
   "common": {
     "loading": "加载中...",
@@ -61,11 +65,17 @@
     "cancel": "取消",
     "confirm": "确认",
     "error": "错误",
-    "success": "成功"
+    "success": "成功",
+    "tryAgain": "重试",
+    "reloadPage": "重新加载页面"
   },
   "errors": {
     "pageNotFound": "页面未找到",
-    "pageNotFoundDescription": "您访问的页面不存在或正在开发中"
+    "pageNotFoundDescription": "您访问的页面不存在或正在开发中",
+    "somethingWentWrong": "出现了问题",
+    "errorBoundaryDescription": "发生了意外错误。请尝试刷新页面，如果问题持续存在，请联系支持团队。",
+    "unknownError": "发生了未知错误",
+    "technicalDetails": "技术详情"
   },
   "language": {
     "switch": "切换语言",

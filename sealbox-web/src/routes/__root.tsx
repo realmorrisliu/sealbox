@@ -13,6 +13,8 @@ import { useTranslation } from "react-i18next";
 
 import appCss from "@/styles/app.css?url";
 import { queryClient } from "@/lib/query-client";
+import { Toaster } from "@/components/ui/sonner";
+import { ErrorBoundary } from "@/components/error-boundary";
 import "@/lib/i18n";
 
 function NotFound() {
@@ -58,12 +60,15 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <RootDocument>
-        <Outlet />
-        <ReactQueryDevtools initialIsOpen={false} />
-      </RootDocument>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <RootDocument>
+          <Outlet />
+          <Toaster />
+          <ReactQueryDevtools initialIsOpen={false} />
+        </RootDocument>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

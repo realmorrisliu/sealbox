@@ -118,7 +118,7 @@ function LoginPage() {
                 id="serverUrl"
                 type="url"
                 placeholder={t('login.serverUrlPlaceholder')}
-                className="h-11 bg-background/80 border-border/60 focus:bg-card focus:border-primary/40 transition-all duration-200"
+                className="h-11 bg-background/80 border-border/60 focus:bg-card focus:border-primary/40 transition-all duration-150"
                 {...register("serverUrl")}
               />
               {errors.serverUrl && (
@@ -136,7 +136,7 @@ function LoginPage() {
                 id="token"
                 type="password"
                 placeholder={t('login.tokenPlaceholder')}
-                className="h-11 bg-background/80 border-border/60 focus:bg-card focus:border-primary/40 transition-all duration-200"
+                className="h-11 bg-background/80 border-border/60 focus:bg-card focus:border-primary/40 transition-all duration-150"
                 {...register("token")}
               />
               {errors.token && (

@@ -75,8 +75,8 @@ export function UserMenu() {
             onClick={() => setIsOpen(false)}
           />
           
-          {/* Menu Content - Responsive positioning */}
-          <div className="absolute right-0 sm:right-0 top-full mt-2 w-[calc(100vw-2rem)] max-w-80 sm:w-72 bg-card border border-border rounded-lg shadow-lg z-50">
+          {/* Menu Content - Improved responsive positioning */}
+          <div className="absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-card border border-border rounded-lg shadow-lg z-50">
             {/* Server Status Section */}
             <div className="p-4 space-y-3">
               <div className="flex items-center justify-between">

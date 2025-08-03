@@ -82,54 +82,52 @@ export function BackgroundPattern({
   className 
 }: BackgroundPatternProps) {
   const getPatternSVG = () => {
+    let svgString = '';
+    
     switch (pattern) {
       case "circuit":
-        return (
-          <svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
-            <g fill="none" stroke="currentColor" strokeWidth="1" opacity={opacity}>
-              <path d="M10 10h40v40H10z"/>
-              <circle cx="20" cy="20" r="2"/>
-              <circle cx="40" cy="20" r="2"/>
-              <circle cx="20" cy="40" r="2"/>
-              <circle cx="40" cy="40" r="2"/>
-              <path d="M20 18v-8h20v8M40 22v8h-20v-8"/>
-            </g>
-          </svg>
-        );
+        svgString = `<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+          <g fill="none" stroke="currentColor" stroke-width="1" opacity="${opacity}">
+            <path d="M10 10h40v40H10z"/>
+            <circle cx="20" cy="20" r="2"/>
+            <circle cx="40" cy="20" r="2"/>
+            <circle cx="20" cy="40" r="2"/>
+            <circle cx="40" cy="40" r="2"/>
+            <path d="M20 18v-8h20v8M40 22v8h-20v-8"/>
+          </g>
+        </svg>`;
+        break;
       case "waves":
-        return (
-          <svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
-            <path 
-              d="M0,10 Q15,0 30,10 T60,10" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="0.5" 
-              opacity={opacity}
-            />
-          </svg>
-        );
+        svgString = `<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+          <path d="M0,10 Q15,0 30,10 T60,10" fill="none" stroke="currentColor" stroke-width="0.5" opacity="${opacity}"/>
+        </svg>`;
+        break;
       case "geometric":
-        return (
-          <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-            <g fill="currentColor" opacity={opacity}>
-              <circle cx="20" cy="20" r="1"/>
-              <circle cx="10" cy="10" r="0.5"/>
-              <circle cx="30" cy="10" r="0.5"/>
-              <circle cx="10" cy="30" r="0.5"/>
-              <circle cx="30" cy="30" r="0.5"/>
-            </g>
-          </svg>
-        );
+        svgString = `<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+          <g fill="currentColor" opacity="${opacity}">
+            <circle cx="20" cy="20" r="1"/>
+            <circle cx="10" cy="10" r="0.5"/>
+            <circle cx="30" cy="10" r="0.5"/>
+            <circle cx="10" cy="30" r="0.5"/>
+            <circle cx="30" cy="30" r="0.5"/>
+          </g>
+        </svg>`;
+        break;
       default:
-        return null;
+        return '';
     }
+    
+    return svgString;
   };
+
+  const svgData = getPatternSVG();
+  if (!svgData) return null;
 
   return (
     <div 
       className={cn("absolute inset-0 opacity-50", className)}
       style={{
-        backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(getPatternSVG()?.outerHTML || '')}")`,
+        backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(svgData)}")`,
         backgroundRepeat: "repeat",
         backgroundSize: pattern === "waves" ? "60px 20px" : "40px 40px"
       }}

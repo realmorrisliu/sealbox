@@ -50,7 +50,11 @@
     "expiresInHours": "Expires in {{hours}}h", 
     "expiresInDays": "Expires in {{days}}d",
     "deleteConfirm": "Are you sure you want to delete secret \"{{key}}\" version {{version}}?",
-    "deleteFailed": "Delete failed, please try again"
+    "deleteConfirmTitle": "Delete Secret",
+    "deleteFailed": "Delete Failed",
+    "deleteFailedDescription": "Unable to delete secret. Please try again.",
+    "deleteSuccess": "Secret Deleted",
+    "deleteSuccessDescription": "Secret \"{{key}}\" version {{version}} has been deleted successfully"
   },
   "common": {
     "loading": "Loading...",
@@ -61,11 +65,17 @@
     "cancel": "Cancel",
     "confirm": "Confirm",
     "error": "Error",
-    "success": "Success"
+    "success": "Success",
+    "tryAgain": "Try Again",
+    "reloadPage": "Reload Page"
   },
   "errors": {
     "pageNotFound": "Page Not Found",
-    "pageNotFoundDescription": "The page you are looking for does not exist or is under development"
+    "pageNotFoundDescription": "The page you are looking for does not exist or is under development",
+    "somethingWentWrong": "Something went wrong",
+    "errorBoundaryDescription": "An unexpected error occurred. Please try refreshing the page or contact support if the problem persists.",
+    "unknownError": "An unknown error occurred",
+    "technicalDetails": "Technical Details"
   },
   "language": {
     "switch": "Switch Language",

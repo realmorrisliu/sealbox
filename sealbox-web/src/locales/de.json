@@ -50,7 +50,11 @@
     "expiresInHours": "Läuft in {{hours}}h ab",
     "expiresInDays": "Läuft in {{days}}d ab",
     "deleteConfirm": "Sind Sie sicher, dass Sie Geheimnis \"{{key}}\" Version {{version}} löschen möchten?",
-    "deleteFailed": "Löschen fehlgeschlagen, bitte versuchen Sie es erneut"
+    "deleteConfirmTitle": "Geheimnis löschen",
+    "deleteFailed": "Löschen fehlgeschlagen",
+    "deleteFailedDescription": "Geheimnis konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
+    "deleteSuccess": "Geheimnis gelöscht",
+    "deleteSuccessDescription": "Geheimnis \"{{key}}\" Version {{version}} wurde erfolgreich gelöscht"
   },
   "common": {
     "loading": "Laden...",

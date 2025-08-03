@@ -11,9 +11,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Alert } from "@/components/ui/alert";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { MainLayout } from "@/components/layout/main-layout";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SecretsListSkeleton } from "@/components/ui/loading-skeletons";
 import { useSecrets, useDeleteSecret } from "@/hooks/use-api";
+import { toast } from "sonner";
 import { Plus, Trash2, Eye, Clock, AlertTriangle } from "lucide-react";
 import type { SecretInfo } from "@/lib/types";
+import { useState } from "react";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -33,15 +37,33 @@ function SecretsPage() {
   const { data: secretsData, isLoading, error, refetch } = useSecrets();
   const deleteSecret = useDeleteSecret();
   const { t, i18n } = useTranslation();
+  const [deleteDialog, setDeleteDialog] = useState<{ 
+    open: boolean; 
+    key: string; 
+    version: number; 
+  }>({ open: false, key: "", version: 0 });
 
-  const handleDeleteSecret = async (key: string, version: number) => {
-    if (confirm(t('secrets.deleteConfirm', { key, version }))) {
-      try {
-        await deleteSecret.mutateAsync({ key, version });
-      } catch (error) {
-        console.error("Delete failed:", error);
-        alert(t('secrets.deleteFailed'));
-      }
+  const handleDeleteSecret = (key: string, version: number) => {
+    setDeleteDialog({ open: true, key, version });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteSecret.mutateAsync({ 
+        key: deleteDialog.key, 
+        version: deleteDialog.version 
+      });
+      toast.success(t('secrets.deleteSuccess'), {
+        description: t('secrets.deleteSuccessDescription', { 
+          key: deleteDialog.key, 
+          version: deleteDialog.version 
+        }),
+      });
+    } catch (error) {
+      console.error("Delete failed:", error);
+      toast.error(t('secrets.deleteFailed'), {
+        description: t('secrets.deleteFailedDescription'),
+      });
     }
   };
 
@@ -95,11 +117,7 @@ function SecretsPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p>{t('common.loading')}</p>
-      </div>
-    );
+    return <SecretsListSkeleton />;
   }
 
   if (error) {
@@ -150,8 +168,8 @@ function SecretsPage() {
           </div>
         ) : (
           <>
-            {/* Mobile Card View */}
-            <div className="block sm:hidden space-y-4 p-6">
+            {/* Mobile Card View - Improved breakpoint at md */}
+            <div className="block md:hidden space-y-4 p-6">
               {secrets.map((secret: SecretInfo) => {
                 const expiryStatus = getExpiryStatus(secret.expires_at);
                 
@@ -223,14 +241,14 @@ function SecretsPage() {
             </div>
 
             {/* Desktop Table View - Linear风格表格 */}
-            <div className="hidden sm:block overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-border hover:bg-transparent">
                     <TableHead className="font-medium text-foreground">{t('secrets.secretName')}</TableHead>
                     <TableHead className="font-medium text-foreground">{t('secrets.version')}</TableHead>
-                    <TableHead className="font-medium text-foreground hidden md:table-cell">{t('secrets.createdAt')}</TableHead>
-                    <TableHead className="font-medium text-foreground hidden lg:table-cell">{t('secrets.updatedAt')}</TableHead>
+                    <TableHead className="font-medium text-foreground hidden lg:table-cell">{t('secrets.createdAt')}</TableHead>
+                    <TableHead className="font-medium text-foreground hidden xl:table-cell">{t('secrets.updatedAt')}</TableHead>
                     <TableHead className="font-medium text-foreground">{t('secrets.expiresAt')}</TableHead>
                     <TableHead className="font-medium text-foreground text-right">{t('secrets.actions')}</TableHead>
                   </TableRow>
@@ -242,7 +260,7 @@ function SecretsPage() {
                     return (
                       <TableRow 
                         key={`${secret.key}-${secret.version}`}
-                        className="h-12 border-b border-border hover:bg-accent/50 transition-colors duration-150 cursor-pointer"
+                        className="min-h-12 border-b border-border hover:bg-accent/50 transition-colors duration-150 cursor-pointer"
                       >
                         <TableCell className="font-medium">
                           <span className="font-mono text-sm">{secret.key}</span>
@@ -252,10 +270,10 @@ function SecretsPage() {
                             v{secret.version}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
+                        <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">
                           {formatTimestamp(secret.created_at)}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">
+                        <TableCell className="text-sm text-muted-foreground hidden xl:table-cell">
                           {formatTimestamp(secret.updated_at)}
                         </TableCell>
                         <TableCell>
@@ -265,7 +283,7 @@ function SecretsPage() {
                                 expiryStatus?.status === "expired" ? "destructive" :
                                 expiryStatus?.status === "warning" ? "default" : "secondary"
                               }
-                              className="flex items-center space-x-1 w-fit"
+                              className="inline-flex items-center space-x-1"
                             >
                               <Clock className="h-3 w-3" />
                               <span className="text-xs">
@@ -308,6 +326,22 @@ function SecretsPage() {
           </>
         )}
       </Card>
+
+      {/* 确认删除对话框 */}
+      <ConfirmDialog
+        open={deleteDialog.open}
+        onOpenChange={(open) => setDeleteDialog(prev => ({ ...prev, open }))}
+        title={t('secrets.deleteConfirmTitle')}
+        description={t('secrets.deleteConfirm', { 
+          key: deleteDialog.key, 
+          version: deleteDialog.version 
+        })}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        variant="destructive"
+        onConfirm={confirmDelete}
+        isLoading={deleteSecret.isPending}
+      />
     </div>
   );
 }

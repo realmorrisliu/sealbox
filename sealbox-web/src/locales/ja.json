@@ -50,7 +50,11 @@
     "expiresInHours": "{{hours}}時間後に期限切れ",
     "expiresInDays": "{{days}}日後に期限切れ",
     "deleteConfirm": "シークレット \"{{key}}\" バージョン {{version}} を削除してもよろしいですか？",
-    "deleteFailed": "削除に失敗しました。再試行してください"
+    "deleteConfirmTitle": "シークレットを削除",
+    "deleteFailed": "削除に失敗しました",
+    "deleteFailedDescription": "シークレットを削除できませんでした。もう一度お試しください。",
+    "deleteSuccess": "シークレットが削除されました",
+    "deleteSuccessDescription": "シークレット \"{{key}}\" バージョン {{version}} が正常に削除されました"
   },
   "common": {
     "loading": "読み込み中...",
