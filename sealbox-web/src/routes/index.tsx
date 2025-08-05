@@ -13,9 +13,12 @@ import { AuthGuard } from "@/components/auth/auth-guard";
 import { MainLayout } from "@/components/layout/main-layout";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SecretsListSkeleton } from "@/components/ui/loading-skeletons";
+import { CreateSecretDialog } from "@/components/secrets/create-secret-dialog";
+import { ViewSecretDialog } from "@/components/secrets/view-secret-dialog";
+import { EditSecretDialog } from "@/components/secrets/edit-secret-dialog";
 import { useSecrets, useDeleteSecret } from "@/hooks/use-api";
 import { toast } from "sonner";
-import { Plus, Trash2, Eye, Clock, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Eye, Edit, Clock, AlertTriangle } from "lucide-react";
 import type { SecretInfo } from "@/lib/types";
 import { useState } from "react";
 
@@ -147,10 +150,12 @@ function SecretsPage() {
             {t('secrets.description')}
           </p>
         </div>
-        <Button disabled variant="outline" className="border-border">
-          <Plus className="h-4 w-4 mr-2" />
-          {t('secrets.newSecretComingSoon')}
-        </Button>
+        <CreateSecretDialog>
+          <Button className="border-border">
+            <Plus className="h-4 w-4 mr-2" />
+            {t('secrets.newSecret')}
+          </Button>
+        </CreateSecretDialog>
       </div>
 
       {/* [中层] 内容分区 - Section卡片 */}
@@ -161,10 +166,12 @@ function SecretsPage() {
               <Plus className="h-6 w-6 text-muted-foreground" />
             </div>
             <p className="text-muted-foreground text-sm">{t('secrets.noSecretsFound')}</p>
-            <Button disabled variant="outline">
-              <Plus className="h-4 w-4 mr-2" />
-              {t('secrets.createFirst')}
-            </Button>
+            <CreateSecretDialog>
+              <Button variant="outline">
+                <Plus className="h-4 w-4 mr-2" />
+                {t('secrets.newSecret')}
+              </Button>
+            </CreateSecretDialog>
           </div>
         ) : (
           <>
@@ -215,15 +222,26 @@ function SecretsPage() {
                     </div>
                     
                     <div className="flex items-center justify-end space-x-2 pt-2 border-t border-border">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        disabled
-                        className="h-8 px-3 hover:bg-accent transition-colors duration-150"
-                      >
-                        <Eye className="h-3 w-3 mr-1" />
-                        <span className="text-xs">{t('common.view')}</span>
-                      </Button>
+                      <ViewSecretDialog secret={secret}>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-8 px-3 hover:bg-accent transition-colors duration-150"
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          <span className="text-xs">{t('common.view')}</span>
+                        </Button>
+                      </ViewSecretDialog>
+                      <EditSecretDialog secret={secret}>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-8 px-3 hover:bg-accent transition-colors duration-150"
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          <span className="text-xs">{t('common.edit')}</span>
+                        </Button>
+                      </EditSecretDialog>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -297,15 +315,25 @@ function SecretsPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex items-center justify-end space-x-2">
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              disabled
-                              className="h-8 w-8 p-0 hover:bg-accent transition-colors duration-150"
-                            >
-                              <Eye className="h-3 w-3" />
-                            </Button>
+                          <div className="flex items-center justify-end space-x-1">
+                            <ViewSecretDialog secret={secret}>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 w-8 p-0 hover:bg-accent transition-colors duration-150"
+                              >
+                                <Eye className="h-3 w-3" />
+                              </Button>
+                            </ViewSecretDialog>
+                            <EditSecretDialog secret={secret}>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 w-8 p-0 hover:bg-accent transition-colors duration-150"
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                            </EditSecretDialog>
                             <Button
                               variant="ghost"
                               size="sm"

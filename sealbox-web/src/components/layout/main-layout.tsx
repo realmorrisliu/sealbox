@@ -2,6 +2,7 @@ import { Link, useRouter } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { SealboxLogo } from "@/components/ui/sealbox-logo";
 import { UserMenu } from "@/components/ui/user-menu";
+import { Navigation } from "@/components/layout/navigation";
 import { useAuthStore } from "@/stores/auth";
 
 interface MainLayoutProps {
@@ -26,18 +27,14 @@ export function MainLayout({ children }: MainLayoutProps) {
       {/* Linear-style minimal navigation - 48px height */}
       <header className="sticky top-0 z-50 bg-card border-b border-border">
         <div className="container-main h-12 flex items-center justify-between">
-          {/* Left: Logo + Current Page */}
+          {/* Left: Logo + Navigation */}
           <div className="flex items-center space-x-6">
             <Link to="/" className="group flex items-center">
               <SealboxLogo size="sm" className="group-hover:translate-y-[-1px] transition-transform duration-150" />
             </Link>
             
-            {/* Current Page Title - Always visible on mobile */}
-            <div className="block">
-              <h1 className="text-sm font-medium text-foreground truncate max-w-[200px] sm:max-w-none">
-                {getCurrentPageTitle()}
-              </h1>
-            </div>
+            {/* Navigation Menu */}
+            <Navigation />
           </div>
 
           {/* Right: User Menu */}

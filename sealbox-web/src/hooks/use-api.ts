@@ -25,13 +25,13 @@ export function useSecrets() {
   });
 }
 
-export function useSecret(key: string, version?: number) {
+export function useSecret(key: string, version?: number, options?: { enabled?: boolean }) {
   const apiClient = useApiClient();
   
   return useQuery({
     queryKey: queryKeys.secret(key, version),
     queryFn: () => apiClient?.getSecret(key, version),
-    enabled: !!apiClient && !!key,
+    enabled: !!apiClient && !!key && (options?.enabled !== false),
   });
 }
 
