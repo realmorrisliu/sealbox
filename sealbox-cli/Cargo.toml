@@ -14,7 +14,7 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 time = { workspace = true, features = ["formatting", "local-offset"] }
 toml = "0.9"
-dirs = "5.0"
+dirs = "6.0"
 tabled = "0.20"
 rpassword = "7.0"
 aes-gcm = { workspace = true }
