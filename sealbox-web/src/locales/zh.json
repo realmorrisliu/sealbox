@@ -1,13 +1,10 @@
 {
-  "app": {
-    "title": "Sealbox",
-    "description": "密钥管理系统"
-  },
   "nav": {
     "secretManagement": "密钥管理",
     "masterKeys": "主密钥",
-    "administration": "管理面板",
-    "logout": "退出登录"
+    "settings": "设置",
+    "signOut": "退出登录",
+    "administrator": "管理员"
   },
   "login": {
     "title": "Sealbox",
@@ -15,7 +12,7 @@
     "serverUrl": "服务器地址",
     "serverUrlPlaceholder": "http://localhost:8080",
     "token": "认证令牌",
-    "tokenPlaceholder": "输入您的 Bearer Token",
+    "tokenPlaceholder": "输入您的Bearer令牌",
     "connect": "连接",
     "connecting": "连接中...",
     "firstTime": "初次使用？",
@@ -34,81 +31,81 @@
     }
   },
   "secrets": {
-    "title": "密钥管理",
-    "description": "管理您的加密密钥和敏感数据",
-    "newSecret": "新建密钥",
-    "newSecretComingSoon": "新建密钥（即将推出）",
-    "createFirst": "创建您的第一个密钥（即将推出）",
-    "noSecretsFound": "未找到密钥",
-    "secretName": "密钥名称",
-    "version": "版本",
-    "createdAt": "创建时间",
-    "updatedAt": "更新时间",
-    "expiresAt": "过期时间",
     "actions": "操作",
-    "neverExpires": "永不过期",
-    "expired": "已过期",
-    "expiresInMinutes": "{{minutes}} 分钟后过期",
-    "expiresInHours": "{{hours}} 小时后过期",
-    "expiresInDays": "{{days}} 天后过期",
-    "deleteConfirm": "确定要删除密钥 \"{{key}}\" 版本 {{version}} 吗？",
-    "deleteConfirmTitle": "删除密钥",
-    "deleteFailed": "删除失败",
-    "deleteFailedDescription": "无法删除密钥，请重试。",
-    "deleteSuccess": "密钥已删除",
-    "deleteSuccessDescription": "密钥 \"{{key}}\" 版本 {{version}} 已成功删除",
-    "createSecretTitle": "创建新密钥",
-    "createSecretDescription": "存储新的加密密钥，可设置过期时间",
-    "secretNamePlaceholder": "my-secret-key",
-    "secretNameHelp": "仅支持字母、数字、下划线和连字符",
-    "secretValue": "密钥值",
-    "secretValuePlaceholder": "输入您的密钥值...",
-    "secretValueHelp": "此内容将在存储前加密",
-    "enableTtl": "设置过期时间",
-    "enableTtlDescription": "在指定时间后自动删除此密钥",
-    "ttlValue": "持续时间",
-    "ttlUnit": "时间单位",
-    "minutes": "分钟",
-    "hours": "小时",
-    "days": "天",
-    "encryptionInfo": "安全存储",
-    "encryptionInfoDescription": "您的密钥将使用 RSA + AES-GCM 信封加密技术进行加密",
-    "createSecret": "创建密钥",
-    "creating": "创建中...",
-    "createSuccess": "密钥已创建",
-    "createSuccessDescription": "密钥 \"{{key}}\" 已成功创建",
-    "createFailed": "创建失败",
-    "createFailedDescription": "无法创建密钥，请重试。",
-    "viewSecretTitle": "查看密钥",
-    "viewSecretDescription": "查看加密密钥的详细信息和内容",
-    "secretDetails": "密钥详情",
-    "secretContent": "密钥内容",
-    "showSecret": "显示",
-    "hideSecret": "隐藏",
-    "secretHidden": "为了安全，密钥内容已隐藏",
-    "noSecretData": "没有可用的密钥数据",
-    "loadSecretFailed": "加载密钥失败",
-    "copiedToClipboard": "已复制到剪贴板",
-    "copiedToClipboardDescription": "密钥内容已复制到您的剪贴板",
-    "copyFailed": "复制失败",
-    "copyFailedDescription": "无法复制到剪贴板，请重试。",
-    "securityInfo": "端到端加密",
-    "securityInfoDescription": "此密钥在客户端使用您的私钥解密。服务器从不会看到明文。",
-    "editSecretTitle": "编辑密钥",
-    "editSecretDescription": "更新密钥内容并创建新版本",
-    "secretNameReadonly": "编辑时无法更改密钥名称",
-    "updateSecret": "更新密钥",
-    "updating": "更新中...",
-    "updateSuccess": "密钥已更新",
-    "updateSuccessDescription": "密钥 \"{{key}}\" 已成功更新",
-    "updateFailed": "更新失败",
-    "updateFailedDescription": "无法更新密钥，请重试。",
-    "versioningInfo": "版本控制",
-    "versioningInfoDescription": "这将创建密钥的新版本。除非过期，否则以前的版本仍然可访问。"
+    "stats": {
+      "totalSecrets": "密钥总数",
+      "production": "生产环境",
+      "expiring": "即将过期",
+      "highRisk": "高风险",
+      "needRotation": "需要轮换"
+    },
+    "controls": {
+      "searchPlaceholder": "搜索密钥、标签...",
+      "table": "表格",
+      "cards": "卡片",
+      "addSecret": "添加密钥"
+    },
+    "table": {
+      "name": "名称",
+      "value": "值",
+      "environment": "环境",
+      "category": "类别",
+      "status": "状态",
+      "riskLevel": "风险级别",
+      "versions": "版本",
+      "lastUsed": "最后使用",
+      "access": "访问次数"
+    },
+    "status": {
+      "active": "活跃",
+      "expiring": "即将过期",
+      "expired": "已过期",
+      "compromised": "被泄露",
+      "inactive": "非活跃"
+    },
+    "riskLevel": {
+      "critical": "严重",
+      "high": "高",
+      "medium": "中等",
+      "low": "低"
+    },
+    "category": {
+      "database": "数据库",
+      "api": "接口",
+      "auth": "认证",
+      "payment": "支付",
+      "service": "服务",
+      "other": "其他"
+    },
+    "empty": {
+      "noSecretsFound": "未找到密钥",
+      "tryAdjustingFilters": "尝试调整筛选条件。",
+      "addFirstSecret": "添加您的第一个密钥开始使用。"
+    },
+    "dialog": {
+      "addNewSecret": "添加新密钥",
+      "addNewSecretDescription": "为您的应用程序创建新的密钥条目。",
+      "name": "名称",
+      "nameHelp": "SECRET_NAME",
+      "value": "值",
+      "valueHelp": "输入密钥值",
+      "description": "描述",
+      "descriptionHelp": "简要描述",
+      "ttl": "TTL（生存时间）秒",
+      "ttlHelp": "3600",
+      "missingFields": "缺少字段",
+      "nameAndValueRequired": "名称和值为必填项",
+      "secretAdded": "密钥已添加",
+      "hasBeenCreated": "{{name}} 已创建"
+    },
+    "cardView": {
+      "risk": "风险",
+      "uses": "次使用",
+      "never": "从未"
+    }
   },
   "keys": {
     "title": "主密钥管理",
-    "description": "管理用于信封加密的RSA密钥对",
     "registerKey": "注册密钥",
     "rotateKey": "轮换密钥",
     "keyId": "密钥ID",
@@ -135,17 +132,10 @@
     "loading": "加载中...",
     "loadingFailed": "加载失败",
     "retry": "重试",
-    "delete": "删除",
-    "view": "查看",
-    "cancel": "取消",
-    "confirm": "确认",
     "error": "错误",
-    "success": "成功",
+    "cancel": "取消",
     "tryAgain": "重试",
-    "reloadPage": "重新加载页面",
-    "copy": "复制",
-    "close": "关闭",
-    "edit": "编辑"
+    "reloadPage": "重新加载页面"
   },
   "errors": {
     "pageNotFound": "页面未找到",
@@ -156,7 +146,6 @@
     "technicalDetails": "技术详情"
   },
   "language": {
-    "switch": "切换语言",
     "english": "English",
     "chinese": "中文",
     "japanese": "日本語",
@@ -166,11 +155,6 @@
     "toggle": "切换主题",
     "light": "浅色",
     "dark": "深色",
-    "system": "跟随系统"
-  },
-  "status": {
-    "online": "在线",
-    "offline": "离线",
-    "checking": "检查中..."
+    "system": "系统"
   }
 }

@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Alert } from "@/components/ui/alert";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { MainLayout } from "@/components/layout/main-layout";
-import { MasterKeyListSkeleton } from "@/components/ui/loading-skeletons";
+import { MasterKeyListSkeleton } from "@/components/common/loading-skeletons";
 import { useMasterKeys, useCreateMasterKey, useRotateMasterKey } from "@/hooks/use-api";
 import type { MasterKey } from "@/lib/types";
 

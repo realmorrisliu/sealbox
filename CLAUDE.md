@@ -201,41 +201,41 @@ The CLI uses TOML configuration files with environment variable overrides:
   - Implemented serde_rusqlite for automatic Secret struct mapping
   - Follows official best practices: query_and_then() + from_row() for single records, from_rows() for batch queries
   - Eliminated manual field mapping code, improving maintainability and type safety
-- ✅ **Web UI (sealbox-web)** - Complete modern React-based web interface with full functionality
-  - **🎯 Complete Secret Management** - Full CRUD operations implemented
-    - ✅ **Create secrets** with TTL support and form validation
-    - ✅ **View secret content** with secure display and copy functionality
-    - ✅ **Edit secrets** with versioning (creates new versions)
-    - ✅ **Delete secrets** with confirmation dialogs
-    - ✅ **Real-time TTL status** with expiration warnings and countdown
-  - **🔑 Master Key Management Interface** - Dedicated management page
-    - ✅ **Master key listing** with status indicators (Active/Retired/Disabled)
-    - ✅ **Navigation system** between Secret Management and Master Keys
-    - ✅ **Responsive design** with mobile and desktop optimized layouts
-  - **🌐 Complete Authentication & Integration**
-    - ✅ **Bearer Token authentication** with server status monitoring
-    - ✅ **Full API integration** with all existing server endpoints
-    - ✅ **CORS support** for development environment
-  - **🎨 Production-Ready UI/UX Design**
-    - ✅ **4-language internationalization** (English, Chinese, Japanese, German)
-    - ✅ **Modern shadcn/ui components** with consistent design system
-    - ✅ **Mobile-responsive layouts** with Linear/Superhuman style principles
-  - **2025 Modern Industrial UI Design** following Linear/Superhuman style principles:
-    - Strict 8pt grid spacing system (64px→32px→16px→8px hierarchy)
-    - Function-first color system with minimal gradient usage
-    - 3-layer page architecture (Header→Content→Footer)
-    - Fixed table row heights (h-12) with consistent spacing
-    - Visual restraint with 150ms transition duration standard
-    - Clean typography using Inter font with optimized tracking
-  - **🎯 2025 UI/UX Excellence Achieved** - Complete overhaul from basic to professional
-    - **Replaced primitive alerts/confirms** with shadcn/ui Dialog components
-    - **Modern notification system** using Sonner toast notifications
-    - **Professional loading states** with Skeleton components instead of text
-    - **Global error boundary** with graceful failure handling and recovery
-    - **Cleaned design system** removing duplicate CSS and visual complexity
-    - **Full internationalization** for all new UI components (4 languages)
-    - **Accessibility improvements** with proper ARIA labels and keyboard navigation
-    - **Production-ready UX** meeting 2025 web application standards
+- ✅ **Web UI (sealbox-web)** - Modern React-based web interface
+  - **⚠️ DEVELOPMENT STATUS: EARLY STAGE** - Web UI is incomplete and actively under development
+  - **🎨 Modern Design System**
+    - ✅ **Professional UI design** with clean, functional interface
+    - ✅ **Component architecture cleanup** - Custom components organized in dedicated directories
+    - ✅ **Structured component organization**: `i18n/`, `theme/`, `brand/`, `common/` directories
+    - ✅ **shadcn/ui component library** with consistent design system
+    - ⚠️ **UI functionality is largely mock/placeholder** - Most features display static data
+  - **🌐 Internationalization Foundation**
+    - ✅ **4-language support** (English, Chinese, Japanese, German)
+    - ✅ **react-i18next framework** with comprehensive translation keys
+    - ✅ **Language switching** with dropdown selector
+    - ✅ **Date localization** with date-fns
+  - **🔐 Basic Authentication**
+    - ✅ **Login page** with server URL and token input
+    - ✅ **Bearer token authentication** using Zustand store
+    - ✅ **Auth guard** protecting routes
+    - ⚠️ **No logout functionality** - Missing user session management
+  - **📋 Secret Management Interface (Mock)**
+    - ⚠️ **Displays placeholder data** - Not connected to real API
+    - ⚠️ **Create dialog exists** but doesn't save secrets
+    - ⚠️ **Version history** shows mock data
+    - ⚠️ **No actual CRUD operations** implemented
+  - **🔑 Master Key Management (Mock)**
+    - ⚠️ **Lists placeholder keys** with status badges
+    - ⚠️ **"Coming Soon" messages** for register/rotate operations
+    - ⚠️ **No actual key operations** implemented
+  - **🚧 Critical Missing Features**
+    - ❌ **No real API integration** - All data is mock/placeholder
+    - ❌ **No secret CRUD operations** - Create/read/update/delete
+    - ❌ **No key management** - Register/rotate master keys
+    - ❌ **No real TTL handling** - Time-based expiration
+    - ❌ **No error handling** - API error responses
+    - ❌ **No data persistence** - Changes don't save
+    - ❌ **No server communication** beyond login
 - ✅ **Kubernetes-standard health checks** - Production-ready monitoring
   - `/healthz/live` - Liveness probe for service availability
   - `/healthz/ready` - Readiness probe with database connection testing
@@ -243,12 +243,54 @@ The CLI uses TOML configuration files with environment variable overrides:
   - Proper HTTP status codes and JSON responses
 
 ### Development Priorities
-1. **🔑 Master Key Operations** - Implement key registration and rotation in Web UI
-2. **🔐 JWT Authentication** - Replace static token auth with JWT tokens
-3. **🧪 Integration Testing** - Add end-to-end API testing suite
-4. **📊 Monitoring & Logging** - Add structured logging and metrics collection
-5. **🚀 Multi-node Support** - Raft consensus for high availability deployment
-6. **📱 Mobile App** - Native mobile applications for iOS and Android
+
+#### Immediate (Web UI Core Functionality)
+1. **🔌 API Integration** - Connect Web UI to real sealbox-server endpoints
+   - Replace mock data with real API calls to `/v1/secrets` and `/v1/master-key`
+   - Implement proper HTTP client with error handling
+   - Add loading states and error boundaries
+   - Connect authentication flow to server verification
+
+2. **📋 Secret Management CRUD** - Complete all secret operations
+   - **Create**: Save new secrets via `PUT /v1/secrets/:key` with server-side encryption
+   - **Read**: Fetch secret content via `GET /v1/secrets/:key` with client-side decryption
+   - **Update**: Edit secrets (creates new version) with proper version handling
+   - **Delete**: Remove secrets via `DELETE /v1/secrets/:key` with confirmation
+   - **List**: Display real secret metadata from `GET /v1/secrets`
+
+3. **⏰ TTL and Expiration Handling** - Implement time-based features
+   - Real-time expiration status with countdown timers
+   - TTL input and validation in create/edit forms
+   - Expired secret warnings with visual indicators
+   - Automatic cleanup integration
+
+4. **📖 Version History** - Complete version management
+   - Fetch real version data from server
+   - Version comparison and rollback functionality
+   - Version metadata (timestamps, changes)
+
+5. **🔑 Master Key Management** - Implement key operations
+   - Key registration form with public key upload
+   - Key rotation workflow with validation
+   - Key status management (active/retired/disabled)
+   - Remove "Coming Soon" placeholders
+
+6. **🔒 Enhanced Authentication** - Complete auth system
+   - Proper logout functionality with session cleanup
+   - Token expiry handling and refresh
+   - Connection status monitoring
+   - User session management
+
+#### Secondary Features
+7. **📤 Import/Export** - Bulk operations for secrets
+8. **🧪 Integration Testing** - End-to-end testing suite
+9. **📊 Monitoring Dashboard** - System health and metrics
+10. **🔐 JWT Authentication** - Replace static token auth
+
+#### Long Term
+11. **🚀 Multi-node Support** - Raft consensus for high availability
+12. **🔍 Advanced Search** - Full-text search and filtering
+13. **👥 Multi-user Support** - User roles and permissions
 
 ## CI/CD Pipeline
 

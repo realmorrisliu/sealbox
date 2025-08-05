@@ -1,13 +1,10 @@
 {
-  "app": {
-    "title": "Sealbox",
-    "description": "Geheimnis-Verwaltungssystem"
-  },
   "nav": {
     "secretManagement": "Geheimnis-Verwaltung",
     "masterKeys": "Master-Schlüssel",
-    "administration": "Administration",
-    "logout": "Abmelden"
+    "settings": "Einstellungen",
+    "signOut": "Abmelden",
+    "administrator": "Administrator"
   },
   "login": {
     "title": "Sealbox",
@@ -34,81 +31,81 @@
     }
   },
   "secrets": {
-    "title": "Geheimnis-Verwaltung",
-    "description": "Verwalten Sie Ihre verschlüsselten Geheimnisse und sensiblen Daten",
-    "newSecret": "Neues Geheimnis",
-    "newSecretComingSoon": "Neues Geheimnis (Bald verfügbar)",
-    "createFirst": "Ihr erstes Geheimnis erstellen (Bald verfügbar)",
-    "noSecretsFound": "Keine Geheimnisse gefunden",
-    "secretName": "Geheimnis-Name",
-    "version": "Version",
-    "createdAt": "Erstellt am",
-    "updatedAt": "Aktualisiert am",
-    "expiresAt": "Läuft ab am",
     "actions": "Aktionen",
-    "neverExpires": "Läuft nie ab",
-    "expired": "Abgelaufen",
-    "expiresInMinutes": "Läuft in {{minutes}}m ab",
-    "expiresInHours": "Läuft in {{hours}}h ab",
-    "expiresInDays": "Läuft in {{days}}d ab",
-    "deleteConfirm": "Sind Sie sicher, dass Sie Geheimnis \"{{key}}\" Version {{version}} löschen möchten?",
-    "deleteConfirmTitle": "Geheimnis löschen",
-    "deleteFailed": "Löschen fehlgeschlagen",
-    "deleteFailedDescription": "Geheimnis konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
-    "deleteSuccess": "Geheimnis gelöscht",
-    "deleteSuccessDescription": "Geheimnis \"{{key}}\" Version {{version}} wurde erfolgreich gelöscht",
-    "createSecretTitle": "Neues Geheimnis erstellen",
-    "createSecretDescription": "Ein neues verschlüsseltes Geheimnis mit optionaler Ablaufzeit speichern",
-    "secretNamePlaceholder": "mein-geheimnis-schlüssel",
-    "secretNameHelp": "Nur Buchstaben, Zahlen, Unterstriche und Bindestriche verwenden",
-    "secretValue": "Geheimnis-Wert",
-    "secretValuePlaceholder": "Geben Sie Ihren Geheimnis-Wert ein...",
-    "secretValueHelp": "Dieser Inhalt wird vor der Speicherung verschlüsselt",
-    "enableTtl": "Ablaufzeit festlegen",
-    "enableTtlDescription": "Dieses Geheimnis nach einer bestimmten Zeit automatisch löschen",
-    "ttlValue": "Dauer",
-    "ttlUnit": "Einheit",
-    "minutes": "Minuten",
-    "hours": "Stunden",
-    "days": "Tage",
-    "encryptionInfo": "Sichere Speicherung",
-    "encryptionInfoDescription": "Ihr Geheimnis wird mit RSA + AES-GCM Umschlag-Verschlüsselung verschlüsselt",
-    "createSecret": "Geheimnis erstellen",
-    "creating": "Erstelle...",
-    "createSuccess": "Geheimnis erstellt",
-    "createSuccessDescription": "Geheimnis \"{{key}}\" wurde erfolgreich erstellt",
-    "createFailed": "Erstellen fehlgeschlagen",
-    "createFailedDescription": "Geheimnis konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
-    "viewSecretTitle": "Geheimnis anzeigen",
-    "viewSecretDescription": "Details und Inhalt des verschlüsselten Geheimnisses anzeigen",
-    "secretDetails": "Geheimnis-Details",
-    "secretContent": "Geheimnis-Inhalt",
-    "showSecret": "Anzeigen",
-    "hideSecret": "Verbergen",
-    "secretHidden": "Geheimnis-Inhalt ist aus Sicherheitsgründen verborgen",
-    "noSecretData": "Keine Geheimnis-Daten verfügbar",
-    "loadSecretFailed": "Laden des Geheimnisses fehlgeschlagen",
-    "copiedToClipboard": "In Zwischenablage kopiert",
-    "copiedToClipboardDescription": "Geheimnis-Inhalt wurde in Ihre Zwischenablage kopiert",
-    "copyFailed": "Kopieren fehlgeschlagen",
-    "copyFailedDescription": "Kopieren in Zwischenablage nicht möglich. Bitte versuchen Sie es erneut.",
-    "securityInfo": "Ende-zu-Ende-Verschlüsselung",
-    "securityInfoDescription": "Dieses Geheimnis wird clientseitig mit Ihrem privaten Schlüssel entschlüsselt. Der Server sieht niemals den Klartext.",
-    "editSecretTitle": "Geheimnis bearbeiten",
-    "editSecretDescription": "Geheimnis-Inhalt aktualisieren und neue Version erstellen",
-    "secretNameReadonly": "Geheimnis-Name kann während der Bearbeitung nicht geändert werden",
-    "updateSecret": "Geheimnis aktualisieren",
-    "updating": "Aktualisiere...",
-    "updateSuccess": "Geheimnis aktualisiert",
-    "updateSuccessDescription": "Geheimnis \"{{key}}\" wurde erfolgreich aktualisiert",
-    "updateFailed": "Aktualisierung fehlgeschlagen",
-    "updateFailedDescription": "Geheimnis konnte nicht aktualisiert werden. Bitte versuchen Sie es erneut.",
-    "versioningInfo": "Versionskontrolle",
-    "versioningInfoDescription": "Dies erstellt eine neue Version des Geheimnisses. Vorherige Versionen bleiben zugänglich, es sei denn, sie sind abgelaufen."
+    "stats": {
+      "totalSecrets": "Geheimnisse Gesamt",
+      "production": "Produktion",
+      "expiring": "Laufen ab",
+      "highRisk": "Hohes Risiko",
+      "needRotation": "Rotation erforderlich"
+    },
+    "controls": {
+      "searchPlaceholder": "Geheimnisse, Tags suchen...",
+      "table": "Tabelle",
+      "cards": "Karten",
+      "addSecret": "Geheimnis hinzufügen"
+    },
+    "table": {
+      "name": "Name",
+      "value": "Wert",
+      "environment": "Umgebung",
+      "category": "Kategorie",
+      "status": "Status",
+      "riskLevel": "Risikostufe",
+      "versions": "Versionen",
+      "lastUsed": "Zuletzt verwendet",
+      "access": "Zugriffe"
+    },
+    "status": {
+      "active": "Aktiv",
+      "expiring": "Läuft ab",
+      "expired": "Abgelaufen",
+      "compromised": "Kompromittiert",
+      "inactive": "Inaktiv"
+    },
+    "riskLevel": {
+      "critical": "Kritisch",
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Niedrig"
+    },
+    "category": {
+      "database": "Datenbank",
+      "api": "API",
+      "auth": "Authentifizierung",
+      "payment": "Zahlung",
+      "service": "Service",
+      "other": "Andere"
+    },
+    "empty": {
+      "noSecretsFound": "Keine Geheimnisse gefunden",
+      "tryAdjustingFilters": "Versuchen Sie, die Filter anzupassen.",
+      "addFirstSecret": "Fügen Sie Ihr erstes Geheimnis hinzu, um zu beginnen."
+    },
+    "dialog": {
+      "addNewSecret": "Neues Geheimnis hinzufügen",
+      "addNewSecretDescription": "Erstellen Sie einen neuen Geheimnis-Eintrag für Ihre Anwendung.",
+      "name": "Name",
+      "nameHelp": "SECRET_NAME",
+      "value": "Wert",
+      "valueHelp": "Geheimnis-Wert eingeben",
+      "description": "Beschreibung",
+      "descriptionHelp": "Kurze Beschreibung",
+      "ttl": "TTL (Lebensdauer) in Sekunden",
+      "ttlHelp": "3600",
+      "missingFields": "Fehlende Felder",
+      "nameAndValueRequired": "Name und Wert sind erforderlich",
+      "secretAdded": "Geheimnis hinzugefügt",
+      "hasBeenCreated": "{{name}} wurde erstellt"
+    },
+    "cardView": {
+      "risk": "Risiko",
+      "uses": "Verwendungen",
+      "never": "Nie"
+    }
   },
   "keys": {
     "title": "Master-Schlüssel-Verwaltung",
-    "description": "RSA-Schlüsselpaar für Umschlag-Verschlüsselung verwalten",
     "registerKey": "Schlüssel registrieren",
     "rotateKey": "Schlüssel rotieren",
     "keyId": "Schlüssel-ID",
@@ -135,22 +132,20 @@
     "loading": "Laden...",
     "loadingFailed": "Laden fehlgeschlagen",
     "retry": "Wiederholen",
-    "delete": "Löschen",
-    "view": "Anzeigen",
-    "cancel": "Abbrechen",
-    "confirm": "Bestätigen",
     "error": "Fehler",
-    "success": "Erfolgreich",
-    "copy": "Kopieren",
-    "close": "Schließen",
-    "edit": "Bearbeiten"
+    "cancel": "Abbrechen",
+    "tryAgain": "Erneut versuchen",
+    "reloadPage": "Seite neu laden"
   },
   "errors": {
     "pageNotFound": "Seite nicht gefunden",
-    "pageNotFoundDescription": "Die gesuchte Seite existiert nicht oder ist in Entwicklung"
+    "pageNotFoundDescription": "Die gesuchte Seite existiert nicht oder ist in Entwicklung",
+    "somethingWentWrong": "Etwas ist schief gelaufen",
+    "errorBoundaryDescription": "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie die Seite zu aktualisieren oder kontaktieren Sie den Support, wenn das Problem weiterhin besteht.",
+    "unknownError": "Ein unbekannter Fehler ist aufgetreten",
+    "technicalDetails": "Technische Details"
   },
   "language": {
-    "switch": "Sprache wechseln",
     "english": "English",
     "chinese": "中文",
     "japanese": "日本語",
@@ -161,10 +156,5 @@
     "light": "Hell",
     "dark": "Dunkel",
     "system": "System"
-  },
-  "status": {
-    "online": "Online",
-    "offline": "Offline",
-    "checking": "Prüfung..."
   }
 }

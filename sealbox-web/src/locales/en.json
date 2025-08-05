@@ -1,13 +1,10 @@
 {
-  "app": {
-    "title": "Sealbox",
-    "description": "Secret Management System"
-  },
   "nav": {
     "secretManagement": "Secret Management",
     "masterKeys": "Master Keys",
-    "administration": "Administration",
-    "logout": "Logout"
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "administrator": "Administrator"
   },
   "login": {
     "title": "Sealbox",
@@ -21,7 +18,7 @@
     "firstTime": "First time using?",
     "steps": {
       "start": "Start sealbox-server",
-      "setToken": "Set AUTH_TOKEN environment variable", 
+      "setToken": "Set AUTH_TOKEN environment variable",
       "enterDetails": "Enter server URL and token above"
     },
     "errors": {
@@ -34,81 +31,81 @@
     }
   },
   "secrets": {
-    "title": "Secret Management",
-    "description": "Manage your encrypted secrets and sensitive data",
-    "newSecret": "New Secret",
-    "newSecretComingSoon": "New Secret (Coming Soon)",
-    "createFirst": "Create Your First Secret (Coming Soon)",
-    "noSecretsFound": "No secrets found",
-    "secretName": "Secret Name",
-    "version": "Version",
-    "createdAt": "Created At",
-    "updatedAt": "Updated At",
-    "expiresAt": "Expires At",
     "actions": "Actions",
-    "neverExpires": "Never expires",
-    "expired": "Expired",
-    "expiresInMinutes": "Expires in {{minutes}}m",
-    "expiresInHours": "Expires in {{hours}}h", 
-    "expiresInDays": "Expires in {{days}}d",
-    "deleteConfirm": "Are you sure you want to delete secret \"{{key}}\" version {{version}}?",
-    "deleteConfirmTitle": "Delete Secret",
-    "deleteFailed": "Delete Failed",
-    "deleteFailedDescription": "Unable to delete secret. Please try again.",
-    "deleteSuccess": "Secret Deleted",
-    "deleteSuccessDescription": "Secret \"{{key}}\" version {{version}} has been deleted successfully",
-    "createSecretTitle": "Create New Secret",
-    "createSecretDescription": "Store a new encrypted secret with optional expiration",
-    "secretNamePlaceholder": "my-secret-key",
-    "secretNameHelp": "Use letters, numbers, underscores and hyphens only",
-    "secretValue": "Secret Value",
-    "secretValuePlaceholder": "Enter your secret value...",
-    "secretValueHelp": "This will be encrypted before storage",
-    "enableTtl": "Set Expiration",
-    "enableTtlDescription": "Automatically delete this secret after a specified time",
-    "ttlValue": "Duration",
-    "ttlUnit": "Unit",
-    "minutes": "Minutes",
-    "hours": "Hours",
-    "days": "Days",
-    "encryptionInfo": "Secure Storage",
-    "encryptionInfoDescription": "Your secret will be encrypted using envelope encryption with RSA + AES-GCM",
-    "createSecret": "Create Secret",
-    "creating": "Creating...",
-    "createSuccess": "Secret Created",
-    "createSuccessDescription": "Secret \"{{key}}\" has been created successfully",
-    "createFailed": "Create Failed",
-    "createFailedDescription": "Unable to create secret. Please try again.",
-    "viewSecretTitle": "View Secret",
-    "viewSecretDescription": "View encrypted secret details and content",
-    "secretDetails": "Secret Details",
-    "secretContent": "Secret Content",
-    "showSecret": "Show",
-    "hideSecret": "Hide",
-    "secretHidden": "Secret content is hidden for security",
-    "noSecretData": "No secret data available",
-    "loadSecretFailed": "Failed to Load Secret",
-    "copiedToClipboard": "Copied to Clipboard",
-    "copiedToClipboardDescription": "Secret content has been copied to your clipboard",
-    "copyFailed": "Copy Failed",
-    "copyFailedDescription": "Unable to copy to clipboard. Please try again.",
-    "securityInfo": "End-to-End Encryption",
-    "securityInfoDescription": "This secret is decrypted client-side using your private key. Server never sees plaintext.",
-    "editSecretTitle": "Edit Secret",
-    "editSecretDescription": "Update secret content and create a new version",
-    "secretNameReadonly": "Secret name cannot be changed during editing",
-    "updateSecret": "Update Secret",
-    "updating": "Updating...",
-    "updateSuccess": "Secret Updated",
-    "updateSuccessDescription": "Secret \"{{key}}\" has been updated successfully",
-    "updateFailed": "Update Failed",
-    "updateFailedDescription": "Unable to update secret. Please try again.",
-    "versioningInfo": "Version Control",
-    "versioningInfoDescription": "This will create a new version of the secret. Previous versions remain accessible unless expired."
+    "stats": {
+      "totalSecrets": "Total Secrets",
+      "production": "Production",
+      "expiring": "Expiring",
+      "highRisk": "High Risk",
+      "needRotation": "Need Rotation"
+    },
+    "controls": {
+      "searchPlaceholder": "Search secrets, tags...",
+      "table": "Table",
+      "cards": "Cards",
+      "addSecret": "Add Secret"
+    },
+    "table": {
+      "name": "Name",
+      "value": "Value",
+      "environment": "Environment",
+      "category": "Category",
+      "status": "Status",
+      "riskLevel": "Risk Level",
+      "versions": "Versions",
+      "lastUsed": "Last Used",
+      "access": "Access"
+    },
+    "status": {
+      "active": "Active",
+      "expiring": "Expiring",
+      "expired": "Expired",
+      "compromised": "Compromised",
+      "inactive": "Inactive"
+    },
+    "riskLevel": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "category": {
+      "database": "Database",
+      "api": "API",
+      "auth": "Auth",
+      "payment": "Payment",
+      "service": "Service",
+      "other": "Other"
+    },
+    "empty": {
+      "noSecretsFound": "No secrets found",
+      "tryAdjustingFilters": "Try adjusting your filters.",
+      "addFirstSecret": "Add your first secret to get started."
+    },
+    "dialog": {
+      "addNewSecret": "Add New Secret",
+      "addNewSecretDescription": "Create a new secret entry for your application.",
+      "name": "Name",
+      "nameHelp": "SECRET_NAME",
+      "value": "Value",
+      "valueHelp": "Enter secret value",
+      "description": "Description",
+      "descriptionHelp": "Brief description",
+      "ttl": "TTL (Time to Live) in seconds",
+      "ttlHelp": "3600",
+      "missingFields": "Missing fields",
+      "nameAndValueRequired": "Name and value are required",
+      "secretAdded": "Secret added",
+      "hasBeenCreated": "{{name}} has been created"
+    },
+    "cardView": {
+      "risk": "risk",
+      "uses": "uses",
+      "never": "Never"
+    }
   },
   "keys": {
     "title": "Master Key Management",
-    "description": "Manage RSA key pairs for envelope encryption",
     "registerKey": "Register Key",
     "rotateKey": "Rotate Key",
     "keyId": "Key ID",
@@ -135,17 +132,10 @@
     "loading": "Loading...",
     "loadingFailed": "Loading Failed",
     "retry": "Retry",
-    "delete": "Delete",
-    "view": "View",
-    "cancel": "Cancel",
-    "confirm": "Confirm",
     "error": "Error",
-    "success": "Success",
+    "cancel": "Cancel",
     "tryAgain": "Try Again",
-    "reloadPage": "Reload Page",
-    "copy": "Copy",
-    "close": "Close",
-    "edit": "Edit"
+    "reloadPage": "Reload Page"
   },
   "errors": {
     "pageNotFound": "Page Not Found",
@@ -156,7 +146,6 @@
     "technicalDetails": "Technical Details"
   },
   "language": {
-    "switch": "Switch Language",
     "english": "English",
     "chinese": "中文",
     "japanese": "日本語",
@@ -167,10 +156,5 @@
     "light": "Light",
     "dark": "Dark",
     "system": "System"
-  },
-  "status": {
-    "online": "Online",
-    "offline": "Offline",
-    "checking": "Checking..."
   }
 }

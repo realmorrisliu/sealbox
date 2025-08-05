@@ -1,13 +1,10 @@
 {
-  "app": {
-    "title": "Sealbox",
-    "description": "シークレット管理システム"
-  },
   "nav": {
     "secretManagement": "シークレット管理",
     "masterKeys": "マスターキー",
-    "administration": "管理",
-    "logout": "ログアウト"
+    "settings": "設定",
+    "signOut": "サインアウト",
+    "administrator": "管理者"
   },
   "login": {
     "title": "Sealbox",
@@ -34,81 +31,81 @@
     }
   },
   "secrets": {
-    "title": "シークレット管理",
-    "description": "暗号化されたシークレットと機密データを管理",
-    "newSecret": "新しいシークレット",
-    "newSecretComingSoon": "新しいシークレット（準備中）",
-    "createFirst": "最初のシークレットを作成（準備中）",
-    "noSecretsFound": "シークレットが見つかりません",
-    "secretName": "シークレット名",
-    "version": "バージョン",
-    "createdAt": "作成日時",
-    "updatedAt": "更新日時",
-    "expiresAt": "有効期限",
     "actions": "操作",
-    "neverExpires": "無期限",
-    "expired": "期限切れ",
-    "expiresInMinutes": "{{minutes}}分後に期限切れ",
-    "expiresInHours": "{{hours}}時間後に期限切れ",
-    "expiresInDays": "{{days}}日後に期限切れ",
-    "deleteConfirm": "シークレット \"{{key}}\" バージョン {{version}} を削除してもよろしいですか？",
-    "deleteConfirmTitle": "シークレットを削除",
-    "deleteFailed": "削除に失敗しました",
-    "deleteFailedDescription": "シークレットを削除できませんでした。もう一度お試しください。",
-    "deleteSuccess": "シークレットが削除されました",
-    "deleteSuccessDescription": "シークレット \"{{key}}\" バージョン {{version}} が正常に削除されました",
-    "createSecretTitle": "新しいシークレットを作成",
-    "createSecretDescription": "オプションの有効期限付きで新しい暗号化シークレットを保存",
-    "secretNamePlaceholder": "my-secret-key",
-    "secretNameHelp": "文字、数字、アンダースコア、ハイフンのみ使用可能",
-    "secretValue": "シークレット値",
-    "secretValuePlaceholder": "シークレット値を入力...",
-    "secretValueHelp": "この内容は保存前に暗号化されます",
-    "enableTtl": "有効期限を設定",
-    "enableTtlDescription": "指定した時間後にこのシークレットを自動削除",
-    "ttlValue": "期間",
-    "ttlUnit": "単位",
-    "minutes": "分",
-    "hours": "時間",
-    "days": "日",
-    "encryptionInfo": "セキュアストレージ",
-    "encryptionInfoDescription": "シークレットはRSA + AES-GCMエンベロープ暗号化で暗号化されます",
-    "createSecret": "シークレットを作成",
-    "creating": "作成中...",
-    "createSuccess": "シークレットが作成されました",
-    "createSuccessDescription": "シークレット \"{{key}}\" が正常に作成されました",
-    "createFailed": "作成失敗",
-    "createFailedDescription": "シークレットを作成できません。もう一度お試しください。",
-    "viewSecretTitle": "シークレットを表示",
-    "viewSecretDescription": "暗号化されたシークレットの詳細と内容を表示",
-    "secretDetails": "シークレット詳細",
-    "secretContent": "シークレット内容",
-    "showSecret": "表示",
-    "hideSecret": "非表示",
-    "secretHidden": "セキュリティのためシークレット内容は非表示です",
-    "noSecretData": "シークレットデータがありません",
-    "loadSecretFailed": "シークレットの読み込みに失敗しました",
-    "copiedToClipboard": "クリップボードにコピーしました",
-    "copiedToClipboardDescription": "シークレット内容がクリップボードにコピーされました",
-    "copyFailed": "コピー失敗",
-    "copyFailedDescription": "クリップボードにコピーできません。もう一度お試しください。",
-    "securityInfo": "エンドツーエンド暗号化",
-    "securityInfoDescription": "このシークレットはクライアント側で秘密鍵を使用して復号化されます。サーバーは平文を見ることはありません。",
-    "editSecretTitle": "シークレットを編集",
-    "editSecretDescription": "シークレット内容を更新して新しいバージョンを作成",
-    "secretNameReadonly": "編集中はシークレット名を変更できません",
-    "updateSecret": "シークレットを更新",
-    "updating": "更新中...",
-    "updateSuccess": "シークレットが更新されました",
-    "updateSuccessDescription": "シークレット \"{{key}}\" が正常に更新されました",
-    "updateFailed": "更新失敗",
-    "updateFailedDescription": "シークレットを更新できません。もう一度お試しください。",
-    "versioningInfo": "バージョン管理",
-    "versioningInfoDescription": "これによりシークレットの新しいバージョンが作成されます。以前のバージョンは期限切れでない限りアクセス可能です。"
+    "stats": {
+      "totalSecrets": "シークレット総数",
+      "production": "本番環境",
+      "expiring": "期限切れ間近",
+      "highRisk": "高リスク",
+      "needRotation": "ローテーション必要"
+    },
+    "controls": {
+      "searchPlaceholder": "シークレット、タグを検索...",
+      "table": "テーブル",
+      "cards": "カード",
+      "addSecret": "シークレット追加"
+    },
+    "table": {
+      "name": "名前",
+      "value": "値",
+      "environment": "環境",
+      "category": "カテゴリ",
+      "status": "ステータス",
+      "riskLevel": "リスクレベル",
+      "versions": "バージョン",
+      "lastUsed": "最終使用",
+      "access": "アクセス回数"
+    },
+    "status": {
+      "active": "アクティブ",
+      "expiring": "期限切れ間近",
+      "expired": "期限切れ",
+      "compromised": "侵害",
+      "inactive": "非アクティブ"
+    },
+    "riskLevel": {
+      "critical": "致命的",
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    },
+    "category": {
+      "database": "データベース",
+      "api": "API",
+      "auth": "認証",
+      "payment": "決済",
+      "service": "サービス",
+      "other": "その他"
+    },
+    "empty": {
+      "noSecretsFound": "シークレットが見つかりません",
+      "tryAdjustingFilters": "フィルターを調整してみてください。",
+      "addFirstSecret": "最初のシークレットを追加して開始しましょう。"
+    },
+    "dialog": {
+      "addNewSecret": "新しいシークレットを追加",
+      "addNewSecretDescription": "アプリケーション用の新しいシークレットエントリを作成します。",
+      "name": "名前",
+      "nameHelp": "SECRET_NAME",
+      "value": "値",
+      "valueHelp": "シークレット値を入力",
+      "description": "説明",
+      "descriptionHelp": "簡潔な説明",
+      "ttl": "TTL（生存時間）秒",
+      "ttlHelp": "3600",
+      "missingFields": "必須フィールドが不足",
+      "nameAndValueRequired": "名前と値は必須です",
+      "secretAdded": "シークレットが追加されました",
+      "hasBeenCreated": "{{name}} が作成されました"
+    },
+    "cardView": {
+      "risk": "リスク",
+      "uses": "回使用",
+      "never": "なし"
+    }
   },
   "keys": {
     "title": "マスターキー管理",
-    "description": "エンベロープ暗号化用のRSAキーペアを管理",
     "registerKey": "キー登録",
     "rotateKey": "キーローテーション",
     "keyId": "キーID",
@@ -135,22 +132,20 @@
     "loading": "読み込み中...",
     "loadingFailed": "読み込み失敗",
     "retry": "再試行",
-    "delete": "削除",
-    "view": "表示",
-    "cancel": "キャンセル",
-    "confirm": "確認",
     "error": "エラー",
-    "success": "成功",
-    "copy": "コピー",
-    "close": "閉じる",
-    "edit": "編集"
+    "cancel": "キャンセル",
+    "tryAgain": "再試行",
+    "reloadPage": "ページを再読み込み"
   },
   "errors": {
     "pageNotFound": "ページが見つかりません",
-    "pageNotFoundDescription": "お探しのページは存在しないか、開発中です"
+    "pageNotFoundDescription": "お探しのページは存在しないか、開発中です",
+    "somethingWentWrong": "問題が発生しました",
+    "errorBoundaryDescription": "予期しないエラーが発生しました。ページを更新するか、問題が続く場合はサポートにお問い合わせください。",
+    "unknownError": "不明なエラーが発生しました",
+    "technicalDetails": "技術的詳細"
   },
   "language": {
-    "switch": "言語を切り替え",
     "english": "English",
     "chinese": "中文",
     "japanese": "日本語",
@@ -161,10 +156,5 @@
     "light": "ライト",
     "dark": "ダーク",
     "system": "システム"
-  },
-  "status": {
-    "online": "オンライン",
-    "offline": "オフライン",
-    "checking": "チェック中..."
   }
 }

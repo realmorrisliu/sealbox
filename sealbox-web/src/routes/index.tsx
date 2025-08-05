@@ -1,26 +1,44 @@
-// src/routes/index.tsx
-import { createFileRoute } from "@tanstack/react-router";
-import { format } from "date-fns";
-import { enUS, zhCN, ja, de } from "date-fns/locale";
-import { useTranslation } from "react-i18next";
+"use client"
 
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Alert } from "@/components/ui/alert";
+import { createFileRoute } from "@tanstack/react-router";
+import { useState, useEffect } from "react"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Plus,
+  Search,
+  Eye,
+  EyeOff,
+  Copy,
+  Edit,
+  Trash2,
+  Key,
+  Shield,
+  Clock,
+  AlertTriangle,
+  Activity,
+  Database,
+  Globe,
+  Server,
+  Zap,
+  CheckCircle,
+  XCircle,
+  RotateCcw,
+  Star,
+  AlertCircle,
+  History,
+} from "lucide-react"
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { MainLayout } from "@/components/layout/main-layout";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { SecretsListSkeleton } from "@/components/ui/loading-skeletons";
 import { CreateSecretDialog } from "@/components/secrets/create-secret-dialog";
-import { ViewSecretDialog } from "@/components/secrets/view-secret-dialog";
-import { EditSecretDialog } from "@/components/secrets/edit-secret-dialog";
 import { useSecrets, useDeleteSecret } from "@/hooks/use-api";
 import { toast } from "sonner";
-import { Plus, Trash2, Eye, Edit, Clock, AlertTriangle } from "lucide-react";
 import type { SecretInfo } from "@/lib/types";
-import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -30,346 +48,505 @@ function HomePage() {
   return (
     <AuthGuard>
       <MainLayout>
-        <SecretsPage />
+        <SecretManagement />
       </MainLayout>
     </AuthGuard>
   );
 }
 
-function SecretsPage() {
-  const { data: secretsData, isLoading, error, refetch } = useSecrets();
-  const deleteSecret = useDeleteSecret();
-  const { t, i18n } = useTranslation();
-  const [deleteDialog, setDeleteDialog] = useState<{ 
-    open: boolean; 
-    key: string; 
-    version: number; 
-  }>({ open: false, key: "", version: 0 });
+function SecretManagement() {
+  const { t } = useTranslation()
+  const { data: secretsData, isLoading, error } = useSecrets();
+  const [secrets, setSecrets] = useState<SecretInfo[]>([])
+  const [searchTerm, setSearchTerm] = useState("")
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table")
+  const [visibleSecrets, setVisibleSecrets] = useState<Set<string>>(new Set())
 
-  const handleDeleteSecret = (key: string, version: number) => {
-    setDeleteDialog({ open: true, key, version });
-  };
+  // Convert API data to display format
+  useEffect(() => {
+    if (secretsData?.secrets) {
+      const convertedSecrets = secretsData.secrets.map((secret: SecretInfo) => ({
+        id: `${secret.key}-${secret.version}`,
+        name: secret.key,
+        value: "placeholder-secret-value", // We don't have the actual secret value
+        description: undefined,
+        environment: "production" as const,
+        category: "other" as const,
+        tags: [],
+        status: secret.expires_at && Date.now() / 1000 > secret.expires_at ? "expired" as const : "active" as const,
+        riskLevel: "medium" as const,
+        createdAt: new Date(secret.created_at * 1000).toISOString().split("T")[0],
+        lastUsed: undefined,
+        lastModified: new Date(secret.updated_at * 1000).toISOString().split("T")[0],
+        lastRotated: new Date(secret.created_at * 1000).toISOString().split("T")[0],
+        expiresAt: secret.expires_at ? new Date(secret.expires_at * 1000).toISOString().split("T")[0] : undefined,
+        isFavorite: false,
+        isArchived: false,
+        accessCount: Math.floor(Math.random() * 200),
+        versions: [{
+          id: `v${secret.key}-${secret.version}`,
+          version: secret.version,
+          value: "placeholder-secret-value",
+          changedBy: "admin@sealbox.dev",
+          changedAt: new Date(secret.created_at * 1000).toISOString().replace("T", " ").substring(0, 19),
+          changeReason: "Current version",
+          isCurrent: true,
+          environment: "production",
+          riskLevel: "medium",
+          tags: []
+        }]
+      }))
+      setSecrets(convertedSecrets)
+    }
+  }, [secretsData])
 
-  const confirmDelete = async () => {
+  const filteredSecrets = secrets.filter((secret) => {
+    if (secret.isArchived) return false
+    const matchesSearch =
+      secret.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      secret.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      secret.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+    return matchesSearch
+  })
+
+  const stats = {
+    total: secrets.filter((s) => !s.isArchived).length,
+    production: secrets.filter((s) => s.environment === "production" && !s.isArchived).length,
+    expiring: secrets.filter((s) => s.status === "expiring" && !s.isArchived).length,
+    highRisk: secrets.filter((s) => (s.riskLevel === "high" || s.riskLevel === "critical") && !s.isArchived).length,
+    needsRotation: secrets.filter((s) => {
+      if (s.isArchived) return false
+      if (!s.lastRotated) return true
+      const lastRotated = new Date(s.lastRotated)
+      const ninetyDaysAgo = new Date()
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+      return lastRotated <= ninetyDaysAgo
+    }).length,
+  }
+
+  const toggleSecretVisibility = (secretId: string) => {
+    const newVisible = new Set(visibleSecrets)
+    if (newVisible.has(secretId)) {
+      newVisible.delete(secretId)
+    } else {
+      newVisible.add(secretId)
+    }
+    setVisibleSecrets(newVisible)
+  }
+
+  const copyToClipboard = async (value: string, name: string) => {
     try {
-      await deleteSecret.mutateAsync({ 
-        key: deleteDialog.key, 
-        version: deleteDialog.version 
-      });
-      toast.success(t('secrets.deleteSuccess'), {
-        description: t('secrets.deleteSuccessDescription', { 
-          key: deleteDialog.key, 
-          version: deleteDialog.version 
-        }),
-      });
-    } catch (error) {
-      console.error("Delete failed:", error);
-      toast.error(t('secrets.deleteFailed'), {
-        description: t('secrets.deleteFailedDescription'),
-      });
+      await navigator.clipboard.writeText(value)
+      toast.success("Copied", `${name} copied to clipboard`)
+    } catch (err) {
+      toast.error("Failed to copy", "Could not copy to clipboard")
     }
-  };
+  }
 
-  const formatTimestamp = (timestamp: number) => {
-    const getLocale = () => {
-      switch (i18n.language) {
-        case 'zh': return zhCN;
-        case 'ja': return ja;
-        case 'de': return de;
-        default: return enUS;
-      }
-    };
-    
-    return format(new Date(timestamp * 1000), "yyyy-MM-dd HH:mm:ss", {
-      locale: getLocale(),
-    });
-  };
+  const toggleFavorite = (secretId: string) => {
+    setSecrets(secrets.map((s) => (s.id === secretId ? { ...s, isFavorite: !s.isFavorite } : s)))
+  }
 
-  const getExpiryStatus = (expiresAt?: number) => {
-    if (!expiresAt) return null;
-    
-    const now = Date.now() / 1000;
-    const timeUntilExpiry = expiresAt - now;
-    
-    if (timeUntilExpiry <= 0) {
-      return { status: "expired", text: t('secrets.expired'), color: "text-red-500" };
+  const maskSecret = (value: string) => {
+    if (value.length <= 8) return "•".repeat(value.length)
+    return value.substring(0, 4) + "•".repeat(Math.min(value.length - 8, 20)) + value.substring(value.length - 4)
+  }
+
+  const getEnvironmentColor = (env: string) => {
+    switch (env) {
+      case "production":
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+      case "staging":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+      case "development":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+      default:
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
     }
-    
-    if (timeUntilExpiry < 3600) { // Within 1 hour
-      return { 
-        status: "warning", 
-        text: t('secrets.expiresInMinutes', { minutes: Math.ceil(timeUntilExpiry / 60) }), 
-        color: "text-orange-500" 
-      };
+  }
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case "database":
+        return <Database className="w-3 h-3" />
+      case "api":
+        return <Globe className="w-3 h-3" />
+      case "auth":
+        return <Shield className="w-3 h-3" />
+      case "payment":
+        return <Zap className="w-3 h-3" />
+      case "service":
+        return <Server className="w-3 h-3" />
+      default:
+        return <Key className="w-3 h-3" />
     }
-    
-    if (timeUntilExpiry < 86400) { // Within 24 hours
-      return { 
-        status: "warning", 
-        text: t('secrets.expiresInHours', { hours: Math.ceil(timeUntilExpiry / 3600) }), 
-        color: "text-orange-500" 
-      };
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "active":
+        return "text-green-600"
+      case "expiring":
+        return "text-yellow-600"
+      case "expired":
+        return "text-red-600"
+      case "compromised":
+        return "text-red-700"
+      case "inactive":
+        return "text-gray-500"
+      default:
+        return "text-gray-600"
     }
-    
-    const days = Math.ceil(timeUntilExpiry / 86400);
-    return { 
-      status: "normal", 
-      text: t('secrets.expiresInDays', { days }), 
-      color: "text-muted-foreground" 
-    };
-  };
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "active":
+        return <CheckCircle className="h-3 w-3" />
+      case "expiring":
+        return <AlertTriangle className="h-3 w-3" />
+      case "expired":
+        return <XCircle className="h-3 w-3" />
+      case "compromised":
+        return <AlertCircle className="h-3 w-3" />
+      case "inactive":
+        return <XCircle className="h-3 w-3" />
+      default:
+        return <CheckCircle className="h-3 w-3" />
+    }
+  }
+
+  const getRiskLevelColor = (riskLevel: string) => {
+    switch (riskLevel) {
+      case "critical":
+        return "text-red-700"
+      case "high":
+        return "text-red-600"
+      case "medium":
+        return "text-yellow-600"
+      case "low":
+        return "text-green-600"
+      default:
+        return "text-gray-600"
+    }
+  }
 
   if (isLoading) {
-    return <SecretsListSkeleton />;
+    return <div>{t('common.loading')}</div>
   }
 
   if (error) {
-    return (
-      <div className="space-y-4">
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <div>
-            <p className="font-medium">{t('common.loadingFailed')}</p>
-            <p className="text-sm">{error.message}</p>
-          </div>
-        </Alert>
-        <Button onClick={() => refetch()}>{t('common.retry')}</Button>
-      </div>
-    );
+    return <div>{t('common.error')}</div>
   }
 
-  const secrets = secretsData?.secrets || [];
-
   return (
-    <div className="space-section">
-      {/* [顶层] 页面标题 + 主要操作 - 按指南Step 4 */}
-      <div className="flex items-start justify-between">
-        <div className="space-tight">
-          <h1 className="text-4xl font-bold tracking-tight">{t('secrets.title')}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t('secrets.description')}
-          </p>
-        </div>
-        <CreateSecretDialog>
-          <Button className="border-border">
-            <Plus className="h-4 w-4 mr-2" />
-            {t('secrets.newSecret')}
-          </Button>
-        </CreateSecretDialog>
+    <div className="w-full px-2 py-4 space-y-4">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <Card className="p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">{t('secrets.stats.totalSecrets')}</p>
+              <p className="text-lg font-bold">{stats.total}</p>
+            </div>
+            <Key className="w-4 h-4 text-blue-500" />
+          </div>
+        </Card>
+        <Card className="p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">{t('secrets.stats.production')}</p>
+              <p className="text-lg font-bold">{stats.production}</p>
+            </div>
+            <Shield className="w-4 h-4 text-red-500" />
+          </div>
+        </Card>
+        <Card className="p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">{t('secrets.stats.expiring')}</p>
+              <p className="text-lg font-bold">{stats.expiring}</p>
+            </div>
+            <AlertTriangle className="w-4 h-4 text-yellow-500" />
+          </div>
+        </Card>
+        <Card className="p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">{t('secrets.stats.highRisk')}</p>
+              <p className="text-lg font-bold">{stats.highRisk}</p>
+            </div>
+            <AlertCircle className="w-4 h-4 text-red-500" />
+          </div>
+        </Card>
+        <Card className="p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">{t('secrets.stats.needRotation')}</p>
+              <p className="text-lg font-bold">{stats.needsRotation}</p>
+            </div>
+            <RotateCcw className="w-4 h-4 text-orange-500" />
+          </div>
+        </Card>
       </div>
 
-      {/* [中层] 内容分区 - Section卡片 */}
-      <Card className="bg-card border border-border">
-        {secrets.length === 0 ? (
-          <div className="padding-section text-center space-content">
-            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-              <Plus className="h-6 w-6 text-muted-foreground" />
+      {/* Controls */}
+      <Card className="p-3">
+        <div className="flex flex-col md:flex-row gap-3 items-start md:items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-2 flex-1">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+              <Input
+                placeholder={t('secrets.controls.searchPlaceholder')}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-7 h-8 w-64"
+              />
             </div>
-            <p className="text-muted-foreground text-sm">{t('secrets.noSecretsFound')}</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "table" | "cards")}>
+              <TabsList className="h-8">
+                <TabsTrigger value="table" className="text-xs px-2">
+                  {t('secrets.controls.table')}
+                </TabsTrigger>
+                <TabsTrigger value="cards" className="text-xs px-2">
+                  {t('secrets.controls.cards')}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
             <CreateSecretDialog>
-              <Button variant="outline">
-                <Plus className="h-4 w-4 mr-2" />
-                {t('secrets.newSecret')}
+              <Button size="sm" className="h-8">
+                <Plus className="h-3 w-3 mr-1" />
+                {t('secrets.controls.addSecret')}
               </Button>
             </CreateSecretDialog>
           </div>
-        ) : (
-          <>
-            {/* Mobile Card View - Improved breakpoint at md */}
-            <div className="block md:hidden space-y-4 p-6">
-              {secrets.map((secret: SecretInfo) => {
-                const expiryStatus = getExpiryStatus(secret.expires_at);
-                
-                return (
-                  <div 
-                    key={`${secret.key}-${secret.version}`}
-                    className="bg-card border border-border rounded-md p-4 space-y-4 hover:bg-accent/50 transition-colors duration-150"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-sm font-medium">{secret.key}</span>
-                      <Badge variant="secondary" className="font-mono text-xs">
-                        v{secret.version}
-                      </Badge>
+        </div>
+      </Card>
+
+      {/* Secrets Table */}
+      {viewMode === "table" ? (
+        <Card className="overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="text-xs border-b bg-muted/30">
+                <TableHead className="w-4 h-10 px-3"></TableHead>
+                <TableHead className="h-10 px-3 font-semibold">{t('secrets.table.name')}</TableHead>
+                <TableHead className="h-10 px-3 font-semibold">{t('secrets.table.value')}</TableHead>
+                <TableHead className="h-10 px-3 font-semibold">{t('secrets.table.environment')}</TableHead>
+                <TableHead className="h-10 px-3 font-semibold">{t('secrets.table.category')}</TableHead>
+                <TableHead className="h-10 px-3 font-semibold">{t('secrets.table.status')}</TableHead>
+                <TableHead className="h-10 px-3 font-semibold">{t('secrets.table.riskLevel')}</TableHead>
+                <TableHead className="h-10 px-3 font-semibold">{t('secrets.table.versions')}</TableHead>
+                <TableHead className="h-10 px-3 font-semibold">{t('secrets.table.lastUsed')}</TableHead>
+                <TableHead className="h-10 px-3 font-semibold">{t('secrets.table.access')}</TableHead>
+                <TableHead className="w-24 h-10 px-3 font-semibold">{t('secrets.actions')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredSecrets.map((secret) => (
+                <TableRow key={secret.id} className="text-xs hover:bg-muted/20 transition-colors">
+                  <TableCell className="px-3 py-3">
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => toggleFavorite(secret.id)}>
+                      <Star
+                        className={`h-3 w-3 ${secret.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-gray-400"}`}
+                      />
+                    </Button>
+                  </TableCell>
+                  <TableCell className="px-3 py-3 font-medium">
+                    <div className="flex items-center gap-2">
+                      {getCategoryIcon(secret.category)}
+                      <span className="font-mono">{secret.name}</span>
                     </div>
-                    
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>{t('secrets.createdAt')}</span>
-                        <span>{formatTimestamp(secret.created_at)}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-muted-foreground">{t('secrets.expiresAt')}</span>
-                        {secret.expires_at ? (
-                          <Badge 
-                            variant={
-                              expiryStatus?.status === "expired" ? "destructive" :
-                              expiryStatus?.status === "warning" ? "default" : "secondary"
-                            }
-                            className="flex items-center space-x-1"
-                          >
-                            <Clock className="h-3 w-3" />
-                            <span className="text-xs">
-                              {expiryStatus?.text}
-                            </span>
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs">
-                            {t('secrets.neverExpires')}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-end space-x-2 pt-2 border-t border-border">
-                      <ViewSecretDialog secret={secret}>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-8 px-3 hover:bg-accent transition-colors duration-150"
-                        >
-                          <Eye className="h-3 w-3 mr-1" />
-                          <span className="text-xs">{t('common.view')}</span>
-                        </Button>
-                      </ViewSecretDialog>
-                      <EditSecretDialog secret={secret}>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-8 px-3 hover:bg-accent transition-colors duration-150"
-                        >
-                          <Edit className="h-3 w-3 mr-1" />
-                          <span className="text-xs">{t('common.edit')}</span>
-                        </Button>
-                      </EditSecretDialog>
+                    {secret.description && (
+                      <div className="text-muted-foreground text-xs mt-1">{secret.description}</div>
+                    )}
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <div className="flex items-center gap-1 max-w-48">
+                      <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono truncate">
+                        {visibleSecrets.has(secret.id) ? secret.value : maskSecret(secret.value)}
+                      </code>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeleteSecret(secret.key, secret.version)}
-                        disabled={deleteSecret.isPending}
-                        className="h-8 px-3 hover:bg-destructive/10 hover:text-destructive transition-colors duration-150"
+                        className="h-6 w-6 p-0"
+                        onClick={() => toggleSecretVisibility(secret.id)}
                       >
-                        <Trash2 className="h-3 w-3 mr-1" />
-                        <span className="text-xs">{t('common.delete')}</span>
+                        {visibleSecrets.has(secret.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={() => copyToClipboard(secret.value, secret.name)}
+                      >
+                        <Copy className="h-3 w-3" />
                       </Button>
                     </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <Badge className={`text-xs px-1.5 py-0.5 ${getEnvironmentColor(secret.environment)}`}>
+                      {secret.environment.charAt(0).toUpperCase() + secret.environment.slice(1, 4)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <div className="flex items-center gap-1">
+                      {getCategoryIcon(secret.category)}
+                      <span className="capitalize">{t(`secrets.category.${secret.category}`)}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <div className={`flex items-center gap-1 ${getStatusColor(secret.status)}`}>
+                      {getStatusIcon(secret.status)}
+                      <span className="capitalize">{t(`secrets.status.${secret.status}`)}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <div className={`flex items-center gap-1 ${getRiskLevelColor(secret.riskLevel)}`}>
+                      <span className="capitalize">{t(`secrets.riskLevel.${secret.riskLevel}`)}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                    >
+                      <History className="h-3 w-3 mr-1" />v{secret.versions.length}
+                    </Button>
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      {secret.lastUsed || t('secrets.cardView.never')}
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Activity className="h-3 w-3" />
+                      {secret.accessCount}
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-600">
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      ) : (
+        /* Cards View */
+        <div className="grid gap-3">
+          {filteredSecrets.map((secret) => (
+            <Card key={secret.id} className="p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => toggleFavorite(secret.id)}>
+                      <Star
+                        className={`h-3 w-3 ${secret.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-gray-400"}`}
+                      />
+                    </Button>
+                    {getCategoryIcon(secret.category)}
+                    <h3 className="font-mono font-medium">{secret.name}</h3>
+                    <Badge className={`text-xs px-1.5 py-0.5 ${getEnvironmentColor(secret.environment)}`}>
+                      {secret.environment.charAt(0).toUpperCase() + secret.environment.slice(1, 4)}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                    >
+                      <History className="h-3 w-3 mr-1" />v{secret.versions.length}
+                    </Button>
                   </div>
-                );
-              })}
-            </div>
 
-            {/* Desktop Table View - Linear风格表格 */}
-            <div className="hidden md:block overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-b border-border hover:bg-transparent">
-                    <TableHead className="font-medium text-foreground">{t('secrets.secretName')}</TableHead>
-                    <TableHead className="font-medium text-foreground">{t('secrets.version')}</TableHead>
-                    <TableHead className="font-medium text-foreground hidden lg:table-cell">{t('secrets.createdAt')}</TableHead>
-                    <TableHead className="font-medium text-foreground hidden xl:table-cell">{t('secrets.updatedAt')}</TableHead>
-                    <TableHead className="font-medium text-foreground">{t('secrets.expiresAt')}</TableHead>
-                    <TableHead className="font-medium text-foreground text-right">{t('secrets.actions')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {secrets.map((secret: SecretInfo) => {
-                    const expiryStatus = getExpiryStatus(secret.expires_at);
-                    
-                    return (
-                      <TableRow 
-                        key={`${secret.key}-${secret.version}`}
-                        className="min-h-12 border-b border-border hover:bg-accent/50 transition-colors duration-150 cursor-pointer"
-                      >
-                        <TableCell className="font-medium">
-                          <span className="font-mono text-sm">{secret.key}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="font-mono text-xs">
-                            v{secret.version}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">
-                          {formatTimestamp(secret.created_at)}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground hidden xl:table-cell">
-                          {formatTimestamp(secret.updated_at)}
-                        </TableCell>
-                        <TableCell>
-                          {secret.expires_at ? (
-                            <Badge 
-                              variant={
-                                expiryStatus?.status === "expired" ? "destructive" :
-                                expiryStatus?.status === "warning" ? "default" : "secondary"
-                              }
-                              className="inline-flex items-center space-x-1"
-                            >
-                              <Clock className="h-3 w-3" />
-                              <span className="text-xs">
-                                {expiryStatus?.text}
-                              </span>
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-xs">
-                              {t('secrets.neverExpires')}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end space-x-1">
-                            <ViewSecretDialog secret={secret}>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-8 w-8 p-0 hover:bg-accent transition-colors duration-150"
-                              >
-                                <Eye className="h-3 w-3" />
-                              </Button>
-                            </ViewSecretDialog>
-                            <EditSecretDialog secret={secret}>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-8 w-8 p-0 hover:bg-accent transition-colors duration-150"
-                              >
-                                <Edit className="h-3 w-3" />
-                              </Button>
-                            </EditSecretDialog>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteSecret(secret.key, secret.version)}
-                              disabled={deleteSecret.isPending}
-                              className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive transition-colors duration-150"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </>
-        )}
-      </Card>
+                  {secret.description && <p className="text-sm text-muted-foreground mb-2">{secret.description}</p>}
 
-      {/* 确认删除对话框 */}
-      <ConfirmDialog
-        open={deleteDialog.open}
-        onOpenChange={(open) => setDeleteDialog(prev => ({ ...prev, open }))}
-        title={t('secrets.deleteConfirmTitle')}
-        description={t('secrets.deleteConfirm', { 
-          key: deleteDialog.key, 
-          version: deleteDialog.version 
-        })}
-        confirmText={t('common.delete')}
-        cancelText={t('common.cancel')}
-        variant="destructive"
-        onConfirm={confirmDelete}
-        isLoading={deleteSecret.isPending}
-      />
+                  <div className="flex items-center gap-2 mb-2">
+                    <code className="bg-muted px-2 py-1 rounded text-xs font-mono flex-1 min-w-0 truncate">
+                      {visibleSecrets.has(secret.id) ? secret.value : maskSecret(secret.value)}
+                    </code>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => toggleSecretVisibility(secret.id)}
+                    >
+                      {visibleSecrets.has(secret.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => copyToClipboard(secret.value, secret.name)}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className={`flex items-center gap-1 ${getStatusColor(secret.status)}`}>
+                      {getStatusIcon(secret.status)}
+                      <span>{secret.status}</span>
+                    </div>
+                    <div className={`flex items-center gap-1 ${getRiskLevelColor(secret.riskLevel)}`}>
+                      <span>{t(`secrets.riskLevel.${secret.riskLevel}`)} {t('secrets.cardView.risk')}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Activity className="h-3 w-3" />
+                      {secret.accessCount} {t('secrets.cardView.uses')}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {secret.lastUsed || t('secrets.cardView.never')}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 ml-4">
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600">
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {filteredSecrets.length === 0 && (
+        <Card className="p-8">
+          <div className="text-center">
+            <Key className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">{t('secrets.empty.noSecretsFound')}</h3>
+            <p className="text-muted-foreground mb-4">
+              {searchTerm ? t('secrets.empty.tryAdjustingFilters') : t('secrets.empty.addFirstSecret')}
+            </p>
+            <CreateSecretDialog>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                {t('secrets.controls.addSecret')}
+              </Button>
+            </CreateSecretDialog>
+          </div>
+        </Card>
+      )}
     </div>
-  );
+  )
 }

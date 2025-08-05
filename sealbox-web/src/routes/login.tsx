@@ -10,9 +10,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
-import { LanguageSelector } from "@/components/ui/language-selector";
-import { LayeredBackground } from "@/components/ui/layered-background";
-import { SealboxIcon } from "@/components/ui/sealbox-logo";
+import { LanguageSelector } from "@/components/i18n/language-selector";
+import { SealboxIcon } from "@/components/brand/sealbox-logo";
 import { useAuthStore } from "@/stores/auth";
 import { useConfigStore } from "@/stores/config";
 import { createApiClient } from "@/lib/api";
@@ -86,12 +85,7 @@ function LoginPage() {
   };
 
   return (
-    <LayeredBackground 
-      variant="rich" 
-      texture="dots" 
-      animated={true}
-      className="flex items-center justify-center"
-    >
+    <div className="min-h-screen bg-background flex items-center justify-center">
       <div className="w-full max-w-md p-4">
         <Card className="bg-glass-enhanced p-8 space-content animate-slide-up">
           <div className="flex items-start justify-between mb-6">
@@ -173,6 +167,6 @@ function LoginPage() {
           </div>
         </Card>
       </div>
-    </LayeredBackground>
+    </div>
   );
 }
