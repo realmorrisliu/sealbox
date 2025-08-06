@@ -10,7 +10,7 @@ import { SecretTable } from "@/components/secrets/secret-table";
 import { SecretCards } from "@/components/secrets/secret-cards";
 import { useSecretManagement } from "@/hooks/useSecretManagement";
 import { useSecretFiltering } from "@/hooks/useSecretFiltering";
-import { useSSRSafeTranslation } from "@/hooks/useSSRSafeTranslation";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -27,7 +27,7 @@ function HomePage() {
 }
 
 function SecretManagement() {
-  const { t } = useSSRSafeTranslation();
+  const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 
   // Business logic hooks

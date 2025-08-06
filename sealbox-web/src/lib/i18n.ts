@@ -24,58 +24,98 @@ export const resources = {
   },
 } as const;
 
-// Get initial language from localStorage or browser preference
-const getInitialLanguage = (): string => {
-  if (typeof window !== "undefined") {
-    // First check localStorage
-    const stored = localStorage.getItem("sealbox-language");
-    if (stored && ["en", "zh", "ja", "de"].includes(stored)) {
-      return stored;
-    }
-    
-    // Then check browser language
-    const browserLang = navigator.language?.split('-')[0];
-    if (browserLang && ["en", "zh", "ja", "de"].includes(browserLang)) {
-      return browserLang;
-    }
-  }
-  
-  return "en"; // SSR fallback
+// Supported languages
+export const supportedLanguages = ["en", "zh", "ja", "de"] as const;
+export type SupportedLanguage = typeof supportedLanguages[number];
+
+// Get initial language for SSR-safe initialization
+export const getInitialLanguage = (): SupportedLanguage => {
+  // Always default to English for SSR consistency
+  // LanguageDetector will handle client-side detection after hydration
+  return "en";
 };
 
-// Initialize i18n with immediate sync initialization
+// Initialize i18n optimized for SSR
+const isSSR = typeof window === "undefined";
+
+// Initialize with LanguageDetector - let it handle language detection
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     debug: import.meta.env.DEV,
-    lng: getInitialLanguage(),
+    // Only set lng explicitly on SSR, let LanguageDetector handle client-side
+    ...(isSSR ? { lng: getInitialLanguage() } : {}),
     fallbackLng: "en",
     defaultNS,
     ns: ["common"],
 
     resources,
 
-    // Language detector options  
+    // Language detector options (SSR-safe)
     detection: {
-      order: ["localStorage", "navigator", "htmlTag"],
-      caches: ["localStorage"],
+      // Only use localStorage and navigator for client-side detection
+      order: isSSR ? [] : ["localStorage", "navigator"],
+      // CRITICAL: Disable caches to prevent overwriting localStorage
+      caches: [],
       lookupLocalStorage: "sealbox-language",
     },
 
-    // Critical: disable React Suspense to avoid hydration issues
+    // SSR-optimized React settings
     react: {
-      useSuspense: false,
-      bindI18n: "languageChanged",
-      bindI18nStore: "",
+      useSuspense: false, // Critical: disable Suspense for SSR
+      bindI18n: "languageChanged loaded",
+      bindI18nStore: "added removed",
       transEmptyNodeValue: "",
       transSupportBasicHtmlNodes: true,
-      transKeepBasicHtmlNodesFor: ["br", "strong", "i"],
+      transKeepBasicHtmlNodesFor: ["br", "strong", "i", "b", "em"],
     },
 
     interpolation: {
       escapeValue: false, // React already handles XSS protection
     },
+
+    // SSR specific options
+    initImmediate: !isSSR, // Initialize immediately on client side
+    cleanCode: true, // Clean up language codes
+    
+    // Preload languages for better SSR performance
+    preload: supportedLanguages,
   });
+
+// Force language detection on client side after hydration
+if (typeof window !== "undefined") {
+  // Wait for DOM to be ready, then manually trigger detection
+  const checkAndSetLanguage = () => {
+    const stored = localStorage.getItem("sealbox-language");
+    console.log("Debug: localStorage language:", stored);
+    console.log("Debug: i18n.language before:", i18n.language);
+    
+    if (stored && supportedLanguages.includes(stored as SupportedLanguage)) {
+      if (stored !== i18n.language) {
+        console.log("Debug: Changing language from", i18n.language, "to", stored);
+        i18n.changeLanguage(stored);
+      }
+    }
+  };
+
+  // Try multiple approaches to ensure language detection works
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", checkAndSetLanguage);
+  } else {
+    // DOM already loaded
+    setTimeout(checkAndSetLanguage, 0);
+  }
+  
+  // Also listen for i18n events to debug
+  i18n.on('initialized', () => {
+    console.log("Debug: i18n initialized with language:", i18n.language);
+    checkAndSetLanguage();
+  });
+  
+  i18n.on('languageChanged', (lng) => {
+    console.log("Debug: Language changed to:", lng);
+  });
+}
 
 export default i18n;

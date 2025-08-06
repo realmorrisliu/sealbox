@@ -3,7 +3,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useAuthStore } from "@/stores/auth";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { LanguageSelector } from "@/components/i18n/language-selector";
-import { useSSRSafeTranslation } from "@/hooks/useSSRSafeTranslation";
+import { useTranslation } from "react-i18next";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -13,7 +13,7 @@ interface AuthGuardProps {
 export function AuthGuard({ children, redirectTo = "/login" }: AuthGuardProps) {
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
-  const { t } = useSSRSafeTranslation();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!isAuthenticated) {

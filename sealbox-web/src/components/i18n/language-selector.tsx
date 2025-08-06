@@ -23,6 +23,10 @@ export function LanguageSelector() {
 
   const handleLanguageChange = (languageCode: string) => {
     i18n.changeLanguage(languageCode);
+    // Manually save to localStorage as backup
+    if (typeof window !== "undefined") {
+      localStorage.setItem("sealbox-language", languageCode);
+    }
   };
 
   return (

@@ -7,11 +7,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sun, Moon, Monitor, Check } from "lucide-react";
 import { useTheme } from "./theme-provider";
-import { useSSRSafeTranslation } from "@/hooks/useSSRSafeTranslation";
+import { useTranslation } from "react-i18next";
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
-  const { t } = useSSRSafeTranslation();
+  const { t } = useTranslation();
 
   const themes = [
     { value: "light", label: t("theme.light"), icon: Sun },

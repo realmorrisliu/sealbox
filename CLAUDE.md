@@ -243,9 +243,17 @@ The CLI uses TOML configuration files with environment variable overrides:
 
 ### Recent Improvements (2025-08-06)
 
-- ✅ **SSR Hydration Issues Resolved** - Comprehensive fix for server-side rendering
+- ✅ **I18n Language Memory System Fixed** - Complete solution for persistent language preferences
+  - **Root cause identified**: `useSSR` hook was overriding LanguageDetector results, resetting user language to "en"
+  - **LanguageDetector optimization**: Disabled automatic caching to prevent localStorage overwrites
+  - **Manual language persistence**: LanguageSelector component handles localStorage updates on user selection
+  - **SSR/client separation**: English default for SSR, LanguageDetector handles client-side detection
+  - **Functional language memory**: User language choices now persist across browser refreshes
+  - **⚠️ Known trade-off**: Removed SSRInit component to fix language sync, may cause minor hydration warnings (non-breaking)
+
+- ✅ **SSR Hydration Issues Previously Resolved** - Server-side rendering compatibility
   - **SSR-safe translations**: Created `useSSRSafeTranslation` hook with automatic English fallback from locale files
-  - **Eliminated hydration mismatches**: Fixed all i18n-related water rendering inconsistencies
+  - **Eliminated hydration mismatches**: Fixed all i18n-related water rendering inconsistencies  
   - **Removed inline scripts**: Migrated from HTML inline JS to pure React component architecture
   - **Direct localStorage integration**: Theme and language preferences read directly in React components
   - **Zero hardcoded fallbacks**: All fallback translations sourced from `en.json` locale file
@@ -262,7 +270,7 @@ The CLI uses TOML configuration files with environment variable overrides:
 - ✅ **Production-Ready Web Interface**
   - **Secret Management**: Full CRUD operations matching server API exactly
   - **Authentication**: Token-based auth with server connection validation
-  - **Internationalization**: 4-language support with clean translations
+  - **Internationalization**: 4-language support with clean translations and persistent preferences
   - **Modern Tech Stack**: React 19, TanStack Start, TailwindCSS, shadcn/ui
   - **Real-time features**: TTL countdown timers and status indicators
 

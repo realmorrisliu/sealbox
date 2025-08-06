@@ -13,7 +13,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useAuthStore } from "@/stores/auth";
 import { useConfigStore } from "@/stores/config";
 import { createApiClient } from "@/lib/api";
-import { useSSRSafeTranslation } from "@/hooks/useSSRSafeTranslation";
+import { useTranslation } from "react-i18next";
 
 type LoginForm = {
   serverUrl: string;
@@ -28,7 +28,7 @@ function LoginPage() {
   const router = useRouter();
   const { login, isAuthenticated } = useAuthStore();
   const { defaultServerUrl, setDefaultServerUrl } = useConfigStore();
-  const { t } = useSSRSafeTranslation();
+  const { t } = useTranslation();
 
   // Use static English messages for validation schema to avoid hydration issues
   const loginSchema = z.object({

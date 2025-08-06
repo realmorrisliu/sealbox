@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { useSSRSafeTranslation } from "@/hooks/useSSRSafeTranslation";
+import { useTranslation } from "react-i18next";
 
 import appCss from "@/styles/app.css?url";
 import { queryClient } from "@/lib/query-client";
@@ -20,7 +20,7 @@ import { HtmlAttributes } from "@/components/common/html-attributes";
 import "@/lib/i18n";
 
 function NotFound() {
-  const { t } = useSSRSafeTranslation();
+  const { t } = useTranslation();
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
