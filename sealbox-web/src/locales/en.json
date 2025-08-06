@@ -28,6 +28,9 @@
       "connectionError": "Connection error: {{message}}"
     }
   },
+  "auth": {
+    "redirecting": "Redirecting to login..."
+  },
   "secrets": {
     "actions": "Actions",
     "stats": {

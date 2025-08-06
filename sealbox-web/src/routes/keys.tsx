@@ -155,10 +155,10 @@ function MasterKeysPage() {
   const masterKeys = masterKeysData?.master_keys || [];
 
   return (
-    <div className="space-section">
+    <div className="space-y-6">
       {/* [Top Level] Page title + Main actions */}
       <div className="flex items-start justify-between">
-        <div className="space-tight">
+        <div className="space-y-2">
           <h1 className="text-4xl font-bold tracking-tight">
             {t("keys.title")}
           </h1>
@@ -211,7 +211,7 @@ function MasterKeysPage() {
       {/* [Middle Layer] Content sections - Section cards */}
       <Card className="bg-card border border-border">
         {masterKeys.length === 0 ? (
-          <div className="padding-section text-center space-content">
+          <div className="p-6 text-center space-y-4">
             <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
               <Key className="h-6 w-6 text-muted-foreground" />
             </div>

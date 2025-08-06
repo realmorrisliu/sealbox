@@ -243,6 +243,15 @@ The CLI uses TOML configuration files with environment variable overrides:
 
 ### Recent Improvements (2025-08-06)
 
+- ✅ **SSR Hydration Issues Resolved** - Comprehensive fix for server-side rendering
+  - **SSR-safe translations**: Created `useSSRSafeTranslation` hook with automatic English fallback from locale files
+  - **Eliminated hydration mismatches**: Fixed all i18n-related water rendering inconsistencies
+  - **Removed inline scripts**: Migrated from HTML inline JS to pure React component architecture
+  - **Direct localStorage integration**: Theme and language preferences read directly in React components
+  - **Zero hardcoded fallbacks**: All fallback translations sourced from `en.json` locale file
+  - **Clean component APIs**: Simplified translation calls back to `t("key")` format
+  - **Production-ready SSR**: Web UI now fully compatible with server-side rendering
+
 - ✅ **Web UI Code Cleanup** - Aligned with sealbox-server capabilities
   - **Removed fictional features**: Eliminated environment labels, categories, risk levels, favorites, archives, access counts
   - **Simplified UI**: Clean interface showing only real server data (key, version, status, timestamps, TTL)

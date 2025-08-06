@@ -9,16 +9,18 @@ import {
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { useTranslation } from "react-i18next";
+import { useSSRSafeTranslation } from "@/hooks/useSSRSafeTranslation";
 
 import appCss from "@/styles/app.css?url";
 import { queryClient } from "@/lib/query-client";
 import { Toaster } from "@/components/ui/sonner";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { ThemeProvider } from "@/components/theme/theme-provider";
+import { HtmlAttributes } from "@/components/common/html-attributes";
 import "@/lib/i18n";
 
 function NotFound() {
-  const { t } = useTranslation();
+  const { t } = useSSRSafeTranslation();
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
@@ -62,11 +64,14 @@ function RootComponent() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <RootDocument>
-          <Outlet />
-          <Toaster />
-          <ReactQueryDevtools initialIsOpen={false} />
-        </RootDocument>
+        <ThemeProvider>
+          <HtmlAttributes />
+          <RootDocument>
+            <Outlet />
+            <Toaster />
+            <ReactQueryDevtools initialIsOpen={false} />
+          </RootDocument>
+        </ThemeProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

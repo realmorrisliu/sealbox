@@ -28,6 +28,9 @@
       "connectionError": "Verbindungsfehler: {{message}}"
     }
   },
+  "auth": {
+    "redirecting": "Weiterleitung zur Anmeldeseite..."
+  },
   "secrets": {
     "actions": "Aktionen",
     "stats": {

@@ -1,5 +1,3 @@
-import { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -8,56 +6,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sun, Moon, Monitor, Check } from "lucide-react";
-
-type Theme = "light" | "dark" | "system";
+import { useTheme } from "./theme-provider";
+import { useSSRSafeTranslation } from "@/hooks/useSSRSafeTranslation";
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("system");
-  const { t } = useTranslation();
+  const { theme, setTheme } = useTheme();
+  const { t } = useSSRSafeTranslation();
 
   const themes = [
     { value: "light", label: t("theme.light"), icon: Sun },
     { value: "dark", label: t("theme.dark"), icon: Moon },
     { value: "system", label: t("theme.system"), icon: Monitor },
   ] as const;
-
-  useEffect(() => {
-    const storedTheme = localStorage.getItem("theme") as Theme;
-    if (storedTheme) {
-      setTheme(storedTheme);
-    }
-  }, []);
-
-  useEffect(() => {
-    const applyTheme = (theme: Theme) => {
-      const root = window.document.documentElement;
-      root.classList.remove("light", "dark");
-
-      if (theme === "system") {
-        const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-          .matches
-          ? "dark"
-          : "light";
-        root.classList.add(systemTheme);
-      } else {
-        root.classList.add(theme);
-      }
-    };
-
-    applyTheme(theme);
-    localStorage.setItem("theme", theme);
-
-    // Listen for system theme changes
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = () => {
-      if (theme === "system") {
-        applyTheme("system");
-      }
-    };
-
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
-  }, [theme]);
 
   const currentTheme = themes.find((t) => t.value === theme) || themes[2];
   const ThemeIcon = currentTheme.icon;

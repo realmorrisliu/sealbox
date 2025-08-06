@@ -4,10 +4,10 @@ import { Card } from "@/components/ui/card";
 // Skeleton screen for secrets list
 export function SecretsListSkeleton() {
   return (
-    <div className="space-section">
+    <div className="space-y-6">
       {/* Title and button skeleton */}
       <div className="flex items-start justify-between">
-        <div className="space-tight">
+        <div className="space-y-2">
           <Skeleton className="h-10 w-48" />
           <Skeleton className="h-4 w-64" />
         </div>
@@ -144,10 +144,10 @@ export function CardListSkeleton({ count = 3 }: { count?: number }) {
 // Master key list skeleton
 export function MasterKeyListSkeleton() {
   return (
-    <div className="space-section">
+    <div className="space-y-6">
       {/* Page title skeleton */}
       <div className="flex items-start justify-between">
-        <div className="space-tight">
+        <div className="space-y-2">
           <Skeleton className="h-10 w-40" />
           <Skeleton className="h-4 w-80" />
         </div>

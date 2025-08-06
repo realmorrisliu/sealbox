@@ -28,6 +28,9 @@
       "connectionError": "接続エラー：{{message}}"
     }
   },
+  "auth": {
+    "redirecting": "ログインページにリダイレクト中..."
+  },
   "secrets": {
     "actions": "操作",
     "stats": {

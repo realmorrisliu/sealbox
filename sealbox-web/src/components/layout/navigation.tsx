@@ -23,6 +23,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useAuthStore } from "@/stores/auth";
 
 interface ServerStatus {
   url: string;
@@ -33,6 +34,7 @@ interface ServerStatus {
 
 export function Navigation() {
   const { t } = useTranslation();
+  const { logout } = useAuthStore();
   const [serverStatus] = useState<ServerStatus>({
     url: "localhost:8080",
     status: "connected",
@@ -139,7 +141,10 @@ export function Navigation() {
                   {t("nav.settings")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-xs text-red-600">
+                <DropdownMenuItem 
+                  className="text-xs text-red-600"
+                  onClick={logout}
+                >
                   <LogOut className="mr-2 h-3 w-3" />
                   {t("nav.signOut")}
                 </DropdownMenuItem>

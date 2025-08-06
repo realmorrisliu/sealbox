@@ -28,6 +28,9 @@
       "connectionError": "连接错误：{{message}}"
     }
   },
+  "auth": {
+    "redirecting": "正在跳转到登录页面..."
+  },
   "secrets": {
     "actions": "操作",
     "stats": {
