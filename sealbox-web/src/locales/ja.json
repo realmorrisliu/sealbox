@@ -32,49 +32,27 @@
     "actions": "操作",
     "stats": {
       "totalSecrets": "シークレット総数",
-      "production": "本番環境",
       "expiring": "期限切れ間近",
-      "highRisk": "高リスク",
-      "needRotation": "ローテーション必要"
+      "expired": "期限切れ"
     },
     "controls": {
-      "searchPlaceholder": "シークレット、タグを検索...",
+      "searchPlaceholder": "シークレットを検索...",
       "table": "テーブル",
       "cards": "カード",
       "addSecret": "シークレット追加"
     },
     "table": {
       "name": "名前",
-      "value": "値",
-      "environment": "環境",
-      "category": "カテゴリ",
+      "version": "バージョン",
       "status": "ステータス",
-      "riskLevel": "リスクレベル",
-      "versions": "バージョン",
-      "ttl": "TTL / 有効期限",
-      "lastUsed": "最終使用",
-      "access": "アクセス回数"
+      "created": "作成日時",
+      "updated": "更新日時",
+      "ttl": "TTL / 有効期限"
     },
     "status": {
       "active": "アクティブ",
       "expiring": "期限切れ間近",
-      "expired": "期限切れ",
-      "compromised": "侵害",
-      "inactive": "非アクティブ"
-    },
-    "riskLevel": {
-      "critical": "致命的",
-      "high": "高",
-      "medium": "中",
-      "low": "低"
-    },
-    "category": {
-      "database": "データベース",
-      "api": "API",
-      "auth": "認証",
-      "payment": "決済",
-      "service": "サービス",
-      "other": "その他"
+      "expired": "期限切れ"
     },
     "empty": {
       "noSecretsFound": "シークレットが見つかりません",
@@ -88,8 +66,6 @@
       "nameHelp": "SECRET_NAME",
       "value": "値",
       "valueHelp": "シークレット値を入力",
-      "description": "説明",
-      "descriptionHelp": "簡潔な説明",
       "ttl": "TTL（生存時間）秒",
       "ttlHelp": "3600",
       "missingFields": "必須フィールドが不足",
@@ -104,13 +80,7 @@
     },
     "confirmDelete": "'{{name}}' を削除してもよろしいですか？",
     "deleted": "シークレットが削除されました",
-    "deletedDescription": "{{name}} が正常に削除されました",
-    "editHint": "編集機能は未実装 - 更新にはCLIを使用してください",
-    "cardView": {
-      "risk": "リスク",
-      "uses": "回使用",
-      "never": "なし"
-    }
+    "deletedDescription": "{{name}} が正常に削除されました"
   },
   "keys": {
     "title": "マスターキー管理",

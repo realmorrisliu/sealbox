@@ -32,49 +32,27 @@
     "actions": "Aktionen",
     "stats": {
       "totalSecrets": "Geheimnisse Gesamt",
-      "production": "Produktion",
       "expiring": "Laufen ab",
-      "highRisk": "Hohes Risiko",
-      "needRotation": "Rotation erforderlich"
+      "expired": "Abgelaufen"
     },
     "controls": {
-      "searchPlaceholder": "Geheimnisse, Tags suchen...",
+      "searchPlaceholder": "Geheimnisse suchen...",
       "table": "Tabelle",
       "cards": "Karten",
       "addSecret": "Geheimnis hinzufügen"
     },
     "table": {
       "name": "Name",
-      "value": "Wert",
-      "environment": "Umgebung",
-      "category": "Kategorie",
+      "version": "Version",
       "status": "Status",
-      "riskLevel": "Risikostufe",
-      "versions": "Versionen",
-      "ttl": "TTL / Ablaufzeit",
-      "lastUsed": "Zuletzt verwendet",
-      "access": "Zugriffe"
+      "created": "Erstellt",
+      "updated": "Aktualisiert",
+      "ttl": "TTL / Ablaufzeit"
     },
     "status": {
       "active": "Aktiv",
       "expiring": "Läuft ab",
-      "expired": "Abgelaufen",
-      "compromised": "Kompromittiert",
-      "inactive": "Inaktiv"
-    },
-    "riskLevel": {
-      "critical": "Kritisch",
-      "high": "Hoch",
-      "medium": "Mittel",
-      "low": "Niedrig"
-    },
-    "category": {
-      "database": "Datenbank",
-      "api": "API",
-      "auth": "Authentifizierung",
-      "payment": "Zahlung",
-      "service": "Service",
-      "other": "Andere"
+      "expired": "Abgelaufen"
     },
     "empty": {
       "noSecretsFound": "Keine Geheimnisse gefunden",
@@ -88,8 +66,6 @@
       "nameHelp": "SECRET_NAME",
       "value": "Wert",
       "valueHelp": "Geheimnis-Wert eingeben",
-      "description": "Beschreibung",
-      "descriptionHelp": "Kurze Beschreibung",
       "ttl": "TTL (Lebensdauer) in Sekunden",
       "ttlHelp": "3600",
       "missingFields": "Fehlende Felder",
@@ -104,13 +80,7 @@
     },
     "confirmDelete": "Sind Sie sicher, dass Sie '{{name}}' löschen möchten?",
     "deleted": "Geheimnis gelöscht",
-    "deletedDescription": "{{name}} wurde erfolgreich gelöscht",
-    "editHint": "Bearbeitung noch nicht implementiert - verwenden Sie CLI für Updates",
-    "cardView": {
-      "risk": "Risiko",
-      "uses": "Verwendungen",
-      "never": "Nie"
-    }
+    "deletedDescription": "{{name}} wurde erfolgreich gelöscht"
   },
   "keys": {
     "title": "Master-Schlüssel-Verwaltung",

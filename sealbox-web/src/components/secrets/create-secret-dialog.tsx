@@ -30,7 +30,6 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
   const [newSecret, setNewSecret] = useState({
     name: "",
     value: "",
-    description: "",
     ttl: "",
   })
   const createSecretMutation = useCreateSecret()
@@ -58,7 +57,7 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
         description: t('secrets.dialog.hasBeenCreated', { name: newSecret.name })
       })
       
-      setNewSecret({ name: "", value: "", description: "", ttl: "" })
+      setNewSecret({ name: "", value: "", ttl: "" })
       setOpen(false)
     } catch (error: any) {
       toast.error(t('common.error'), {
@@ -68,7 +67,7 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
   }
 
   const handleCancel = () => {
-    setNewSecret({ name: "", value: "", description: "", ttl: "" })
+    setNewSecret({ name: "", value: "", ttl: "" })
     setOpen(false)
   }
 
@@ -107,18 +106,6 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
               value={newSecret.value}
               onChange={(e) => setNewSecret({ ...newSecret, value: e.target.value })}
               className="min-h-16"
-            />
-          </div>
-          <div>
-            <Label htmlFor="description" className="text-xs">
-              {t('secrets.dialog.description')}
-            </Label>
-            <Input
-              id="description"
-              placeholder={t('secrets.dialog.descriptionHelp')}
-              value={newSecret.description}
-              onChange={(e) => setNewSecret({ ...newSecret, description: e.target.value })}
-              className="h-8"
             />
           </div>
           <div>

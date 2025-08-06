@@ -32,49 +32,27 @@
     "actions": "操作",
     "stats": {
       "totalSecrets": "密钥总数",
-      "production": "生产环境",
       "expiring": "即将过期",
-      "highRisk": "高风险",
-      "needRotation": "需要轮换"
+      "expired": "已过期"
     },
     "controls": {
-      "searchPlaceholder": "搜索密钥、标签...",
+      "searchPlaceholder": "搜索密钥...",
       "table": "表格",
       "cards": "卡片",
       "addSecret": "添加密钥"
     },
     "table": {
       "name": "名称",
-      "value": "值",
-      "environment": "环境",
-      "category": "类别",
+      "version": "版本",
       "status": "状态",
-      "riskLevel": "风险级别",
-      "versions": "版本",
-      "ttl": "TTL / 过期时间",
-      "lastUsed": "最后使用",
-      "access": "访问次数"
+      "created": "创建时间",
+      "updated": "更新时间",
+      "ttl": "TTL / 过期时间"
     },
     "status": {
       "active": "活跃",
       "expiring": "即将过期",
-      "expired": "已过期",
-      "compromised": "被泄露",
-      "inactive": "非活跃"
-    },
-    "riskLevel": {
-      "critical": "严重",
-      "high": "高",
-      "medium": "中等",
-      "low": "低"
-    },
-    "category": {
-      "database": "数据库",
-      "api": "接口",
-      "auth": "认证",
-      "payment": "支付",
-      "service": "服务",
-      "other": "其他"
+      "expired": "已过期"
     },
     "empty": {
       "noSecretsFound": "未找到密钥",
@@ -88,8 +66,6 @@
       "nameHelp": "SECRET_NAME",
       "value": "值",
       "valueHelp": "输入密钥值",
-      "description": "描述",
-      "descriptionHelp": "简要描述",
       "ttl": "TTL（生存时间）秒",
       "ttlHelp": "3600",
       "missingFields": "缺少字段",
@@ -104,13 +80,7 @@
     },
     "confirmDelete": "确定要删除 '{{name}}' 吗？",
     "deleted": "密钥已删除",
-    "deletedDescription": "{{name}} 已成功删除",
-    "editHint": "编辑功能尚未实现 - 请使用CLI进行更新",
-    "cardView": {
-      "risk": "风险",
-      "uses": "次使用",
-      "never": "从未"
-    }
+    "deletedDescription": "{{name}} 已成功删除"
   },
   "keys": {
     "title": "主密钥管理",

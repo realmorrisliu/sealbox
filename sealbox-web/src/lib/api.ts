@@ -130,13 +130,13 @@ export class SealboxApi {
   }
 
   // Health check
-  async health(): Promise<{ status: string; service: string; timestamp: number }> {
-    return this.request<{ status: string; service: string; timestamp: number }>("/healthz/live");
+  async health(): Promise<{ result: string; timestamp: number }> {
+    return this.request<{ result: string; timestamp: number }>("/healthz/live");
   }
 
   // Readiness check
-  async readiness(): Promise<{ status: string; service: string; database: string; timestamp: number }> {
-    return this.request<{ status: string; service: string; database: string; timestamp: number }>("/healthz/ready");
+  async readiness(): Promise<{ result: string; timestamp: number }> {
+    return this.request<{ result: string; timestamp: number }>("/healthz/ready");
   }
 }
 

@@ -32,49 +32,27 @@
     "actions": "Actions",
     "stats": {
       "totalSecrets": "Total Secrets",
-      "production": "Production",
       "expiring": "Expiring",
-      "highRisk": "High Risk",
-      "needRotation": "Need Rotation"
+      "expired": "Expired"
     },
     "controls": {
-      "searchPlaceholder": "Search secrets, tags...",
+      "searchPlaceholder": "Search secrets...",
       "table": "Table",
       "cards": "Cards",
       "addSecret": "Add Secret"
     },
     "table": {
       "name": "Name",
-      "value": "Value",
-      "environment": "Environment",
-      "category": "Category",
+      "version": "Version",
       "status": "Status",
-      "riskLevel": "Risk Level",
-      "versions": "Versions",
-      "ttl": "TTL / Expires",
-      "lastUsed": "Last Used",
-      "access": "Access"
+      "created": "Created",
+      "updated": "Updated",
+      "ttl": "TTL / Expires"
     },
     "status": {
       "active": "Active",
       "expiring": "Expiring",
-      "expired": "Expired",
-      "compromised": "Compromised",
-      "inactive": "Inactive"
-    },
-    "riskLevel": {
-      "critical": "Critical",
-      "high": "High",
-      "medium": "Medium",
-      "low": "Low"
-    },
-    "category": {
-      "database": "Database",
-      "api": "API",
-      "auth": "Auth",
-      "payment": "Payment",
-      "service": "Service",
-      "other": "Other"
+      "expired": "Expired"
     },
     "empty": {
       "noSecretsFound": "No secrets found",
@@ -88,8 +66,6 @@
       "nameHelp": "SECRET_NAME",
       "value": "Value",
       "valueHelp": "Enter secret value",
-      "description": "Description",
-      "descriptionHelp": "Brief description",
       "ttl": "TTL (Time to Live) in seconds",
       "ttlHelp": "3600",
       "missingFields": "Missing fields",
@@ -104,13 +80,7 @@
     },
     "confirmDelete": "Are you sure you want to delete '{{name}}'?",
     "deleted": "Secret deleted",
-    "deletedDescription": "{{name}} has been deleted successfully",
-    "editHint": "Editing not yet implemented - use CLI for updates",
-    "cardView": {
-      "risk": "risk",
-      "uses": "uses",
-      "never": "Never"
-    }
+    "deletedDescription": "{{name}} has been deleted successfully"
   },
   "keys": {
     "title": "Master Key Management",
