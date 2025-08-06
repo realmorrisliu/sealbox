@@ -1,7 +1,5 @@
 {
   "nav": {
-    "secretManagement": "密钥管理",
-    "masterKeys": "主密钥",
     "settings": "设置",
     "signOut": "退出登录",
     "administrator": "管理员"

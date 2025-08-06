@@ -1,7 +1,5 @@
 {
   "nav": {
-    "secretManagement": "シークレット管理",
-    "masterKeys": "マスターキー",
     "settings": "設定",
     "signOut": "サインアウト",
     "administrator": "管理者"

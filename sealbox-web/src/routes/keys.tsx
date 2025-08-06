@@ -3,13 +3,14 @@ import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { format } from "date-fns";
 import { enUS, zhCN, ja, de } from "date-fns/locale";
-import { Key, Plus, RotateCw, AlertTriangle, Shield, Clock } from "lucide-react";
+import { Key, Plus, RotateCw, AlertTriangle, Shield, Clock, TableIcon, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert } from "@/components/ui/alert";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { MainLayout } from "@/components/layout/main-layout";
@@ -36,6 +37,7 @@ function MasterKeysPage() {
   const createMasterKey = useCreateMasterKey();
   const rotateMasterKey = useRotateMasterKey();
   const { t, i18n } = useTranslation();
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 
   const formatTimestamp = (timestamp: number) => {
     const getLocale = () => {
@@ -121,7 +123,7 @@ function MasterKeysPage() {
 
   return (
     <div className="space-section">
-      {/* [顶层] 页面标题 + 主要操作 */}
+      {/* [Top Level] Page title + Main actions */}
       <div className="flex items-start justify-between">
         <div className="space-tight">
           <h1 className="text-4xl font-bold tracking-tight">{t('keys.title')}</h1>
@@ -130,6 +132,16 @@ function MasterKeysPage() {
           </p>
         </div>
         <div className="flex items-center space-x-2">
+          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "table" | "cards")}>
+            <TabsList className="h-8">
+              <TabsTrigger value="table" className="px-2" title={t('secrets.controls.table')}>
+                <TableIcon className="h-4 w-4" />
+              </TabsTrigger>
+              <TabsTrigger value="cards" className="px-2" title={t('secrets.controls.cards')}>
+                <LayoutGrid className="h-4 w-4" />
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
           <Button 
             variant="outline" 
             onClick={handleRotateKey}
@@ -150,7 +162,7 @@ function MasterKeysPage() {
         </div>
       </div>
 
-      {/* [中层] 内容分区 - Section卡片 */}
+      {/* [Middle Layer] Content sections - Section cards */}
       <Card className="bg-card border border-border">
         {masterKeys.length === 0 ? (
           <div className="padding-section text-center space-content">
@@ -171,8 +183,9 @@ function MasterKeysPage() {
           </div>
         ) : (
           <>
-            {/* Mobile Card View */}
-            <div className="block md:hidden space-y-4 p-6">
+            {/* Card View */}
+            {viewMode === "cards" ? (
+            <div className="space-y-4 p-6">
               {masterKeys.map((key: MasterKey) => (
                 <div 
                   key={key.id}
@@ -203,9 +216,9 @@ function MasterKeysPage() {
                 </div>
               ))}
             </div>
-
-            {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
+            ) : (
+            /* Table View */
+            <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-border hover:bg-transparent">
@@ -258,6 +271,7 @@ function MasterKeysPage() {
                 </TableBody>
               </Table>
             </div>
+            )}
           </>
         )}
       </Card>

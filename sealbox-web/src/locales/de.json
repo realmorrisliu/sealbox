@@ -1,7 +1,5 @@
 {
   "nav": {
-    "secretManagement": "Geheimnis-Verwaltung",
-    "masterKeys": "Master-Schlüssel",
     "settings": "Einstellungen",
     "signOut": "Abmelden",
     "administrator": "Administrator"

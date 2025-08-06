@@ -1,11 +1,11 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 
-// 密钥列表的骨架屏
+// Skeleton screen for secrets list
 export function SecretsListSkeleton() {
   return (
     <div className="space-section">
-      {/* 标题和按钮骨架 */}
+      {/* Title and button skeleton */}
       <div className="flex items-start justify-between">
         <div className="space-tight">
           <Skeleton className="h-10 w-48" />
@@ -14,9 +14,9 @@ export function SecretsListSkeleton() {
         <Skeleton className="h-10 w-40" />
       </div>
 
-      {/* 内容卡片骨架 */}
+      {/* Content card skeleton */}
       <Card className="bg-card border border-border">
-        {/* 移动端视图骨架 */}
+        {/* Mobile view skeleton */}
         <div className="block md:hidden space-y-4 p-6">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="bg-card border border-border rounded-md p-4 space-y-4">
@@ -42,10 +42,10 @@ export function SecretsListSkeleton() {
           ))}
         </div>
 
-        {/* 桌面端表格骨架 */}
+        {/* Desktop table skeleton */}
         <div className="hidden md:block overflow-x-auto">
           <div className="p-6">
-            {/* 表头骨架 */}
+            {/* Table header skeleton */}
             <div className="flex items-center space-x-4 pb-4 border-b border-border">
               <Skeleton className="h-5 w-24" />
               <Skeleton className="h-5 w-16" />
@@ -56,7 +56,7 @@ export function SecretsListSkeleton() {
               <Skeleton className="h-5 w-16" />
             </div>
             
-            {/* 表格行骨架 */}
+            {/* Table row skeleton */}
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex items-center space-x-4 py-4 border-b border-border last:border-b-0">
                 <Skeleton className="h-4 w-32" />
@@ -78,7 +78,7 @@ export function SecretsListSkeleton() {
   );
 }
 
-// 通用页面加载骨架
+// General page loading skeleton
 export function PageLoadingSkeleton() {
   return (
     <div className="flex items-center justify-center h-64">
@@ -90,7 +90,7 @@ export function PageLoadingSkeleton() {
   );
 }
 
-// 表单加载骨架
+// Form loading skeleton
 export function FormSkeleton() {
   return (
     <div className="space-y-6">
@@ -114,7 +114,7 @@ export function FormSkeleton() {
   );
 }
 
-// 卡片列表骨架
+// Card list skeleton
 export function CardListSkeleton({ count = 3 }: { count?: number }) {
   return (
     <div className="space-y-4">
@@ -135,11 +135,11 @@ export function CardListSkeleton({ count = 3 }: { count?: number }) {
   );
 }
 
-// 主密钥列表骨架
+// Master key list skeleton
 export function MasterKeyListSkeleton() {
   return (
     <div className="space-section">
-      {/* 页面标题骨架 */}
+      {/* Page title skeleton */}
       <div className="flex items-start justify-between">
         <div className="space-tight">
           <Skeleton className="h-10 w-40" />
@@ -151,9 +151,9 @@ export function MasterKeyListSkeleton() {
         </div>
       </div>
 
-      {/* 内容卡片骨架 */}
+      {/* Content card skeleton */}
       <Card className="bg-card border border-border">
-        {/* 移动端视图骨架 */}
+        {/* Mobile view skeleton */}
         <div className="block md:hidden space-y-4 p-6">
           {Array.from({ length: 2 }).map((_, i) => (
             <div key={i} className="bg-card border border-border rounded-md p-4 space-y-4">
@@ -175,10 +175,10 @@ export function MasterKeyListSkeleton() {
           ))}
         </div>
 
-        {/* 桌面端表格骨架 */}
+        {/* Desktop table skeleton */}
         <div className="hidden md:block overflow-x-auto">
           <div className="p-6">
-            {/* 表头骨架 */}
+            {/* Table header skeleton */}
             <div className="flex items-center space-x-4 pb-4 border-b border-border">
               <Skeleton className="h-5 w-20" />
               <Skeleton className="h-5 w-16" />
@@ -188,7 +188,7 @@ export function MasterKeyListSkeleton() {
               <Skeleton className="h-5 w-16" />
             </div>
             
-            {/* 表格行骨架 */}
+            {/* Table row skeleton */}
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="flex items-center space-x-4 py-4 border-b border-border last:border-b-0">
                 <Skeleton className="h-4 w-36" />
@@ -205,7 +205,7 @@ export function MasterKeyListSkeleton() {
         </div>
       </Card>
 
-      {/* Info alert 骨架 */}
+      {/* Info alert skeleton */}
       <div className="flex items-start space-x-3 p-4 border border-border rounded-md">
         <Skeleton className="h-4 w-4 mt-0.5" />
         <div className="space-y-2 flex-1">
