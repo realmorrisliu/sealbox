@@ -29,6 +29,8 @@ import {
   Star,
   AlertCircle,
   History,
+  LayoutGrid,
+  TableIcon,
 } from "lucide-react"
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { MainLayout } from "@/components/layout/main-layout";
@@ -36,7 +38,8 @@ import { CreateSecretDialog } from "@/components/secrets/create-secret-dialog";
 import { CountdownTimer } from "@/components/common/countdown-timer";
 import { useSecrets, useDeleteSecret } from "@/hooks/use-api";
 import { toast } from "sonner";
-import type { SecretInfo } from "@/lib/types";
+import type { SecretUIData } from "@/lib/types";
+import { convertSecretToUIData } from "@/lib/types";
 import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/")({
@@ -57,50 +60,14 @@ function SecretManagement() {
   const { t } = useTranslation()
   const { data: secretsData, isLoading, error } = useSecrets();
   const deleteSecretMutation = useDeleteSecret();
-  const [secrets, setSecrets] = useState<SecretInfo[]>([])
+  const [secrets, setSecrets] = useState<SecretUIData[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [viewMode, setViewMode] = useState<"table" | "cards">("table")
 
   // Convert API data to display format
   useEffect(() => {
     if (secretsData?.secrets) {
-      const convertedSecrets = secretsData.secrets.map((secret: SecretInfo) => {
-        const now = Date.now() / 1000;
-        const isExpired = secret.expires_at && now > secret.expires_at;
-        const isExpiring = secret.expires_at && (secret.expires_at - now) < 7 * 24 * 3600; // Expiring in 7 days
-        
-        return {
-          id: `${secret.key}-${secret.version}`,
-          name: secret.key,
-          value: "[ENCRYPTED]", // Server-side encrypted data
-          description: undefined,
-          environment: "production" as const, // Could be inferred from key naming convention
-          category: "other" as const,
-          tags: [],
-          status: isExpired ? "expired" as const : isExpiring ? "expiring" as const : "active" as const,
-          riskLevel: "medium" as const,
-          createdAt: new Date(secret.created_at * 1000).toISOString().split("T")[0],
-          lastUsed: undefined, // Not available from server API
-          lastModified: new Date(secret.updated_at * 1000).toISOString().split("T")[0],
-          lastRotated: new Date(secret.created_at * 1000).toISOString().split("T")[0],
-          expiresAt: secret.expires_at ? new Date(secret.expires_at * 1000).toISOString().split("T")[0] : undefined,
-          isFavorite: false,
-          isArchived: false,
-          accessCount: 0, // Not available from server API
-          versions: [{
-            id: `v${secret.key}-${secret.version}`,
-            version: secret.version,
-            value: "[ENCRYPTED]",
-            changedBy: "system", // Not available from server API
-            changedAt: new Date(secret.created_at * 1000).toISOString().replace("T", " ").substring(0, 19),
-            changeReason: "Current version",
-            isCurrent: true,
-            environment: "production",
-            riskLevel: "medium",
-            tags: []
-          }]
-        }
-      })
+      const convertedSecrets = secretsData.secrets.map(convertSecretToUIData)
       setSecrets(convertedSecrets)
     }
   }, [secretsData])
@@ -329,11 +296,11 @@ function SecretManagement() {
           <div className="flex items-center gap-2">
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "table" | "cards")}>
               <TabsList className="h-8">
-                <TabsTrigger value="table" className="text-xs px-2">
-                  {t('secrets.controls.table')}
+                <TabsTrigger value="table" className="px-2" title={t('secrets.controls.table')}>
+                  <TableIcon className="h-4 w-4" />
                 </TabsTrigger>
-                <TabsTrigger value="cards" className="text-xs px-2">
-                  {t('secrets.controls.cards')}
+                <TabsTrigger value="cards" className="px-2" title={t('secrets.controls.cards')}>
+                  <LayoutGrid className="h-4 w-4" />
                 </TabsTrigger>
               </TabsList>
             </Tabs>
