@@ -85,16 +85,16 @@ function MasterKeysPage() {
   };
 
   const handleRegisterKey = () => {
-    // For now, show coming soon message
-    toast.info(t('keys.registerComingSoon'), {
-      description: t('keys.registerComingSoonDescription'),
+    toast.info(t('keys.cliRequired.title'), {
+      description: t('keys.cliRequired.registerDescription'),
+      duration: 8000,
     });
   };
 
   const handleRotateKey = () => {
-    // For now, show coming soon message  
-    toast.info(t('keys.rotateComingSoon'), {
-      description: t('keys.rotateComingSoonDescription'),  
+    toast.info(t('keys.cliRequired.title'), {
+      description: t('keys.cliRequired.rotateDescription'),
+      duration: 8000,
     });
   };
 
@@ -262,7 +262,29 @@ function MasterKeysPage() {
         )}
       </Card>
 
-      {/* Info Alert */}
+      {/* CLI Usage Guide */}
+      <Alert className="border-border">
+        <Shield className="h-4 w-4" />
+        <div className="text-sm">
+          <p className="font-medium">{t('keys.cliGuide.title')}</p>
+          <div className="text-muted-foreground text-xs mt-2 space-y-2">
+            <div>
+              <p className="font-medium">{t('keys.cliGuide.generateKeys')}</p>
+              <code className="bg-muted px-2 py-1 rounded font-mono">sealbox-cli key generate</code>
+            </div>
+            <div>
+              <p className="font-medium">{t('keys.cliGuide.registerKey')}</p>
+              <code className="bg-muted px-2 py-1 rounded font-mono">sealbox-cli key register</code>
+            </div>
+            <div>
+              <p className="font-medium">{t('keys.cliGuide.rotateKey')}</p>
+              <code className="bg-muted px-2 py-1 rounded font-mono">sealbox-cli key rotate</code>
+            </div>
+          </div>
+        </div>
+      </Alert>
+
+      {/* Security Info Alert */}
       <Alert className="border-border">
         <Shield className="h-4 w-4" />
         <div className="text-sm">

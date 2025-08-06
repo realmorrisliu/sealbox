@@ -53,6 +53,7 @@
       "status": "Status",
       "riskLevel": "Risk Level",
       "versions": "Versions",
+      "ttl": "TTL / Expires",
       "lastUsed": "Last Used",
       "access": "Access"
     },
@@ -98,6 +99,15 @@
       "secretAdded": "Secret added",
       "hasBeenCreated": "{{name}} has been created"
     },
+    "decryptHint": {
+      "title": "Decrypt with CLI",
+      "description": "To view the decrypted value, use: {{command}}",
+      "tooltip": "Click to show CLI command for decryption"
+    },
+    "confirmDelete": "Are you sure you want to delete '{{name}}'?",
+    "deleted": "Secret deleted",
+    "deletedDescription": "{{name}} has been deleted successfully",
+    "editHint": "Editing not yet implemented - use CLI for updates",
     "cardView": {
       "risk": "risk",
       "uses": "uses",
@@ -121,10 +131,17 @@
     "registerFirstKey": "Register First Key",
     "noDescription": "No description",
     "viewKey": "View Key Details",
-    "registerComingSoon": "Key Registration Coming Soon",
-    "registerComingSoonDescription": "RSA key registration will be available in the next update",
-    "rotateComingSoon": "Key Rotation Coming Soon",
-    "rotateComingSoonDescription": "Master key rotation will be available in the next update",
+    "cliRequired": {
+      "title": "Use CLI for Key Operations",
+      "registerDescription": "Generate and register keys using: sealbox-cli key generate && sealbox-cli key register",
+      "rotateDescription": "Rotate master keys using: sealbox-cli key rotate"
+    },
+    "cliGuide": {
+      "title": "Master Key Operations via CLI",
+      "generateKeys": "Generate RSA Key Pair:",
+      "registerKey": "Register Public Key:",
+      "rotateKey": "Rotate Master Key:"
+    },
     "securityNote": "RSA Key Pair Security",
     "securityNoteDescription": "Master keys use 2048-bit RSA encryption. Your private key should be kept secure and never shared."
   },
@@ -135,7 +152,18 @@
     "error": "Error",
     "cancel": "Cancel",
     "tryAgain": "Try Again",
-    "reloadPage": "Reload Page"
+    "reloadPage": "Reload Page",
+    "expired": "Expired",
+    "noExpiry": "No expiry",
+    "timeLeft": {
+      "days_one": "{{count}} day remaining",
+      "days_other": "{{count}} days remaining",
+      "hours_one": "{{count}} hour remaining", 
+      "hours_other": "{{count}} hours remaining",
+      "minutes_one": "{{count}} minute remaining",
+      "minutes_other": "{{count}} minutes remaining",
+      "lessThanMinute": "< 1 minute"
+    }
   },
   "errors": {
     "pageNotFound": "Page Not Found",

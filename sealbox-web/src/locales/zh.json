@@ -53,6 +53,7 @@
       "status": "状态",
       "riskLevel": "风险级别",
       "versions": "版本",
+      "ttl": "TTL / 过期时间",
       "lastUsed": "最后使用",
       "access": "访问次数"
     },
@@ -98,6 +99,15 @@
       "secretAdded": "密钥已添加",
       "hasBeenCreated": "{{name}} 已创建"
     },
+    "decryptHint": {
+      "title": "使用CLI解密",
+      "description": "要查看解密后的值，请使用: {{command}}",
+      "tooltip": "点击查看解密的CLI命令"
+    },
+    "confirmDelete": "确定要删除 '{{name}}' 吗？",
+    "deleted": "密钥已删除",
+    "deletedDescription": "{{name}} 已成功删除",
+    "editHint": "编辑功能尚未实现 - 请使用CLI进行更新",
     "cardView": {
       "risk": "风险",
       "uses": "次使用",
@@ -121,10 +131,17 @@
     "registerFirstKey": "注册第一个密钥",
     "noDescription": "无描述",
     "viewKey": "查看密钥详情",
-    "registerComingSoon": "密钥注册功能即将推出",
-    "registerComingSoonDescription": "RSA密钥注册功能将在下一个更新中推出",
-    "rotateComingSoon": "密钥轮换功能即将推出",
-    "rotateComingSoonDescription": "主密钥轮换功能将在下一个更新中推出",
+    "cliRequired": {
+      "title": "使用CLI进行密钥操作",
+      "registerDescription": "使用以下命令生成并注册密钥: sealbox-cli key generate && sealbox-cli key register",
+      "rotateDescription": "使用以下命令轮换主密钥: sealbox-cli key rotate"
+    },
+    "cliGuide": {
+      "title": "通过CLI管理主密钥",
+      "generateKeys": "生成RSA密钥对:",
+      "registerKey": "注册公钥:",
+      "rotateKey": "轮换主密钥:"
+    },
     "securityNote": "RSA密钥对安全性",
     "securityNoteDescription": "主密钥使用2048位RSA加密。您的私钥应始终保持安全，绝不共享。"
   },
@@ -135,7 +152,15 @@
     "error": "错误",
     "cancel": "取消",
     "tryAgain": "重试",
-    "reloadPage": "重新加载页面"
+    "reloadPage": "重新加载页面",
+    "expired": "已过期",
+    "noExpiry": "无过期时间",
+    "timeLeft": {
+      "days": "剩余{{count}}天",
+      "hours": "剩余{{count}}小时",
+      "minutes": "剩余{{count}}分钟", 
+      "lessThanMinute": "不到1分钟"
+    }
   },
   "errors": {
     "pageNotFound": "页面未找到",

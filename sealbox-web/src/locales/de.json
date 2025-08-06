@@ -53,6 +53,7 @@
       "status": "Status",
       "riskLevel": "Risikostufe",
       "versions": "Versionen",
+      "ttl": "TTL / Ablaufzeit",
       "lastUsed": "Zuletzt verwendet",
       "access": "Zugriffe"
     },
@@ -98,6 +99,15 @@
       "secretAdded": "Geheimnis hinzugefügt",
       "hasBeenCreated": "{{name}} wurde erstellt"
     },
+    "decryptHint": {
+      "title": "Mit CLI entschlüsseln",
+      "description": "Um den entschlüsselten Wert anzuzeigen, verwenden Sie: {{command}}",
+      "tooltip": "Klicken Sie, um den CLI-Befehl zur Entschlüsselung anzuzeigen"
+    },
+    "confirmDelete": "Sind Sie sicher, dass Sie '{{name}}' löschen möchten?",
+    "deleted": "Geheimnis gelöscht",
+    "deletedDescription": "{{name}} wurde erfolgreich gelöscht",
+    "editHint": "Bearbeitung noch nicht implementiert - verwenden Sie CLI für Updates",
     "cardView": {
       "risk": "Risiko",
       "uses": "Verwendungen",
@@ -121,10 +131,17 @@
     "registerFirstKey": "Ersten Schlüssel registrieren",
     "noDescription": "Keine Beschreibung",
     "viewKey": "Schlüssel-Details anzeigen",
-    "registerComingSoon": "Schlüssel-Registrierung bald verfügbar",
-    "registerComingSoonDescription": "RSA-Schlüssel-Registrierung wird im nächsten Update verfügbar sein",
-    "rotateComingSoon": "Schlüssel-Rotation bald verfügbar",
-    "rotateComingSoonDescription": "Master-Schlüssel-Rotation wird im nächsten Update verfügbar sein",
+    "cliRequired": {
+      "title": "CLI für Schlüsseloperationen verwenden",
+      "registerDescription": "Schlüssel generieren und registrieren mit: sealbox-cli key generate && sealbox-cli key register",
+      "rotateDescription": "Master-Schlüssel rotieren mit: sealbox-cli key rotate"
+    },
+    "cliGuide": {
+      "title": "Master-Schlüssel-Operationen über CLI",
+      "generateKeys": "RSA-Schlüsselpaar generieren:",
+      "registerKey": "Öffentlichen Schlüssel registrieren:",
+      "rotateKey": "Master-Schlüssel rotieren:"
+    },
     "securityNote": "RSA-Schlüsselpaar-Sicherheit",
     "securityNoteDescription": "Master-Schlüssel verwenden 2048-Bit RSA-Verschlüsselung. Ihr privater Schlüssel sollte sicher aufbewahrt und niemals geteilt werden."
   },
@@ -135,7 +152,18 @@
     "error": "Fehler",
     "cancel": "Abbrechen",
     "tryAgain": "Erneut versuchen",
-    "reloadPage": "Seite neu laden"
+    "reloadPage": "Seite neu laden",
+    "expired": "Abgelaufen",
+    "noExpiry": "Keine Ablaufzeit",
+    "timeLeft": {
+      "days_one": "{{count}} Tag verbleibend",
+      "days_other": "{{count}} Tage verbleibend",
+      "hours_one": "{{count}} Stunde verbleibend",
+      "hours_other": "{{count}} Stunden verbleibend", 
+      "minutes_one": "{{count}} Minute verbleibend",
+      "minutes_other": "{{count}} Minuten verbleibend",
+      "lessThanMinute": "< 1 Minute"
+    }
   },
   "errors": {
     "pageNotFound": "Seite nicht gefunden",

@@ -53,6 +53,7 @@
       "status": "ステータス",
       "riskLevel": "リスクレベル",
       "versions": "バージョン",
+      "ttl": "TTL / 有効期限",
       "lastUsed": "最終使用",
       "access": "アクセス回数"
     },
@@ -98,6 +99,15 @@
       "secretAdded": "シークレットが追加されました",
       "hasBeenCreated": "{{name}} が作成されました"
     },
+    "decryptHint": {
+      "title": "CLIで復号化",
+      "description": "復号化された値を表示するには次を使用: {{command}}",
+      "tooltip": "復号化のCLIコマンドを表示するにはクリック"
+    },
+    "confirmDelete": "'{{name}}' を削除してもよろしいですか？",
+    "deleted": "シークレットが削除されました",
+    "deletedDescription": "{{name}} が正常に削除されました",
+    "editHint": "編集機能は未実装 - 更新にはCLIを使用してください",
     "cardView": {
       "risk": "リスク",
       "uses": "回使用",
@@ -121,10 +131,17 @@
     "registerFirstKey": "最初のキーを登録",
     "noDescription": "説明なし",
     "viewKey": "キー詳細を表示",
-    "registerComingSoon": "キー登録機能は準備中",
-    "registerComingSoonDescription": "RSAキー登録機能は次のアップデートで利用可能になります",
-    "rotateComingSoon": "キーローテーション機能は準備中",
-    "rotateComingSoonDescription": "マスターキーローテーション機能は次のアップデートで利用可能になります",
+    "cliRequired": {
+      "title": "キー操作にはCLIを使用",
+      "registerDescription": "キーの生成と登録: sealbox-cli key generate && sealbox-cli key register",
+      "rotateDescription": "マスターキーのローテーション: sealbox-cli key rotate"
+    },
+    "cliGuide": {
+      "title": "CLIによるマスターキー操作",
+      "generateKeys": "RSAキーペアの生成:",
+      "registerKey": "公開キーの登録:",
+      "rotateKey": "マスターキーのローテーション:"
+    },
     "securityNote": "RSAキーペアのセキュリティ",
     "securityNoteDescription": "マスターキーは2048ビットRSA暗号化を使用します。秘密鍵は安全に保管し、絶対に共有しないでください。"
   },
@@ -135,7 +152,15 @@
     "error": "エラー",
     "cancel": "キャンセル",
     "tryAgain": "再試行",
-    "reloadPage": "ページを再読み込み"
+    "reloadPage": "ページを再読み込み",
+    "expired": "期限切れ",
+    "noExpiry": "期限なし",
+    "timeLeft": {
+      "days": "残り{{count}}日",
+      "hours": "残り{{count}}時間",
+      "minutes": "残り{{count}}分",
+      "lessThanMinute": "1分未満"
+    }
   },
   "errors": {
     "pageNotFound": "ページが見つかりません",
