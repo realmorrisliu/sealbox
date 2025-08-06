@@ -126,7 +126,7 @@
     "timeLeft": {
       "days_one": "{{count}} day remaining",
       "days_other": "{{count}} days remaining",
-      "hours_one": "{{count}} hour remaining", 
+      "hours_one": "{{count}} hour remaining",
       "hours_other": "{{count}} hours remaining",
       "minutes_one": "{{count}} minute remaining",
       "minutes_other": "{{count}} minutes remaining",

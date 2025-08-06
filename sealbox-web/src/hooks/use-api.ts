@@ -7,7 +7,7 @@ import type { CreateSecretRequest, CreateMasterKeyRequest } from "@/lib/types";
 // Hook for creating API client
 export function useApiClient() {
   const { token, serverUrl } = useAuthStore();
-  
+
   return useMemo(() => {
     if (!serverUrl) return null;
     return createApiClient(serverUrl, token);
@@ -17,7 +17,7 @@ export function useApiClient() {
 // Secret-related hooks
 export function useSecrets() {
   const apiClient = useApiClient();
-  
+
   return useQuery({
     queryKey: queryKeys.secrets,
     queryFn: () => apiClient?.listSecrets(),
@@ -25,20 +25,24 @@ export function useSecrets() {
   });
 }
 
-export function useSecret(key: string, version?: number, options?: { enabled?: boolean }) {
+export function useSecret(
+  key: string,
+  version?: number,
+  options?: { enabled?: boolean },
+) {
   const apiClient = useApiClient();
-  
+
   return useQuery({
     queryKey: queryKeys.secret(key, version),
     queryFn: () => apiClient?.getSecret(key, version),
-    enabled: !!apiClient && !!key && (options?.enabled !== false),
+    enabled: !!apiClient && !!key && options?.enabled !== false,
   });
 }
 
 export function useCreateSecret() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: ({ key, data }: { key: string; data: CreateSecretRequest }) =>
       apiClient!.createSecret(key, data),
@@ -52,7 +56,7 @@ export function useCreateSecret() {
 export function useDeleteSecret() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: ({ key, version }: { key: string; version: number }) =>
       apiClient!.deleteSecret(key, version),
@@ -66,7 +70,7 @@ export function useDeleteSecret() {
 // Master key related hooks
 export function useMasterKeys() {
   const apiClient = useApiClient();
-  
+
   return useQuery({
     queryKey: queryKeys.masterKeys,
     queryFn: () => apiClient?.listMasterKeys(),
@@ -77,7 +81,7 @@ export function useMasterKeys() {
 export function useCreateMasterKey() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (data: CreateMasterKeyRequest) =>
       apiClient!.createMasterKey(data),
@@ -91,7 +95,7 @@ export function useCreateMasterKey() {
 export function useRotateMasterKey() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (data: CreateMasterKeyRequest) =>
       apiClient!.rotateMasterKey(data),
@@ -107,7 +111,7 @@ export function useRotateMasterKey() {
 export function useCleanupExpiredSecrets() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: () => apiClient!.cleanupExpiredSecrets(),
     onSuccess: () => {
@@ -120,7 +124,7 @@ export function useCleanupExpiredSecrets() {
 // Health check hook
 export function useHealthCheck() {
   const apiClient = useApiClient();
-  
+
   return useQuery({
     queryKey: ["health"],
     queryFn: () => apiClient?.health(),

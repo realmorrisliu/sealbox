@@ -11,9 +11,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       <Navigation />
 
       {/* Main content area */}
-      <main className="w-full px-2 py-4">
-        {children}
-      </main>
+      <main className="w-full px-2 py-4">{children}</main>
     </div>
   );
 }

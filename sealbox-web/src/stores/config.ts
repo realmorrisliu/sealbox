@@ -5,10 +5,10 @@ interface ConfigState {
   // UI settings
   theme: "light" | "dark" | "system";
   language: "en" | "zh";
-  
+
   // Default configuration
   defaultServerUrl: string;
-  
+
   // Actions
   setTheme: (theme: "light" | "dark" | "system") => void;
   setLanguage: (language: "en" | "zh") => void;

@@ -18,7 +18,7 @@ export function CountdownTimer({ expiresAt, className }: CountdownTimerProps) {
       const diff = expiresAt - now;
 
       if (diff <= 0) {
-        setTimeLeft(t('common.expired'));
+        setTimeLeft(t("common.expired"));
         setIsExpired(true);
         setIsWarning(false);
         return;
@@ -35,13 +35,13 @@ export function CountdownTimer({ expiresAt, className }: CountdownTimerProps) {
       const minutes = Math.floor((diff % (60 * 60)) / 60);
 
       if (days > 0) {
-        setTimeLeft(t('common.timeLeft.days', { count: days }));
+        setTimeLeft(t("common.timeLeft.days", { count: days }));
       } else if (hours > 0) {
-        setTimeLeft(t('common.timeLeft.hours', { count: hours }));
+        setTimeLeft(t("common.timeLeft.hours", { count: hours }));
       } else if (minutes > 0) {
-        setTimeLeft(t('common.timeLeft.minutes', { count: minutes }));
+        setTimeLeft(t("common.timeLeft.minutes", { count: minutes }));
       } else {
-        setTimeLeft(t('common.timeLeft.lessThanMinute'));
+        setTimeLeft(t("common.timeLeft.lessThanMinute"));
       }
     };
 
@@ -60,9 +60,5 @@ export function CountdownTimer({ expiresAt, className }: CountdownTimerProps) {
     return "text-green-600";
   };
 
-  return (
-    <span className={`${getTextColor()} ${className}`}>
-      {timeLeft}
-    </span>
-  );
+  return <span className={`${getTextColor()} ${className}`}>{timeLeft}</span>;
 }

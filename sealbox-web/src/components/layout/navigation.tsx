@@ -128,18 +128,20 @@ export function Navigation() {
                 <DropdownMenuLabel className="text-xs">
                   <div className="flex flex-col space-y-1">
                     <p className="font-medium">admin@sealbox.dev</p>
-                    <p className="text-muted-foreground">{t('nav.administrator')}</p>
+                    <p className="text-muted-foreground">
+                      {t("nav.administrator")}
+                    </p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-xs">
                   <Settings className="mr-2 h-3 w-3" />
-                  {t('nav.settings')}
+                  {t("nav.settings")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-xs text-red-600">
                   <LogOut className="mr-2 h-3 w-3" />
-                  {t('nav.signOut')}
+                  {t("nav.signOut")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

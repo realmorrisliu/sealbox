@@ -126,7 +126,7 @@
     "timeLeft": {
       "days": "剩余{{count}}天",
       "hours": "剩余{{count}}小时",
-      "minutes": "剩余{{count}}分钟", 
+      "minutes": "剩余{{count}}分钟",
       "lessThanMinute": "不到1分钟"
     }
   },

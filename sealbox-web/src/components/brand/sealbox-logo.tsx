@@ -8,11 +8,11 @@ interface SealboxLogoProps {
   showText?: boolean;
 }
 
-export function SealboxLogo({ 
-  size = "md", 
-  variant = "default", 
+export function SealboxLogo({
+  size = "md",
+  variant = "default",
   className,
-  showText = true 
+  showText = true,
 }: SealboxLogoProps) {
   const getSizeClasses = () => {
     switch (size) {
@@ -46,16 +46,18 @@ export function SealboxLogo({
     <div className={cn("flex items-center space-x-2", className)}>
       <LogoImage />
       {showText && (
-        <span className={cn(
-          "font-semibold tracking-tight",
-          size === "sm" && "text-sm",
-          size === "md" && "text-base",
-          size === "lg" && "text-lg",
-          size === "xl" && "text-xl",
-          variant === "white" && "text-white",
-          variant === "dark" && "text-foreground",
-          variant === "default" && "text-gradient"
-        )}>
+        <span
+          className={cn(
+            "font-semibold tracking-tight",
+            size === "sm" && "text-sm",
+            size === "md" && "text-base",
+            size === "lg" && "text-lg",
+            size === "xl" && "text-xl",
+            variant === "white" && "text-white",
+            variant === "dark" && "text-foreground",
+            variant === "default" && "text-gradient",
+          )}
+        >
           Sealbox
         </span>
       )}
@@ -64,9 +66,9 @@ export function SealboxLogo({
 }
 
 // Alternative export for when you only need the icon
-export function SealboxIcon({ 
-  size = "md", 
-  className 
+export function SealboxIcon({
+  size = "md",
+  className,
 }: Pick<SealboxLogoProps, "size" | "className">) {
   return <SealboxLogo size={size} className={className} showText={false} />;
 }

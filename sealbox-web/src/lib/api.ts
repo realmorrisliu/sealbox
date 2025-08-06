@@ -43,7 +43,7 @@ export class SealboxApi {
     options: RequestInit = {},
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    
+
     const headers = new Headers({
       "Content-Type": "application/json",
       ...options.headers,
@@ -65,7 +65,7 @@ export class SealboxApi {
       } catch {
         errorBody = { error: response.statusText };
       }
-      
+
       throw new SealboxApiError(
         errorBody.error || errorBody.message || `HTTP ${response.status}`,
         response.status,
@@ -87,7 +87,9 @@ export class SealboxApi {
 
   async getSecret(key: string, version?: number): Promise<Secret> {
     const queryParam = version ? `?version=${version}` : "";
-    return this.request<Secret>(`/v1/secrets/${encodeURIComponent(key)}${queryParam}`);
+    return this.request<Secret>(
+      `/v1/secrets/${encodeURIComponent(key)}${queryParam}`,
+    );
   }
 
   async createSecret(key: string, data: CreateSecretRequest): Promise<Secret> {
@@ -98,9 +100,12 @@ export class SealboxApi {
   }
 
   async deleteSecret(key: string, version: number): Promise<void> {
-    return this.request<void>(`/v1/secrets/${encodeURIComponent(key)}?version=${version}`, {
-      method: "DELETE",
-    });
+    return this.request<void>(
+      `/v1/secrets/${encodeURIComponent(key)}?version=${version}`,
+      {
+        method: "DELETE",
+      },
+    );
   }
 
   // Master key management API
@@ -136,7 +141,9 @@ export class SealboxApi {
 
   // Readiness check
   async readiness(): Promise<{ result: string; timestamp: number }> {
-    return this.request<{ result: string; timestamp: number }>("/healthz/ready");
+    return this.request<{ result: string; timestamp: number }>(
+      "/healthz/ready",
+    );
   }
 }
 

@@ -127,7 +127,7 @@
       "days_one": "{{count}} Tag verbleibend",
       "days_other": "{{count}} Tage verbleibend",
       "hours_one": "{{count}} Stunde verbleibend",
-      "hours_other": "{{count}} Stunden verbleibend", 
+      "hours_other": "{{count}} Stunden verbleibend",
       "minutes_one": "{{count}} Minute verbleibend",
       "minutes_other": "{{count}} Minuten verbleibend",
       "lessThanMinute": "< 1 Minute"

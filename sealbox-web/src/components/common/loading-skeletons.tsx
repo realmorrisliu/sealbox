@@ -19,7 +19,10 @@ export function SecretsListSkeleton() {
         {/* Mobile view skeleton */}
         <div className="block md:hidden space-y-4 p-6">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="bg-card border border-border rounded-md p-4 space-y-4">
+            <div
+              key={i}
+              className="bg-card border border-border rounded-md p-4 space-y-4"
+            >
               <div className="flex items-center justify-between">
                 <Skeleton className="h-5 w-32" />
                 <Skeleton className="h-6 w-12" />
@@ -55,10 +58,13 @@ export function SecretsListSkeleton() {
               <div className="flex-1" />
               <Skeleton className="h-5 w-16" />
             </div>
-            
+
             {/* Table row skeleton */}
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center space-x-4 py-4 border-b border-border last:border-b-0">
+              <div
+                key={i}
+                className="flex items-center space-x-4 py-4 border-b border-border last:border-b-0"
+              >
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-6 w-12" />
                 <Skeleton className="h-4 w-32 hidden lg:block" />
@@ -156,7 +162,10 @@ export function MasterKeyListSkeleton() {
         {/* Mobile view skeleton */}
         <div className="block md:hidden space-y-4 p-6">
           {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="bg-card border border-border rounded-md p-4 space-y-4">
+            <div
+              key={i}
+              className="bg-card border border-border rounded-md p-4 space-y-4"
+            >
               <div className="flex items-center justify-between">
                 <Skeleton className="h-5 w-28" />
                 <Skeleton className="h-6 w-16" />
@@ -187,10 +196,13 @@ export function MasterKeyListSkeleton() {
               <div className="flex-1" />
               <Skeleton className="h-5 w-16" />
             </div>
-            
+
             {/* Table row skeleton */}
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="flex items-center space-x-4 py-4 border-b border-border last:border-b-0">
+              <div
+                key={i}
+                className="flex items-center space-x-4 py-4 border-b border-border last:border-b-0"
+              >
                 <Skeleton className="h-4 w-36" />
                 <Skeleton className="h-6 w-16" />
                 <Skeleton className="h-4 w-32 hidden lg:block" />
