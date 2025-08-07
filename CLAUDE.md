@@ -27,6 +27,29 @@ Sealbox is a lightweight, single-node secret storage service built in Rust. It p
 - **RSA + AES-GCM**: 2048-bit RSA for key encryption, AES-256-GCM for data encryption
 - **End-to-end security**: Only clients with private keys can decrypt stored secrets
 
+## Web UI and CLI Collaboration
+
+Sealbox follows a **hybrid approach** where CLI and Web UI work together:
+
+### CLI Responsibilities (Security-Critical Operations)
+- **Key Generation**: Generate RSA key pairs locally
+- **Key Registration**: Upload public keys to server
+- **Key Rotation**: Manage key lifecycle with private key access
+- **Secret Decryption**: Decrypt secrets using private keys
+- **Bulk Operations**: Import/export large datasets
+
+### Web UI Responsibilities (Visual Management)
+- **Secret Management**: Create, list, delete secrets
+- **Status Monitoring**: View key status and secret metadata
+- **Search & Filter**: Find secrets quickly
+- **TTL Management**: Monitor expiration times
+- **Authentication**: Manage server connections
+
+This separation ensures:
+- **Security**: Private keys never leave the user's machine
+- **Usability**: Visual interface for daily operations
+- **Flexibility**: Choose the right tool for each task
+
 ## Common Development Commands
 
 ### Building the Project
@@ -202,7 +225,7 @@ The CLI uses TOML configuration files with environment variable overrides:
   - Follows official best practices: query_and_then() + from_row() for single records, from_rows() for batch queries
   - Eliminated manual field mapping code, improving maintainability and type safety
 - ✅ **Web UI (sealbox-web)** - Modern React-based web interface
-  - **✅ PRODUCTION READY** - Fully aligned with sealbox-server capabilities
+  - **🎯 Design Philosophy**: Web UI complements CLI for visual secret management
   - **🎨 Complete Design System**
     - ✅ **Professional UI design** with clean, functional interface
     - ✅ **Component architecture** - Well-organized components in `auth/`, `brand/`, `common/`, `i18n/`, `layout/`, `secrets/`, `theme/`, `ui/` directories
@@ -220,7 +243,7 @@ The CLI uses TOML configuration files with environment variable overrides:
     - ✅ **AuthGuard route protection** with automatic redirects
     - ✅ **Logout functionality** with session cleanup
     - ✅ **Comprehensive error handling** for connection and auth failures
-  - **📋 Secret Management Interface**
+  - **📋 Secret Management Interface** - Fully functional
     - ✅ **Full CRUD operations** - Create, Read (list), Delete secrets
     - ✅ **Real API integration** - Uses actual sealbox-server endpoints
     - ✅ **Complete API client** - Full coverage of `/v1/secrets` endpoints
@@ -231,15 +254,27 @@ The CLI uses TOML configuration files with environment variable overrides:
     - ✅ **Search functionality** - Client-side filtering by key name
     - ✅ **TTL countdown timers** - Real-time expiration display
     - ✅ **Status indicators** - Active, expiring, expired states
-  - **🔑 Master Key Management (API Ready)**
-    - ✅ **Complete API client** - Full `/v1/master-key` endpoint coverage
-    - ✅ **React Query hooks** - Ready for create/rotate/list operations
-    - ⚠️ **UI implementation pending** - Forms and workflows need completion
+  - **🔑 Master Key Management** - CLI-first approach
+    - ✅ **Master key listing** - View all registered keys with status
+    - ✅ **CLI integration guide** - Clear instructions for key operations
+    - ℹ️ **Design decision**: Key generation/registration via CLI ensures security
+    - ℹ️ **Web UI role**: Monitor and view key status, not create keys
 - ✅ **Kubernetes-standard health checks** - Production-ready monitoring
   - `/healthz/live` - Liveness probe for service availability
   - `/healthz/ready` - Readiness probe with database connection testing
   - No authentication required for health endpoints
   - Proper HTTP status codes and JSON responses
+
+### Recent Improvements (2025-08-07)
+
+- ✅ **Web UI Experience Enhancement** - Fixed mock data and improved functionality
+  - **Real server status monitoring**: Removed all hardcoded mock data, displays actual connection status and latency
+  - **Enhanced operation buttons**: Added refresh and cleanup expired secrets buttons with improved layout
+  - **Simplified navigation bar**: Server status integrated into user menu for cleaner interface
+  - **Empty state and loading improvements**: Friendly empty state components, skeleton screens instead of simple text
+  - **AlertDialog component**: Radix UI-based confirmation dialogs replacing native window.confirm
+  - **Complete multi-language support**: All new features support 4 languages (EN/ZH/JA/DE)
+  - **Fixed control layout**: Operation buttons grouped with search, view toggle separated on right
 
 ### Recent Improvements (2025-08-06)
 
@@ -295,22 +330,52 @@ The CLI uses TOML configuration files with environment variable overrides:
 ### Development Priorities
 
 #### Immediate
-1. **🔑 Master Key Management UI** - Complete key management interface
-   - **Key listing page**: Display registered master keys
-   - **Registration workflow**: UI for uploading public keys
-   - **Key rotation interface**: Implement rotation with validation
-   - **Status indicators**: Show active/retired/disabled states
+1. **📤 Secret Import/Export** - Bulk operations
+   - JSON/YAML format support
+   - Batch secret creation
+   - Export with filtering options
+
+2. **🧪 Integration Testing** - End-to-end test suite
+   - API integration tests
+   - Web UI E2E tests (Playwright)
+   - CLI command tests
+
+3. **📊 Admin Dashboard** - System monitoring
+   - Secret statistics and usage metrics
+   - Health status visualization
+   - Expired secret cleanup interface
 
 #### Secondary Features
-7. **📤 Import/Export** - Bulk operations for secrets
-8. **🧪 Integration Testing** - End-to-end testing suite
-9. **📊 Monitoring Dashboard** - System health and metrics
-10. **🔐 JWT Authentication** - Replace static token auth
+4. **🔐 Enhanced Authentication** - Security improvements
+   - JWT token support
+   - Session management
+   - API key rotation
 
-#### Long Term
-11. **🚀 Multi-node Support** - Raft consensus for high availability
-12. **🔍 Advanced Search** - Full-text search and filtering
-13. **👥 Multi-user Support** - User roles and permissions
+5. **🔍 Advanced Search** - Improved secret discovery
+   - Full-text search
+   - Tag-based filtering
+   - Version history browsing
+
+6. **📝 Audit Logging** - Compliance and tracking
+   - Access logs
+   - Change history
+   - Export audit trails
+
+#### Long Term Vision
+7. **🚀 High Availability** - Production scaling
+   - Multi-node support with Raft consensus
+   - Read replicas
+   - Automatic failover
+
+8. **👥 Multi-tenancy** - Enterprise features
+   - User roles and permissions
+   - Team workspaces
+   - Access control lists (ACLs)
+
+9. **🔒 Advanced Cryptography** - Future-proof security
+   - Post-quantum cryptography support
+   - Hardware security module (HSM) integration
+   - Key escrow and recovery
 
 ## CI/CD Pipeline
 

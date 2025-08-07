@@ -9,10 +9,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Eye, Trash2 } from "lucide-react";
+import { Eye, Trash2, Package } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { CountdownTimer } from "@/components/common/countdown-timer";
 import { getStatusBadge } from "@/lib/secret-utils";
+import { EmptyState } from "@/components/common/empty-state";
 import type { SecretUIData } from "@/lib/types";
 
 interface SecretTableProps {
@@ -29,6 +30,16 @@ export function SecretTable({
   isDeleting,
 }: SecretTableProps) {
   const { t } = useTranslation();
+
+  if (secrets.length === 0) {
+    return (
+      <EmptyState
+        icon={Package}
+        title={t("secrets.empty.title")}
+        description={t("secrets.empty.description")}
+      />
+    );
+  }
 
   return (
     <Card className="overflow-hidden">

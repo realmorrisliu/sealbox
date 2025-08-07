@@ -8,9 +8,12 @@ import { SecretStats } from "@/components/secrets/secret-stats";
 import { SecretControls } from "@/components/secrets/secret-controls";
 import { SecretTable } from "@/components/secrets/secret-table";
 import { SecretCards } from "@/components/secrets/secret-cards";
+import { SecretsListSkeleton } from "@/components/common/loading-skeletons";
 import { useSecretManagement } from "@/hooks/useSecretManagement";
 import { useSecretFiltering } from "@/hooks/useSecretFiltering";
 import { useTranslation } from "react-i18next";
+import { Alert } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -44,17 +47,19 @@ function SecretManagement() {
     useSecretFiltering(secrets);
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        {t("common.loading")}
-      </div>
-    );
+    return <SecretsListSkeleton />;
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center p-8 text-red-500">
-        {t("common.error")}
+      <div className="w-full px-2 py-4">
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <div>
+            <p className="font-medium">{t("common.error")}</p>
+            <p className="text-sm mt-1">{t("common.errorDescription")}</p>
+          </div>
+        </Alert>
       </div>
     );
   }

@@ -2,7 +2,10 @@
   "nav": {
     "settings": "设置",
     "signOut": "退出登录",
-    "administrator": "管理员"
+    "administrator": "管理员",
+    "connectedServer": "已连接服务器",
+    "connecting": "连接中...",
+    "disconnected": "已断开"
   },
   "login": {
     "title": "Sealbox",
@@ -42,7 +45,9 @@
       "searchPlaceholder": "搜索密钥...",
       "table": "表格",
       "cards": "卡片",
-      "addSecret": "添加密钥"
+      "addSecret": "添加密钥",
+      "refresh": "刷新密钥列表",
+      "cleanup": "清理过期"
     },
     "table": {
       "name": "名称",
@@ -58,6 +63,8 @@
       "expired": "已过期"
     },
     "empty": {
+      "title": "未找到密钥",
+      "description": "创建您的第一个密钥以开始使用",
       "noSecretsFound": "未找到密钥",
       "tryAdjustingFilters": "尝试调整筛选条件。",
       "addFirstSecret": "添加您的第一个密钥开始使用。"
@@ -83,7 +90,11 @@
     },
     "confirmDelete": "确定要删除 '{{name}}' 吗？",
     "deleted": "密钥已删除",
-    "deletedDescription": "{{name}} 已成功删除"
+    "deletedDescription": "{{name}} 已成功删除",
+    "refreshed": "密钥已刷新",
+    "cleanupSuccess": "清理完成",
+    "cleanupSuccessDescription": "已删除 {{count}} 个过期密钥",
+    "cleanupNoExpired": "没有需要清理的过期密钥"
   },
   "keys": {
     "title": "主密钥管理",
@@ -121,6 +132,8 @@
     "loadingFailed": "加载失败",
     "retry": "重试",
     "error": "错误",
+    "errorDescription": "数据加载失败，请重试。",
+    "refresh": "刷新",
     "cancel": "取消",
     "tryAgain": "重试",
     "reloadPage": "重新加载页面",

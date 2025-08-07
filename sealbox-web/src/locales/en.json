@@ -2,7 +2,10 @@
   "nav": {
     "settings": "Settings",
     "signOut": "Sign out",
-    "administrator": "Administrator"
+    "administrator": "Administrator",
+    "connectedServer": "Connected Server",
+    "connecting": "Connecting...",
+    "disconnected": "Disconnected"
   },
   "login": {
     "title": "Sealbox",
@@ -42,7 +45,9 @@
       "searchPlaceholder": "Search secrets...",
       "table": "Table",
       "cards": "Cards",
-      "addSecret": "Add Secret"
+      "addSecret": "Add Secret",
+      "refresh": "Refresh secrets list",
+      "cleanup": "Cleanup Expired"
     },
     "table": {
       "name": "Name",
@@ -58,6 +63,8 @@
       "expired": "Expired"
     },
     "empty": {
+      "title": "No secrets found",
+      "description": "Create your first secret to get started",
       "noSecretsFound": "No secrets found",
       "tryAdjustingFilters": "Try adjusting your filters.",
       "addFirstSecret": "Add your first secret to get started."
@@ -83,7 +90,11 @@
     },
     "confirmDelete": "Are you sure you want to delete '{{name}}'?",
     "deleted": "Secret deleted",
-    "deletedDescription": "{{name}} has been deleted successfully"
+    "deletedDescription": "{{name}} has been deleted successfully",
+    "refreshed": "Secrets refreshed",
+    "cleanupSuccess": "Cleanup completed",
+    "cleanupSuccessDescription": "Deleted {{count}} expired secrets",
+    "cleanupNoExpired": "No expired secrets to clean up"
   },
   "keys": {
     "title": "Master Key Management",
@@ -121,6 +132,8 @@
     "loadingFailed": "Loading Failed",
     "retry": "Retry",
     "error": "Error",
+    "errorDescription": "Failed to load data. Please try again.",
+    "refresh": "Refresh",
     "cancel": "Cancel",
     "tryAgain": "Try Again",
     "reloadPage": "Reload Page",

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { LanguageSelector } from "@/components/i18n/language-selector";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import {
-  Settings,
   LogOut,
   ChevronDown,
   Circle,
@@ -24,23 +22,12 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "@/stores/auth";
-
-interface ServerStatus {
-  url: string;
-  status: "connected" | "disconnected" | "connecting";
-  responseTime?: number;
-  version?: string;
-}
+import { useServerStatus } from "@/hooks/useServerStatus";
 
 export function Navigation() {
   const { t } = useTranslation();
-  const { logout } = useAuthStore();
-  const [serverStatus] = useState<ServerStatus>({
-    url: "localhost:8080",
-    status: "connected",
-    responseTime: 45,
-    version: "v1.2.3",
-  });
+  const { logout, serverUrl } = useAuthStore();
+  const serverStatus = useServerStatus();
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -90,18 +77,6 @@ export function Navigation() {
             </div>
           </div>
 
-          {/* Server Status - Compact */}
-          <div className="hidden md:flex items-center space-x-1.5 px-1.5 py-0.5 rounded-md bg-muted/50">
-            <div className={`${getStatusColor(serverStatus.status)}`}>
-              {getStatusIcon(serverStatus.status)}
-            </div>
-            <span className="text-xs font-mono">{serverStatus.url}</span>
-            {serverStatus.responseTime && (
-              <span className="text-xs text-muted-foreground">
-                {serverStatus.responseTime}ms
-              </span>
-            )}
-          </div>
 
           {/* Right Side Controls */}
           <div className="flex items-center space-x-0.5">
@@ -111,42 +86,42 @@ export function Navigation() {
             {/* Theme Selector */}
             <ThemeToggle />
 
-            {/* Settings */}
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <Settings className="w-4 h-4" />
-            </Button>
-
             {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-8 px-2">
                   <div className="w-5 h-5 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-medium mr-1">
-                    A
+                    {serverUrl ? serverUrl.charAt(0).toUpperCase() : "S"}
                   </div>
                   <ChevronDown className="w-3 h-3" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel className="text-xs">
-                  <div className="flex flex-col space-y-1">
-                    <p className="font-medium">admin@sealbox.dev</p>
-                    <p className="text-muted-foreground">
-                      {t("nav.administrator")}
-                    </p>
+                <div className="relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none">
+                  <Server className="pointer-events-none shrink-0 size-4 text-muted-foreground" />
+                  <div className="flex-1 min-w-0 flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{serverStatus.url}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {serverStatus.status === "connected" 
+                          ? `${serverStatus.responseTime || 0}ms` 
+                          : serverStatus.status === "connecting" 
+                          ? t("nav.connecting") 
+                          : t("nav.disconnected")}
+                      </p>
+                    </div>
+                    <div className={`${getStatusColor(serverStatus.status)} shrink-0`}>
+                      <Circle className="h-2 w-2 fill-current" />
+                    </div>
                   </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-xs">
-                  <Settings className="mr-2 h-3 w-3" />
-                  {t("nav.settings")}
-                </DropdownMenuItem>
+                </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
-                  className="text-xs text-red-600"
+                  className="text-xs text-red-600 cursor-pointer"
                   onClick={logout}
                 >
-                  <LogOut className="mr-2 h-3 w-3" />
-                  {t("nav.signOut")}
+                  <LogOut className="pointer-events-none shrink-0 size-4" />
+                  <span>{t("nav.signOut")}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

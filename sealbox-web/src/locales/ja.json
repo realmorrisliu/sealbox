@@ -2,7 +2,10 @@
   "nav": {
     "settings": "設定",
     "signOut": "サインアウト",
-    "administrator": "管理者"
+    "administrator": "管理者",
+    "connectedServer": "接続済みサーバー",
+    "connecting": "接続中...",
+    "disconnected": "切断"
   },
   "login": {
     "title": "Sealbox",
@@ -42,7 +45,9 @@
       "searchPlaceholder": "シークレットを検索...",
       "table": "テーブル",
       "cards": "カード",
-      "addSecret": "シークレット追加"
+      "addSecret": "シークレット追加",
+      "refresh": "シークレットリストを更新",
+      "cleanup": "期限切れをクリーンアップ"
     },
     "table": {
       "name": "名前",
@@ -58,6 +63,8 @@
       "expired": "期限切れ"
     },
     "empty": {
+      "title": "シークレットが見つかりません",
+      "description": "最初のシークレットを作成して開始しましょう",
       "noSecretsFound": "シークレットが見つかりません",
       "tryAdjustingFilters": "フィルターを調整してみてください。",
       "addFirstSecret": "最初のシークレットを追加して開始しましょう。"
@@ -83,7 +90,11 @@
     },
     "confirmDelete": "'{{name}}' を削除してもよろしいですか？",
     "deleted": "シークレットが削除されました",
-    "deletedDescription": "{{name}} が正常に削除されました"
+    "deletedDescription": "{{name}} が正常に削除されました",
+    "refreshed": "シークレットが更新されました",
+    "cleanupSuccess": "クリーンアップ完了",
+    "cleanupSuccessDescription": "{{count}}個の期限切れシークレットを削除しました",
+    "cleanupNoExpired": "クリーンアップする期限切れシークレットはありません"
   },
   "keys": {
     "title": "マスターキー管理",
@@ -121,6 +132,8 @@
     "loadingFailed": "読み込み失敗",
     "retry": "再試行",
     "error": "エラー",
+    "errorDescription": "データの読み込みに失敗しました。もう一度お試しください。",
+    "refresh": "更新",
     "cancel": "キャンセル",
     "tryAgain": "再試行",
     "reloadPage": "ページを再読み込み",

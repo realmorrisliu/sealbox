@@ -2,7 +2,10 @@
   "nav": {
     "settings": "Einstellungen",
     "signOut": "Abmelden",
-    "administrator": "Administrator"
+    "administrator": "Administrator",
+    "connectedServer": "Verbundener Server",
+    "connecting": "Verbinde...",
+    "disconnected": "Getrennt"
   },
   "login": {
     "title": "Sealbox",
@@ -42,7 +45,9 @@
       "searchPlaceholder": "Geheimnisse suchen...",
       "table": "Tabelle",
       "cards": "Karten",
-      "addSecret": "Geheimnis hinzufügen"
+      "addSecret": "Geheimnis hinzufügen",
+      "refresh": "Geheimnisliste aktualisieren",
+      "cleanup": "Abgelaufene bereinigen"
     },
     "table": {
       "name": "Name",
@@ -58,6 +63,8 @@
       "expired": "Abgelaufen"
     },
     "empty": {
+      "title": "Keine Geheimnisse gefunden",
+      "description": "Erstellen Sie Ihr erstes Geheimnis, um zu beginnen",
       "noSecretsFound": "Keine Geheimnisse gefunden",
       "tryAdjustingFilters": "Versuchen Sie, die Filter anzupassen.",
       "addFirstSecret": "Fügen Sie Ihr erstes Geheimnis hinzu, um zu beginnen."
@@ -83,7 +90,11 @@
     },
     "confirmDelete": "Sind Sie sicher, dass Sie '{{name}}' löschen möchten?",
     "deleted": "Geheimnis gelöscht",
-    "deletedDescription": "{{name}} wurde erfolgreich gelöscht"
+    "deletedDescription": "{{name}} wurde erfolgreich gelöscht",
+    "refreshed": "Geheimnisse aktualisiert",
+    "cleanupSuccess": "Bereinigung abgeschlossen",
+    "cleanupSuccessDescription": "{{count}} abgelaufene Geheimnisse gelöscht",
+    "cleanupNoExpired": "Keine abgelaufenen Geheimnisse zu bereinigen"
   },
   "keys": {
     "title": "Master-Schlüssel-Verwaltung",
@@ -121,6 +132,8 @@
     "loadingFailed": "Laden fehlgeschlagen",
     "retry": "Wiederholen",
     "error": "Fehler",
+    "errorDescription": "Daten konnten nicht geladen werden. Bitte versuchen Sie es erneut.",
+    "refresh": "Aktualisieren",
     "cancel": "Abbrechen",
     "tryAgain": "Erneut versuchen",
     "reloadPage": "Seite neu laden",
