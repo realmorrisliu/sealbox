@@ -267,6 +267,16 @@ The CLI uses TOML configuration files with environment variable overrides:
 
 ### Recent Improvements (2025-08-07)
 
+- ✅ **Server Status & Response Time Optimization** - Improved network monitoring and UI design
+  - **Precise response time measurement**: Fixed timing implementation using `performance.now()` at API client level
+  - **On-demand health checking**: Replaced 30-second polling with menu-triggered checks for better resource efficiency
+  - **Minimalist status design**: Clean icon-based status indicators with color-coded response times
+    - **Connected**: Green response time (e.g., "42ms") 
+    - **Connecting**: Yellow animated loader icon
+    - **Disconnected**: Red WiFi-off icon
+  - **Eliminated redundant UI**: Removed status text and circular indicators, keeping only essential information
+  - **i18n cleanup**: Removed unused translation keys after UI simplification
+
 - ✅ **Web UI Experience Enhancement** - Fixed mock data and improved functionality
   - **Real server status monitoring**: Removed all hardcoded mock data, displays actual connection status and latency
   - **Enhanced operation buttons**: Added refresh and cleanup expired secrets buttons with improved layout
