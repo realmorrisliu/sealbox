@@ -80,6 +80,34 @@ export class SealboxApi {
     return response.json();
   }
 
+  private async requestWithTiming<T>(
+    endpoint: string,
+    options: RequestInit = {},
+  ): Promise<T & { responseTime: number }> {
+    const startTime = performance.now();
+    
+    try {
+      const result = await this.request<T>(endpoint, options);
+      const endTime = performance.now();
+      const responseTime = Math.round(endTime - startTime);
+      
+      return {
+        ...result,
+        responseTime,
+      };
+    } catch (error) {
+      const endTime = performance.now();
+      const responseTime = Math.round(endTime - startTime);
+      
+      if (error instanceof SealboxApiError) {
+        // Add response time to error for potential debugging
+        (error as any).responseTime = responseTime;
+      }
+      
+      throw error;
+    }
+  }
+
   // Secret management API
   async listSecrets(): Promise<SecretsListResponse> {
     return this.request<SecretsListResponse>("/v1/secrets");
@@ -137,6 +165,11 @@ export class SealboxApi {
   // Health check
   async health(): Promise<{ result: string; timestamp: number }> {
     return this.request<{ result: string; timestamp: number }>("/healthz/live");
+  }
+
+  // Health check with response time measurement
+  async healthWithTiming(): Promise<{ result: string; timestamp: number; responseTime: number }> {
+    return this.requestWithTiming<{ result: string; timestamp: number }>("/healthz/live");
   }
 
   // Readiness check

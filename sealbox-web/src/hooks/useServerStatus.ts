@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useHealthCheck } from "./use-api";
 import { useAuthStore } from "@/stores/auth";
 
@@ -8,27 +7,15 @@ export interface ServerStatusData {
   url: string;
   status: ServerStatus;
   responseTime?: number;
+  refresh: () => void;
 }
 
 export function useServerStatus() {
   const { serverUrl } = useAuthStore();
-  const { data, error, isLoading } = useHealthCheck();
-  const [responseTime, setResponseTime] = useState<number>();
-  const [lastCheckTime, setLastCheckTime] = useState<number>();
-
-  useEffect(() => {
-    if (data && lastCheckTime) {
-      const timeDiff = Date.now() - lastCheckTime;
-      setResponseTime(Math.min(timeDiff, 9999));
-    }
-  }, [data, lastCheckTime]);
-
-  useEffect(() => {
-    setLastCheckTime(Date.now());
-  }, [isLoading]);
+  const { data, error, isLoading, refetch } = useHealthCheck();
 
   const getStatus = (): ServerStatus => {
-    if (isLoading && !data) return "connecting";
+    if (isLoading) return "connecting";
     if (error) return "disconnected";
     if (data) return "connected";
     return "disconnected";
@@ -42,6 +29,7 @@ export function useServerStatus() {
   return {
     url: cleanUrl(serverUrl),
     status: getStatus(),
-    responseTime,
+    responseTime: data?.responseTime,
+    refresh: refetch,
   } as ServerStatusData;
 }

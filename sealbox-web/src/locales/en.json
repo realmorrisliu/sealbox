@@ -1,11 +1,6 @@
 {
   "nav": {
-    "settings": "Settings",
-    "signOut": "Sign out",
-    "administrator": "Administrator",
-    "connectedServer": "Connected Server",
-    "connecting": "Connecting...",
-    "disconnected": "Disconnected"
+    "signOut": "Sign out"
   },
   "login": {
     "title": "Sealbox",

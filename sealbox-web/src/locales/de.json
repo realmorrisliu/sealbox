@@ -1,11 +1,6 @@
 {
   "nav": {
-    "settings": "Einstellungen",
-    "signOut": "Abmelden",
-    "administrator": "Administrator",
-    "connectedServer": "Verbundener Server",
-    "connecting": "Verbinde...",
-    "disconnected": "Getrennt"
+    "signOut": "Abmelden"
   },
   "login": {
     "title": "Sealbox",

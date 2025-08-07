@@ -121,15 +121,16 @@ export function useCleanupExpiredSecrets() {
   });
 }
 
-// Health check hook
+// Health check hook with manual trigger
 export function useHealthCheck() {
   const apiClient = useApiClient();
 
   return useQuery({
     queryKey: ["health"],
-    queryFn: () => apiClient?.health(),
-    enabled: !!apiClient,
+    queryFn: () => apiClient?.healthWithTiming(),
+    enabled: false, // Disabled by default, trigger manually
     retry: 1,
-    refetchInterval: 30000, // Check every 30 seconds
+    staleTime: 30000, // Consider data stale after 30 seconds
+    gcTime: 60000, // Keep in cache for 1 minute
   });
 }

@@ -1,11 +1,6 @@
 {
   "nav": {
-    "settings": "設定",
-    "signOut": "サインアウト",
-    "administrator": "管理者",
-    "connectedServer": "接続済みサーバー",
-    "connecting": "接続中...",
-    "disconnected": "切断"
+    "signOut": "サインアウト"
   },
   "login": {
     "title": "Sealbox",

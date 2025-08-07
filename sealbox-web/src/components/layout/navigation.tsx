@@ -15,10 +15,9 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import {
   LogOut,
   ChevronDown,
-  Circle,
   Server,
-  Wifi,
   WifiOff,
+  Loader2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "@/stores/auth";
@@ -39,19 +38,6 @@ export function Navigation() {
         return "text-red-500";
       default:
         return "text-gray-500";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "connected":
-        return <Wifi className="w-3 h-3" />;
-      case "connecting":
-        return <Server className="w-3 h-3" />;
-      case "disconnected":
-        return <WifiOff className="w-3 h-3" />;
-      default:
-        return <Circle className="w-3 h-3" />;
     }
   };
 
@@ -77,7 +63,6 @@ export function Navigation() {
             </div>
           </div>
 
-
           {/* Right Side Controls */}
           <div className="flex items-center space-x-0.5">
             {/* Language Selector */}
@@ -87,7 +72,13 @@ export function Navigation() {
             <ThemeToggle />
 
             {/* User Menu */}
-            <DropdownMenu>
+            <DropdownMenu
+              onOpenChange={(isOpen) => {
+                if (isOpen) {
+                  serverStatus.refresh();
+                }
+              }}
+            >
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-8 px-2">
                   <div className="w-5 h-5 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-medium mr-1">
@@ -101,22 +92,23 @@ export function Navigation() {
                   <Server className="pointer-events-none shrink-0 size-4 text-muted-foreground" />
                   <div className="flex-1 min-w-0 flex items-center justify-between">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{serverStatus.url}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {serverStatus.status === "connected" 
-                          ? `${serverStatus.responseTime || 0}ms` 
-                          : serverStatus.status === "connecting" 
-                          ? t("nav.connecting") 
-                          : t("nav.disconnected")}
+                      <p className="text-xs font-medium truncate">
+                        {serverStatus.url}
                       </p>
                     </div>
-                    <div className={`${getStatusColor(serverStatus.status)} shrink-0`}>
-                      <Circle className="h-2 w-2 fill-current" />
+                    <div className={`${getStatusColor(serverStatus.status)} shrink-0 text-xs font-medium flex items-center`}>
+                      {serverStatus.status === "connected" && serverStatus.responseTime ? (
+                        `${serverStatus.responseTime}ms`
+                      ) : serverStatus.status === "connecting" ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <WifiOff className="h-3 w-3" />
+                      )}
                     </div>
                   </div>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   className="text-xs text-red-600 cursor-pointer"
                   onClick={logout}
                 >

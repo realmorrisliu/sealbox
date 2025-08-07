@@ -1,11 +1,6 @@
 {
   "nav": {
-    "settings": "设置",
-    "signOut": "退出登录",
-    "administrator": "管理员",
-    "connectedServer": "已连接服务器",
-    "connecting": "连接中...",
-    "disconnected": "已断开"
+    "signOut": "退出登录"
   },
   "login": {
     "title": "Sealbox",
