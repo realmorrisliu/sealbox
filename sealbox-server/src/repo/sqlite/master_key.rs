@@ -90,8 +90,9 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
     }
 
     fn fetch_all_master_keys(&self, conn: &rusqlite::Connection) -> Result<Vec<MasterKey>> {
-        let mut stmt =
-            conn.prepare("SELECT id, created_at, status, description, metadata, name FROM master_keys")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, created_at, status, description, metadata, name FROM master_keys",
+        )?;
         let master_key_iter = stmt.query_map([], |row| {
             Ok(MasterKey {
                 id: row.get(0)?,

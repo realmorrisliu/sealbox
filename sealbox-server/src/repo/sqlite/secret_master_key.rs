@@ -35,7 +35,7 @@ impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {
         encrypted_data_key: &[u8],
     ) -> Result<()> {
         let created_at = time::OffsetDateTime::now_utc().unix_timestamp();
-        
+
         conn.execute(
             "INSERT INTO secret_master_keys (
                 secret_key,
@@ -64,9 +64,9 @@ impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {
         let mut stmt = conn.prepare(
             "SELECT secret_key, secret_version, master_key_id, encrypted_data_key, created_at 
              FROM secret_master_keys 
-             WHERE secret_key = ?1 AND secret_version = ?2"
+             WHERE secret_key = ?1 AND secret_version = ?2",
         )?;
-        
+
         let association_iter = stmt.query_map((secret_key, secret_version), |row| {
             Ok(SecretMasterKeyAssociation {
                 secret_key: row.get(0)?,
@@ -97,9 +97,9 @@ impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {
         let mut stmt = conn.prepare(
             "SELECT secret_key, secret_version, master_key_id, encrypted_data_key, created_at 
              FROM secret_master_keys 
-             WHERE secret_key = ?1 AND secret_version = ?2 AND master_key_id = ?3"
+             WHERE secret_key = ?1 AND secret_version = ?2 AND master_key_id = ?3",
         )?;
-        
+
         let association = stmt
             .query_row((secret_key, secret_version, master_key_id), |row| {
                 Ok(SecretMasterKeyAssociation {
@@ -111,7 +111,7 @@ impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {
                 })
             })
             .optional()?;
-        
+
         Ok(association)
     }
 }
