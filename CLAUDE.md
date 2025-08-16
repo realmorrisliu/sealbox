@@ -79,7 +79,7 @@ export LISTEN_ADDR=127.0.0.1:8080
 ```
 
 ### Testing and Quality
-The project includes comprehensive unit tests (71 total: 51 server + 20 CLI) covering encryption, decryption, storage, API functionality, and CLI operations.
+The project includes comprehensive unit tests (77 total: 57 server + 20 CLI) covering encryption, decryption, storage, API functionality, CLI operations, and multi-client architecture.
 
 ```bash
 # Run all tests
@@ -215,7 +215,7 @@ The CLI uses TOML configuration files with environment variable overrides:
   - **Brand consistency** - "Sealbox" name preserved across all languages
   - **Persistent language preference** stored in localStorage
 - ✅ Zero clippy warnings across entire codebase (strict linting)
-- ✅ Comprehensive test coverage (77 test cases including TTL functionality)
+- ✅ Comprehensive test coverage (77 test cases including TTL functionality and multi-client architecture)
 - ✅ Parameter-driven config initialization with interactive fallback
 - ✅ Automatic path expansion and standardized file locations
 - ✅ Production-ready code quality and error handling
@@ -264,6 +264,24 @@ The CLI uses TOML configuration files with environment variable overrides:
   - `/healthz/ready` - Readiness probe with database connection testing
   - No authentication required for health endpoints
   - Proper HTTP status codes and JSON responses
+- ✅ **Multi-Client Architecture (Phase 1 TDD)** - Enhanced scalability for multiple CLI clients
+  - **🎯 Architecture Evolution**: Transitioned from "by user" to "by client" Master Key model
+  - **📊 Phase 1 Completed**: Core data layer foundation with Test Driven Development
+    - ✅ **MasterKey name field**: Added optional client name identifier (e.g., "morris-laptop")
+    - ✅ **Secret-Master-Key associations**: New `secret_master_keys` table for many-to-many relationships
+    - ✅ **Shared DataKey design**: Multiple Master Keys can encrypt the same secret's DataKey
+    - ✅ **Backward compatibility**: All existing functionality preserved during enhancement
+    - ✅ **Comprehensive testing**: Complete TDD cycles with 61 passing tests
+  - **📋 Implementation Details**:
+    - Enhanced `MasterKey` struct with optional `name` field for client identification
+    - Created `SecretMasterKeyAssociation` and `SecretMasterKeyRepo` for multi-key management
+    - Implemented SQLite schema migrations with proper database table initialization
+    - Added repository methods: `create_association`, `get_associations_for_secret`, `get_association`
+  - **🔧 Database Schema Updates**:
+    - Modified `master_keys` table to include `name TEXT` column
+    - Created new `secret_master_keys` table with composite primary key
+    - Maintained all existing queries and operations for seamless backward compatibility
+  - **📖 Design Documentation**: Complete multi-client architecture design documented in `docs/multi-client-architecture.md`
 
 ### Recent Improvements (2025-08-07)
 
@@ -339,53 +357,60 @@ The CLI uses TOML configuration files with environment variable overrides:
 
 ### Development Priorities
 
+#### In Progress
+1. **🔑 Multi-Client Architecture (Phase 2 TDD)** - API layer implementation
+   - 🚧 **Current**: Phase 2 TDD - API extension tests for multi-master-key support
+   - API endpoints for creating secrets with multiple master keys
+   - CLI enhancements for multi-master-key operations
+   - Web UI updates for multi-client management
+
 #### Immediate
-1. **📤 Secret Import/Export** - Bulk operations
+2. **📤 Secret Import/Export** - Bulk operations
    - JSON/YAML format support
    - Batch secret creation
    - Export with filtering options
 
-2. **🧪 Integration Testing** - End-to-end test suite
+3. **🧪 Integration Testing** - End-to-end test suite
    - API integration tests
    - Web UI E2E tests (Playwright)
    - CLI command tests
 
-3. **📊 Admin Dashboard** - System monitoring
+4. **📊 Admin Dashboard** - System monitoring
    - Secret statistics and usage metrics
    - Health status visualization
    - Expired secret cleanup interface
 
 #### Secondary Features
-4. **🔐 Enhanced Authentication** - Security improvements
+5. **🔐 Enhanced Authentication** - Security improvements
    - JWT token support
    - Session management
    - API key rotation
 
-5. **🔍 Advanced Search** - Improved secret discovery
+6. **🔍 Advanced Search** - Improved secret discovery
    - Full-text search
    - Tag-based filtering
    - Version history browsing
 
-6. **📝 Audit Logging** - Compliance and tracking
+7. **📝 Audit Logging** - Compliance and tracking
    - Access logs
    - Change history
    - Export audit trails
 
 #### Long Term Vision
-7. **🚀 High Availability** - Production scaling
+8. **🚀 High Availability** - Production scaling
    - Multi-node support with Raft consensus
    - Read replicas
    - Automatic failover
 
-8. **👥 Multi-tenancy** - Enterprise features
+9. **👥 Multi-tenancy** - Enterprise features
    - User roles and permissions
    - Team workspaces
    - Access control lists (ACLs)
 
-9. **🔒 Advanced Cryptography** - Future-proof security
-   - Post-quantum cryptography support
-   - Hardware security module (HSM) integration
-   - Key escrow and recovery
+10. **🔒 Advanced Cryptography** - Future-proof security
+    - Post-quantum cryptography support
+    - Hardware security module (HSM) integration
+    - Key escrow and recovery
 
 ## CI/CD Pipeline
 

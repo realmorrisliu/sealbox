@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub(crate) use self::sqlite::{
-    SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+    SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo, SqliteSecretMasterKeyRepo, create_db_connection,
 };
 
 mod sqlite;
@@ -205,10 +205,15 @@ pub struct MasterKey {
     pub status: MasterKeyStatus,     // Status: Active/Retired/Disabled
     pub description: Option<String>, // Optional description
     pub metadata: Option<String>,    // Optional metadata
+    pub name: Option<String>,        // Optional client name (e.g., "morris-laptop")
 }
 
 impl MasterKey {
     pub(crate) fn new(public_key: String) -> Result<Self> {
+        Self::new_with_name(public_key, None)
+    }
+
+    pub(crate) fn new_with_name(public_key: String, name: Option<String>) -> Result<Self> {
         let id = Uuid::new_v4();
         let created_at = time::OffsetDateTime::now_utc().unix_timestamp();
         let status = MasterKeyStatus::Active;
@@ -222,6 +227,7 @@ impl MasterKey {
             status,
             description,
             metadata,
+            name,
         })
     }
 }
@@ -244,6 +250,42 @@ pub(crate) trait MasterKeyRepo: Send + Sync {
 
 pub(crate) trait HealthRepo: Send + Sync {
     fn check_health(&self, conn: &rusqlite::Connection) -> Result<bool>;
+}
+
+/// Represents an association between a secret and a master key
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretMasterKeyAssociation {
+    pub secret_key: String,
+    pub secret_version: i32,
+    pub master_key_id: Uuid,
+    pub encrypted_data_key: Vec<u8>,
+    pub created_at: i64,
+}
+
+/// Repository for managing secret-master-key associations
+pub(crate) trait SecretMasterKeyRepo: Send + Sync {
+    fn init_table(conn: &rusqlite::Connection) -> Result<()>;
+    fn create_association(
+        &self,
+        conn: &rusqlite::Connection,
+        secret_key: &str,
+        secret_version: i32,
+        master_key_id: &Uuid,
+        encrypted_data_key: &[u8],
+    ) -> Result<()>;
+    fn get_associations_for_secret(
+        &self,
+        conn: &rusqlite::Connection,
+        secret_key: &str,
+        secret_version: i32,
+    ) -> Result<Vec<SecretMasterKeyAssociation>>;
+    fn get_association(
+        &self,
+        conn: &rusqlite::Connection,
+        secret_key: &str,
+        secret_version: i32,
+        master_key_id: &Uuid,
+    ) -> Result<Option<SecretMasterKeyAssociation>>;
 }
 
 #[cfg(test)]
@@ -459,5 +501,147 @@ mod tests {
 
         let expected_expiry = secret.created_at + ttl_seconds;
         assert_eq!(secret.expires_at, Some(expected_expiry));
+    }
+
+    // ===== TDD Tests for Multi-Master-Key Feature =====
+    
+    #[test]
+    fn test_master_key_with_name_field() {
+        // RED: This test should fail initially because MasterKey doesn't have a name field
+        let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
+        let mut master_key = MasterKey::new(public_pem).expect("Should create master key");
+        
+        // This should fail compilation until we add name field to MasterKey
+        master_key.name = Some("test-laptop".to_string());
+        assert_eq!(master_key.name, Some("test-laptop".to_string()));
+        
+        // Test that name is optional
+        let master_key_no_name = MasterKey::new_with_name(
+            "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA...\n-----END RSA PUBLIC KEY-----".to_string(),
+            None
+        ).expect("Should create master key without name");
+        assert_eq!(master_key_no_name.name, None);
+        
+        // Test that name is stored correctly  
+        let master_key_with_name = MasterKey::new_with_name(
+            "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA...\n-----END RSA PUBLIC KEY-----".to_string(),
+            Some("my-laptop".to_string())
+        ).expect("Should create master key with name");
+        assert_eq!(master_key_with_name.name, Some("my-laptop".to_string()));
+    }
+
+    #[test]
+    fn test_secret_with_multiple_master_keys_concept() {
+        // RED: This test should fail initially because we can't create secrets with multiple master keys
+        let (_, public_pem1) = generate_key_pair().expect("Should generate key pair 1");
+        let (_, public_pem2) = generate_key_pair().expect("Should generate key pair 2");
+        
+        let master_key1 = MasterKey::new(public_pem1).expect("Should create master key 1");
+        let _master_key2 = MasterKey::new(public_pem2).expect("Should create master key 2");
+        
+        // Current behavior: can only create secret with single master key
+        let secret = Secret::new("test-key", "test-data", master_key1.clone(), 1, None)
+            .expect("Should create secret with single master key");
+        
+        assert_eq!(secret.master_key_id, master_key1.id);
+        
+        // TODO: Later we want to create secret with multiple master keys
+        // let master_key_ids = vec![master_key1.id, master_key2.id];
+        // let multi_secret = Secret::new_with_multiple_keys("multi-key", "data", master_key_ids, 1, None);
+        // assert!(multi_secret.is_ok());
+    }
+
+    #[test]
+    fn test_secret_master_keys_table_operations() {
+        // RED: This test should fail because secret_master_keys table and operations don't exist
+        let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
+        
+        // Initialize tables
+        SqliteMasterKeyRepo::init_table(&conn).expect("Should init master_keys table");
+        SqliteSecretRepo::init_table(&conn).expect("Should init secrets table");
+        
+        // This should fail until we implement secret_master_keys table
+        SqliteSecretMasterKeyRepo::init_table(&conn).expect("Should init secret_master_keys table");
+        
+        // Create test master keys
+        let master_key_repo = SqliteMasterKeyRepo;
+        let master_key1 = MasterKey::new_with_name(
+            "-----BEGIN RSA PUBLIC KEY-----\ntest1\n-----END RSA PUBLIC KEY-----".to_string(),
+            Some("laptop-1".to_string())
+        ).expect("Should create master key 1");
+        let master_key2 = MasterKey::new_with_name(
+            "-----BEGIN RSA PUBLIC KEY-----\ntest2\n-----END RSA PUBLIC KEY-----".to_string(),
+            Some("laptop-2".to_string())
+        ).expect("Should create master key 2");
+        
+        master_key_repo.create_master_key(&conn, &master_key1).expect("Should store master key 1");
+        master_key_repo.create_master_key(&conn, &master_key2).expect("Should store master key 2");
+        
+        // Test secret-master-key associations
+        let secret_master_key_repo = SqliteSecretMasterKeyRepo;
+        let secret_key = "test-multi-secret";
+        let secret_version = 1;
+        let data_key_1 = vec![1, 2, 3, 4]; // Simulated encrypted data key for master_key1
+        let data_key_2 = vec![5, 6, 7, 8]; // Simulated encrypted data key for master_key2
+        
+        // This should fail until we implement the methods
+        secret_master_key_repo.create_association(
+            &conn,
+            secret_key,
+            secret_version,
+            &master_key1.id,
+            &data_key_1,
+        ).expect("Should create association 1");
+        
+        secret_master_key_repo.create_association(
+            &conn,
+            secret_key,
+            secret_version,
+            &master_key2.id,
+            &data_key_2,
+        ).expect("Should create association 2");
+        
+        // Test querying associations
+        let associations = secret_master_key_repo.get_associations_for_secret(
+            &conn,
+            secret_key,
+            secret_version,
+        ).expect("Should get associations for secret");
+        
+        assert_eq!(associations.len(), 2);
+        assert!(associations.iter().any(|a| a.master_key_id == master_key1.id));
+        assert!(associations.iter().any(|a| a.master_key_id == master_key2.id));
+        
+        // Test getting specific association
+        let association = secret_master_key_repo.get_association(
+            &conn,
+            secret_key,
+            secret_version,
+            &master_key1.id,
+        ).expect("Should get specific association")
+        .expect("Association should exist");
+        
+        assert_eq!(association.encrypted_data_key, data_key_1);
+        assert_eq!(association.master_key_id, master_key1.id);
+    }
+
+    #[test]
+    fn test_multi_master_key_backward_compatibility() {
+        // GREEN: This should pass with current implementation
+        // This test ensures our changes don't break existing functionality
+        
+        let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
+        let master_key = MasterKey::new(public_pem).expect("Should create master key");
+        
+        // Current single-master-key functionality should continue working
+        let secret = Secret::new("compat-test", "secret-data", master_key.clone(), 1, None)
+            .expect("Should create secret with single master key");
+        
+        assert_eq!(secret.key, "compat-test");
+        assert_eq!(secret.master_key_id, master_key.id);
+        assert!(!secret.encrypted_data.is_empty());
+        assert!(!secret.encrypted_data_key.is_empty());
+        
+        // This should pass immediately, ensuring backward compatibility
     }
 }

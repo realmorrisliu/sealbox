@@ -20,7 +20,8 @@ impl SqliteMasterKeyRepo {
                 status TEXT NOT NULL,
                 description TEXT,
                 version INTEGER,
-                metadata TEXT
+                metadata TEXT,
+                name TEXT
             )",
             (),
         )?;
@@ -37,8 +38,9 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
                 created_at,
                 status,
                 description,
-                metadata
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                metadata,
+                name
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             (
                 &key.id,
                 &key.public_key,
@@ -46,6 +48,7 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
                 &key.status,
                 &key.description,
                 &key.metadata,
+                &key.name,
             ),
         )?;
         Ok(())
@@ -64,7 +67,7 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
     }
 
     fn get_valid_master_key(&self, conn: &rusqlite::Connection) -> Result<MasterKey> {
-        let mut stmt = conn.prepare("SELECT * FROM master_keys WHERE status = ?1 LIMIT 1")?;
+        let mut stmt = conn.prepare("SELECT id, public_key, created_at, status, description, metadata, name FROM master_keys WHERE status = ?1 LIMIT 1")?;
         let master_key = stmt
             .query_one([MasterKeyStatus::Active], |row| {
                 Ok(MasterKey {
@@ -74,6 +77,7 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
                     status: row.get(3)?,
                     description: row.get(4)?,
                     metadata: row.get(5)?,
+                    name: row.get(6)?,
                 })
             })
             .optional()?;
@@ -87,7 +91,7 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
 
     fn fetch_all_master_keys(&self, conn: &rusqlite::Connection) -> Result<Vec<MasterKey>> {
         let mut stmt =
-            conn.prepare("SELECT id, created_at, status, description, metadata FROM master_keys")?;
+            conn.prepare("SELECT id, created_at, status, description, metadata, name FROM master_keys")?;
         let master_key_iter = stmt.query_map([], |row| {
             Ok(MasterKey {
                 id: row.get(0)?,
@@ -96,6 +100,7 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
                 status: row.get(2)?,
                 description: row.get(3)?,
                 metadata: row.get(4)?,
+                name: row.get(5)?,
             })
         })?;
 

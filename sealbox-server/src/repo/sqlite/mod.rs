@@ -1,13 +1,17 @@
 pub(crate) mod health;
 pub(crate) mod master_key;
 pub(crate) mod secret;
+pub(crate) mod secret_master_key;
 
 use rusqlite::Connection;
 
 use crate::error::Result;
 
 pub(crate) use self::{
-    health::SqliteHealthRepo, master_key::SqliteMasterKeyRepo, secret::SqliteSecretRepo,
+    health::SqliteHealthRepo, 
+    master_key::SqliteMasterKeyRepo, 
+    secret::SqliteSecretRepo,
+    secret_master_key::SqliteSecretMasterKeyRepo,
 };
 
 pub(crate) fn create_db_connection(db_path: &str) -> Result<Connection> {
