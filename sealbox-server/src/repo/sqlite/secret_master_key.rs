@@ -7,6 +7,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Used in Phase 2 TDD
 pub(crate) struct SqliteSecretMasterKeyRepo;
 
 impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {

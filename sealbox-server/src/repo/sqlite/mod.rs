@@ -7,6 +7,7 @@ use rusqlite::Connection;
 
 use crate::error::Result;
 
+#[allow(unused_imports)] // SqliteSecretMasterKeyRepo will be used in Phase 2 TDD
 pub(crate) use self::{
     health::SqliteHealthRepo, 
     master_key::SqliteMasterKeyRepo, 

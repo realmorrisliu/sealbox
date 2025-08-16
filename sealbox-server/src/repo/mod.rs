@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub(crate) use self::sqlite::{
-    SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo, SqliteSecretMasterKeyRepo, create_db_connection,
+    SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
 };
 
 mod sqlite;
@@ -263,6 +263,7 @@ pub struct SecretMasterKeyAssociation {
 }
 
 /// Repository for managing secret-master-key associations
+#[allow(dead_code)] // Used in Phase 2 TDD
 pub(crate) trait SecretMasterKeyRepo: Send + Sync {
     fn init_table(conn: &rusqlite::Connection) -> Result<()>;
     fn create_association(
@@ -292,6 +293,7 @@ pub(crate) trait SecretMasterKeyRepo: Send + Sync {
 mod tests {
     use super::*;
     use crate::crypto::master_key::generate_key_pair;
+    use crate::repo::sqlite::SqliteSecretMasterKeyRepo;
 
     #[test]
     fn test_master_key_new() {
