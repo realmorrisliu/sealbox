@@ -7,7 +7,7 @@ use sha2::Sha256;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum MasterKeyCryptoError {
+pub enum ClientKeyCryptoError {
     #[error("Invalid private key")]
     InvalidPkcs1FormatPrivateKey(rsa::pkcs1::Error),
     #[error("Invalid public key")]
@@ -24,16 +24,16 @@ pub enum MasterKeyCryptoError {
     FailedToExportPemFormat(rsa::pkcs1::Error),
 }
 
-pub type Result<T, E = MasterKeyCryptoError> = std::result::Result<T, E>;
+pub type Result<T, E = ClientKeyCryptoError> = std::result::Result<T, E>;
 
 fn new_padding() -> Oaep {
     Oaep::new::<Sha256>()
 }
 
 #[derive(Debug)]
-pub struct PrivateMasterKey(RsaPrivateKey);
+pub struct PrivateClientKey(RsaPrivateKey);
 
-impl PrivateMasterKey {
+impl PrivateClientKey {
     /// Decrypt data using private key
     ///
     /// # Arguments
@@ -46,7 +46,7 @@ impl PrivateMasterKey {
     ///
     /// # Errors
     ///
-    /// * `MasterKeyCryptoError::FailedToDecrypt` - Decryption failed (possibly corrupted ciphertext or key mismatch)
+    /// * `ClientKeyCryptoError::FailedToDecrypt` - Decryption failed (possibly corrupted ciphertext or key mismatch)
     ///
     /// # Security Notes
     ///
@@ -57,13 +57,13 @@ impl PrivateMasterKey {
         let decrypted = self
             .0
             .decrypt(padding, ciphertext)
-            .map_err(MasterKeyCryptoError::FailedToDecrypt)?;
+            .map_err(ClientKeyCryptoError::FailedToDecrypt)?;
         Ok(decrypted)
     }
 }
 
-impl std::str::FromStr for PrivateMasterKey {
-    type Err = MasterKeyCryptoError;
+impl std::str::FromStr for PrivateClientKey {
+    type Err = ClientKeyCryptoError;
 
     /// Parse private key from PKCS#1 PEM format string
     ///
@@ -73,22 +73,22 @@ impl std::str::FromStr for PrivateMasterKey {
     ///
     /// # Returns
     ///
-    /// Returns `PrivateMasterKey` instance on success
+    /// Returns `PrivateClientKey` instance on success
     ///
     /// # Errors
     ///
-    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey` - Invalid PEM format or not a valid RSA private key
+    /// * `ClientKeyCryptoError::InvalidPkcs1FormatPrivateKey` - Invalid PEM format or not a valid RSA private key
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let priv_key = RsaPrivateKey::from_pkcs1_pem(s)
-            .map_err(MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey)?;
-        Ok(PrivateMasterKey(priv_key))
+            .map_err(ClientKeyCryptoError::InvalidPkcs1FormatPrivateKey)?;
+        Ok(PrivateClientKey(priv_key))
     }
 }
 
 #[derive(Debug)]
-pub struct PublicMasterKey(RsaPublicKey);
+pub struct PublicClientKey(RsaPublicKey);
 
-impl PublicMasterKey {
+impl PublicClientKey {
     /// Encrypt data using public key
     ///
     /// # Arguments
@@ -101,7 +101,7 @@ impl PublicMasterKey {
     ///
     /// # Errors
     ///
-    /// * `MasterKeyCryptoError::FailedToEncrypt` - Encryption failed (usually data too long or key format error)
+    /// * `ClientKeyCryptoError::FailedToEncrypt` - Encryption failed (usually data too long or key format error)
     ///
     /// # Security Notes
     ///
@@ -112,10 +112,10 @@ impl PublicMasterKey {
     /// # Examples
     ///
     /// ```
-    /// use sealbox_server::crypto::master_key::PublicMasterKey;
+    /// use sealbox_server::crypto::client_key::PublicClientKey;
     ///
     /// // Note: This example requires a valid PEM format public key string
-    /// // let public_key: PublicMasterKey = pem_string.parse()?;
+    /// // let public_key: PublicClientKey = pem_string.parse()?;
     /// // let plaintext = b"Hello, World!";
     /// // let ciphertext = public_key.encrypt(plaintext)?;
     /// ```
@@ -124,13 +124,13 @@ impl PublicMasterKey {
         let encrypted = self
             .0
             .encrypt(&mut rand::thread_rng(), padding, plaintext)
-            .map_err(MasterKeyCryptoError::FailedToEncrypt)?;
+            .map_err(ClientKeyCryptoError::FailedToEncrypt)?;
         Ok(encrypted)
     }
 }
 
-impl std::str::FromStr for PublicMasterKey {
-    type Err = MasterKeyCryptoError;
+impl std::str::FromStr for PublicClientKey {
+    type Err = ClientKeyCryptoError;
 
     /// Parse public key from PKCS#1 PEM format string
     ///
@@ -140,39 +140,39 @@ impl std::str::FromStr for PublicMasterKey {
     ///
     /// # Returns
     ///
-    /// Returns `PublicMasterKey` instance on success
+    /// Returns `PublicClientKey` instance on success
     ///
     /// # Errors
     ///
-    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPublicKey` - Invalid PEM format or not a valid RSA public key
+    /// * `ClientKeyCryptoError::InvalidPkcs1FormatPublicKey` - Invalid PEM format or not a valid RSA public key
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let pub_key = RsaPublicKey::from_pkcs1_pem(s)
-            .map_err(MasterKeyCryptoError::InvalidPkcs1FormatPublicKey)?;
-        Ok(PublicMasterKey(pub_key))
+            .map_err(ClientKeyCryptoError::InvalidPkcs1FormatPublicKey)?;
+        Ok(PublicClientKey(pub_key))
     }
 }
 
-/// Generate a new RSA key pair for master_key, returning (private_pem, public_pem).
+/// Generate a new RSA key pair for client_key, returning (private_pem, public_pem).
 ///
 /// **Note: This function is intended for client-side use only.** The server should
 /// never generate or handle private keys as per the E2EE design. The private key
 /// must remain on the client.
-pub fn generate_key_pair() -> Result<(String, String), MasterKeyCryptoError> {
+pub fn generate_key_pair() -> Result<(String, String), ClientKeyCryptoError> {
     // Generate 2048-bit RSA key pair
     let mut rng = rand::thread_rng();
     let bits = 2048;
     let priv_key = RsaPrivateKey::new(&mut rng, bits)
-        .map_err(MasterKeyCryptoError::FailedToGeneratePrivateKey)?;
+        .map_err(ClientKeyCryptoError::FailedToGeneratePrivateKey)?;
     let pub_key = RsaPublicKey::from(&priv_key);
 
     // Export to PEM format
     let private_pem = priv_key
         .to_pkcs1_pem(LineEnding::LF)
-        .map_err(MasterKeyCryptoError::FailedToExportPemFormat)?
+        .map_err(ClientKeyCryptoError::FailedToExportPemFormat)?
         .to_string();
     let public_pem = pub_key
         .to_pkcs1_pem(LineEnding::LF)
-        .map_err(MasterKeyCryptoError::FailedToExportPemFormat)?
+        .map_err(ClientKeyCryptoError::FailedToExportPemFormat)?
         .to_string();
 
     Ok((private_pem, public_pem))
@@ -197,14 +197,14 @@ mod tests {
         assert!(public_pem.ends_with("-----END RSA PUBLIC KEY-----\n"));
 
         // Verify we can parse them back
-        let _private_key: PrivateMasterKey = private_pem.parse().expect("Should parse private key");
-        let _public_key: PublicMasterKey = public_pem.parse().expect("Should parse public key");
+        let _private_key: PrivateClientKey = private_pem.parse().expect("Should parse private key");
+        let _public_key: PublicClientKey = public_pem.parse().expect("Should parse public key");
     }
 
     #[test]
     fn test_private_key_from_str_valid() {
         let (private_pem, _) = generate_key_pair().expect("Should generate key pair");
-        let _private_key: PrivateMasterKey = private_pem.parse().expect("Should parse private key");
+        let _private_key: PrivateClientKey = private_pem.parse().expect("Should parse private key");
 
         // If we got here, the parsing worked
         // Test placeholder - functionality verified by integration tests
@@ -213,11 +213,11 @@ mod tests {
     #[test]
     fn test_private_key_from_str_invalid() {
         let invalid_pem = "invalid pem data";
-        let result = invalid_pem.parse::<PrivateMasterKey>();
+        let result = invalid_pem.parse::<PrivateClientKey>();
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey(_) => {} // Expected
+            ClientKeyCryptoError::InvalidPkcs1FormatPrivateKey(_) => {} // Expected
             _ => panic!("Expected InvalidPkcs1FormatPrivateKey error"),
         }
     }
@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn test_public_key_from_str_valid() {
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
-        let _public_key: PublicMasterKey = public_pem.parse().expect("Should parse public key");
+        let _public_key: PublicClientKey = public_pem.parse().expect("Should parse public key");
 
         // If we got here, the parsing worked
         // Test placeholder - functionality verified by integration tests
@@ -234,11 +234,11 @@ mod tests {
     #[test]
     fn test_public_key_from_str_invalid() {
         let invalid_pem = "invalid pem data";
-        let result = invalid_pem.parse::<PublicMasterKey>();
+        let result = invalid_pem.parse::<PublicClientKey>();
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            MasterKeyCryptoError::InvalidPkcs1FormatPublicKey(_) => {} // Expected
+            ClientKeyCryptoError::InvalidPkcs1FormatPublicKey(_) => {} // Expected
             _ => panic!("Expected InvalidPkcs1FormatPublicKey error"),
         }
     }
@@ -246,8 +246,8 @@ mod tests {
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
         let (private_pem, public_pem) = generate_key_pair().expect("Should generate key pair");
-        let private_key: PrivateMasterKey = private_pem.parse().expect("Should parse private key");
-        let public_key: PublicMasterKey = public_pem.parse().expect("Should parse public key");
+        let private_key: PrivateClientKey = private_pem.parse().expect("Should parse private key");
+        let public_key: PublicClientKey = public_pem.parse().expect("Should parse public key");
 
         let plaintext = b"Hello, this is a secret message!";
 
@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn test_encrypt_different_results() {
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
-        let public_key: PublicMasterKey = public_pem.parse().expect("Should parse public key");
+        let public_key: PublicClientKey = public_pem.parse().expect("Should parse public key");
 
         let plaintext = b"Same message";
 
@@ -292,8 +292,8 @@ mod tests {
         let (_, public_pem1) = generate_key_pair().expect("Should generate first key pair");
         let (private_pem2, _) = generate_key_pair().expect("Should generate second key pair");
 
-        let public_key1: PublicMasterKey = public_pem1.parse().expect("Should parse public key");
-        let private_key2: PrivateMasterKey =
+        let public_key1: PublicClientKey = public_pem1.parse().expect("Should parse public key");
+        let private_key2: PrivateClientKey =
             private_pem2.parse().expect("Should parse private key");
 
         let plaintext = b"Secret message";
@@ -308,7 +308,7 @@ mod tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            MasterKeyCryptoError::FailedToDecrypt(_) => {} // Expected
+            ClientKeyCryptoError::FailedToDecrypt(_) => {} // Expected
             _ => panic!("Expected FailedToDecrypt error"),
         }
     }
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn test_decrypt_invalid_ciphertext() {
         let (private_pem, _) = generate_key_pair().expect("Should generate key pair");
-        let private_key: PrivateMasterKey = private_pem.parse().expect("Should parse private key");
+        let private_key: PrivateClientKey = private_pem.parse().expect("Should parse private key");
 
         let invalid_ciphertext = vec![0u8; 32]; // Invalid ciphertext
 
@@ -324,7 +324,7 @@ mod tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            MasterKeyCryptoError::FailedToDecrypt(_) => {} // Expected
+            ClientKeyCryptoError::FailedToDecrypt(_) => {} // Expected
             _ => panic!("Expected FailedToDecrypt error"),
         }
     }
@@ -332,8 +332,8 @@ mod tests {
     #[test]
     fn test_encrypt_empty_data() {
         let (private_pem, public_pem) = generate_key_pair().expect("Should generate key pair");
-        let private_key: PrivateMasterKey = private_pem.parse().expect("Should parse private key");
-        let public_key: PublicMasterKey = public_pem.parse().expect("Should parse public key");
+        let private_key: PrivateClientKey = private_pem.parse().expect("Should parse private key");
+        let public_key: PublicClientKey = public_pem.parse().expect("Should parse public key");
 
         let plaintext = b"";
 
@@ -350,8 +350,8 @@ mod tests {
     #[test]
     fn test_encrypt_max_size_data() {
         let (private_pem, public_pem) = generate_key_pair().expect("Should generate key pair");
-        let private_key: PrivateMasterKey = private_pem.parse().expect("Should parse private key");
-        let public_key: PublicMasterKey = public_pem.parse().expect("Should parse public key");
+        let private_key: PrivateClientKey = private_pem.parse().expect("Should parse private key");
+        let public_key: PublicClientKey = public_pem.parse().expect("Should parse public key");
 
         // For 2048-bit RSA with OAEP-SHA256, max plaintext is around 190 bytes
         let plaintext = vec![42u8; 190];
@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn test_encrypt_oversized_data_fails() {
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
-        let public_key: PublicMasterKey = public_pem.parse().expect("Should parse public key");
+        let public_key: PublicClientKey = public_pem.parse().expect("Should parse public key");
 
         // Data too large for RSA encryption (should be > 214 bytes for 2048-bit RSA with OAEP)
         let plaintext = vec![42u8; 300];
@@ -378,7 +378,7 @@ mod tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            MasterKeyCryptoError::FailedToEncrypt(_) => {} // Expected
+            ClientKeyCryptoError::FailedToEncrypt(_) => {} // Expected
             _ => panic!("Expected FailedToEncrypt error"),
         }
     }

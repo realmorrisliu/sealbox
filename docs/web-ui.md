@@ -1,12 +1,20 @@
-# Sealbox Web UI
+# Sealbox Web UI - Visual Secret Management
 
-Sealbox Web UI is a modern React-based web interface for managing secrets through an intuitive browser interface.
+Sealbox Web UI is a modern React-based web interface **optimized for visual secret management and administration**. It complements the CLI by providing intuitive tools for oversight, bulk operations, and team collaboration.
 
-## Features
+## Features - Management-Focused Design
 
+### 🎯 Core Philosophy: Visual Administration
+Web UI focuses on **management tasks** that benefit from visual oversight, while CLI handles automation and consumption.
+
+- 📊 **Secret Overview Dashboard** - Visual statistics, search, and filtering for all secrets
+- 🗂️ **Batch Operations** - Multi-select create/delete operations for efficiency
+- ⏰ **TTL Management** - Real-time countdown timers and expiration warnings
+- 👥 **Team Collaboration** - Multi-language interface for diverse teams
+- 📋 **Visual Secret Lifecycle** - Create, view, update, delete with visual confirmation
+
+### 🔧 Technical Features
 - 🔐 **Secure Authentication** - Bearer Token authentication with session persistence
-- 📋 **Secret Management** - View, delete secrets with real-time status updates
-- ⏰ **TTL Indicators** - Visual countdown and expiration warnings
 - 📱 **Responsive Design** - Works seamlessly on desktop and mobile devices
 - 🌐 **CORS Support** - Development-friendly cross-origin request handling
 - 🎨 **Modern Industrial UI** - 2025 design following Linear/Superhuman principles with strict 8pt grid system
@@ -25,11 +33,43 @@ Sealbox Web UI is a modern React-based web interface for managing secrets throug
 - **Language**: TypeScript
 - **Internationalization**: react-i18next + i18next-browser-languagedetector
 
+## Web UI vs CLI: Complementary Tools
+
+### 🌐 Web UI: Visual Management & Administration
+**Best for:**
+- Daily secret management with visual oversight
+- Creating and organizing secrets with forms and validations
+- Monitoring secret status and TTL across your entire inventory
+- Team collaboration with multi-language support
+- Batch operations (multi-select create/delete)
+- Understanding secret usage patterns through statistics
+
+### 🖥️ CLI: Automation & Secret Consumption  
+**Best for:**
+- CI/CD pipelines and automated deployments
+- Exporting secrets as environment variables
+- Scripting and programmatic access
+- One-time key generation and setup
+- Bulk import from configuration files
+
+**Example Workflows:**
+```bash
+# CLI: Export secrets for production deployment
+sealbox-cli secret export --format shell --prefix PROD > prod.env
+source prod.env
+
+# Web UI: Create new secrets with TTL using visual forms
+# Web UI: Monitor which secrets are expiring soon
+# Web UI: Bulk delete old development secrets
+```
+
+This separation ensures you have the **right tool for each task** - visual interface for human oversight, CLI for automation.
+
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - pnpm (recommended) or npm
 - Running sealbox-server instance
 
@@ -161,8 +201,8 @@ The Web UI integrates with all sealbox-server APIs:
 - `GET /v1/secrets` - List secrets
 - `GET /v1/secrets/:key` - Get secret details
 - `DELETE /v1/secrets/:key` - Delete secret
-- `GET /v1/master-key` - List master keys
-- `POST /v1/master-key` - Register master key
+- `GET /v1/client-key` - List client keys
+- `POST /v1/client-key` - Register client key
 
 ### Error Handling
 
@@ -237,14 +277,29 @@ Enable React Query Devtools for debugging:
 - Inspect network requests and cache state
 - Monitor authentication status
 
-## Future Enhancements
+## Future Enhancements - Management Focus
 
-- [x] **i18n Support** - Multi-language interface with language switching  
+### ✅ Completed Features
+- [x] **i18n Support** - Multi-language interface with language switching
 - [x] **Industrial UI Design** - 2025 modern design system with Linear/Superhuman principles
-- [ ] Secret creation and editing interface
-- [ ] Master key management UI
-- [ ] Bulk secret operations
-- [ ] Export/import functionality
-- [ ] Advanced search and filtering
-- [ ] User preference settings
-- [ ] Theme customization (dark/light modes)
+- [x] **Secret Overview Dashboard** - Visual statistics and TTL monitoring
+- [x] **Authentication System** - Token-based auth with persistence
+
+### 🚧 Planned Management Features
+- [ ] **Enhanced Secret Creation** - Rich forms with validation and preview
+- [ ] **Advanced Batch Operations** - Multi-select with bulk actions toolbar
+- [ ] **Secret Categories & Tags** - Organization and filtering system
+- [ ] **Usage Analytics** - Access patterns and secret lifecycle insights
+- [ ] **Team Management** - User roles and collaboration features
+- [ ] **Audit Trail** - Visual history of secret changes and access
+- [ ] **Advanced Search** - Full-text search across secret metadata
+- [ ] **Export Wizard** - Guided export with format preview
+- [ ] **Permission Templates** - Reusable permission sets for new secrets
+- [ ] **Dashboard Customization** - Personalized views and widgets
+
+### 🔗 CLI Integration Features
+- [ ] **CLI Command Generator** - Visual tool to generate CLI commands
+- [ ] **Key Status Monitoring** - Visual display of CLI-generated key pairs
+- [ ] **Import Status Tracking** - Monitor CLI bulk import progress
+
+These enhancements focus on **visual management capabilities** that complement CLI's automation strengths.

@@ -80,7 +80,7 @@ impl OutputManager {
         Ok(())
     }
 
-    pub fn print_master_keys(&self, keys: &[sealbox_server::repo::MasterKey]) -> Result<()> {
+    pub fn print_client_keys(&self, keys: &[sealbox_server::repo::ClientKey]) -> Result<()> {
         match self.format {
             OutputFormat::Json => {
                 println!("{}", serde_json::to_string_pretty(keys)?);

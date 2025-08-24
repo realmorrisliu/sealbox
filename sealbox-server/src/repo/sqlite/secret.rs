@@ -1,3 +1,4 @@
+use rusqlite::OptionalExtension;
 use serde_rusqlite::*;
 use tracing::info;
 use uuid::Uuid;
@@ -15,17 +16,15 @@ impl SqliteSecretRepo {
         // Initialize database table structure
         conn.execute(
             "CREATE TABLE IF NOT EXISTS secrets (
-                namespace TEXT NOT NULL,
                 key TEXT NOT NULL,
                 version INTEGER NOT NULL DEFAULT 1,
                 encrypted_data BLOB NOT NULL,
                 encrypted_data_key BLOB NOT NULL,
-                master_key_id BLOB NOT NULL,
+                client_key_id BLOB NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 expires_at INTEGER,
-                metadata TEXT,
-                PRIMARY KEY (namespace, key, version)
+                PRIMARY KEY (key, version)
             )",
             (),
         )?;
@@ -103,16 +102,14 @@ impl SecretRepo for SqliteSecretRepo {
         self.get_secret_with_query(
             conn,
             "SELECT
-                namespace,
                 key,
                 version,
                 encrypted_data,
                 encrypted_data_key,
-                master_key_id,
+                client_key_id,
                 created_at,
                 updated_at,
-                expires_at,
-                metadata
+                expires_at
             FROM secrets
             WHERE key = ?1
             ORDER BY version DESC
@@ -133,16 +130,14 @@ impl SecretRepo for SqliteSecretRepo {
         self.get_secret_with_query(
             conn,
             "SELECT
-                namespace,
                 key,
                 version,
                 encrypted_data,
                 encrypted_data_key,
-                master_key_id,
+                client_key_id,
                 created_at,
                 updated_at,
-                expires_at,
-                metadata
+                expires_at
             FROM secrets
             WHERE key = ?1 AND version = ?2
             LIMIT 1",
@@ -156,7 +151,7 @@ impl SecretRepo for SqliteSecretRepo {
         conn: &mut rusqlite::Connection,
         key: &str,
         data: &str,
-        master_key: crate::repo::MasterKey,
+        client_key: crate::repo::ClientKey,
         ttl: Option<i64>,
     ) -> Result<Secret> {
         info!("create_new_version");
@@ -170,37 +165,166 @@ impl SecretRepo for SqliteSecretRepo {
             latest_version + 1
         };
 
-        let secret = Secret::new(key, data, master_key, next_version, ttl)?;
+        let secret = Secret::new(key, data, client_key, next_version, ttl)?;
 
         tx.execute(
             "INSERT INTO secrets (
-              namespace,
               key,
               version,
               encrypted_data,
               encrypted_data_key,
-              master_key_id,
+              client_key_id,
               created_at,
               updated_at,
-              expires_at,
-              metadata
-          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+              expires_at
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             (
-                &secret.namespace,
                 &secret.key,
                 &secret.version,
                 &secret.encrypted_data,
                 &secret.encrypted_data_key,
-                &secret.master_key_id,
+                &secret.client_key_id,
                 &secret.created_at,
                 &secret.updated_at,
                 &secret.expires_at,
-                &secret.metadata,
             ),
         )?;
 
         tx.commit()?;
 
+        Ok(secret)
+    }
+
+    fn create_new_version_multi_client(
+        &self,
+        conn: &mut rusqlite::Connection,
+        key: &str,
+        data: &str,
+        client_key_ids: &[Uuid],
+        ttl: Option<i64>,
+    ) -> Result<Secret> {
+        info!("create_new_version_multi_client");
+
+        if client_key_ids.is_empty() {
+            return Err(SealboxError::InvalidInput(
+                "No client keys provided".to_string(),
+            ));
+        }
+
+        let tx = conn.transaction()?;
+
+        // Get next version number
+        let next_version = {
+            let mut stmt =
+                tx.prepare("SELECT COALESCE(MAX(version), 0) FROM secrets WHERE key = ?1")?;
+            let latest_version: i32 = stmt.query_one([key], |row| row.get(0))?;
+            latest_version + 1
+        };
+
+        // Fetch all client keys and validate they exist
+        let mut client_keys = Vec::new();
+        for client_key_id in client_key_ids {
+            let mut stmt = tx.prepare("SELECT id, public_key, created_at, status, description, metadata, name FROM client_keys WHERE id = ?1 LIMIT 1")?;
+            let client_key = stmt
+                .query_one([client_key_id], |row| {
+                    Ok(crate::repo::ClientKey {
+                        id: row.get(0)?,
+                        public_key: row.get(1)?,
+                        created_at: row.get(2)?,
+                        status: row.get(3)?,
+                        description: row.get(4)?,
+                        metadata: row.get(5)?,
+                        name: row.get(6)?,
+                    })
+                })
+                .optional()?;
+
+            if let Some(client_key) = client_key {
+                client_keys.push(client_key);
+            } else {
+                return Err(SealboxError::ClientKeyNotFound(*client_key_id));
+            }
+        }
+
+        // Implement true shared DataKey design: "One Secret = One DataKey" shared across multiple clients
+        use crate::crypto::{data_key::DataKey, client_key::PublicClientKey};
+        use std::str::FromStr;
+        
+        // Step 1: Generate a shared DataKey for encrypting the actual secret data
+        let data_key = DataKey::new();
+        let encrypted_data = data_key.encrypt(data.as_bytes())?;
+        
+        let now_timestamp = time::OffsetDateTime::now_utc().unix_timestamp();
+        let expires_at = ttl.map(|ttl| now_timestamp + ttl);
+        
+        // Step 2: Create the base secret record using the first client key (for backward compatibility)
+        let first_client_key = &client_keys[0];
+        let first_pub_key = PublicClientKey::from_str(&first_client_key.public_key)?;
+        let first_encrypted_data_key = first_pub_key.encrypt(data_key.as_bytes())?;
+        
+        // Insert the secret
+        tx.execute(
+            "INSERT INTO secrets (
+              key,
+              version,
+              encrypted_data,
+              encrypted_data_key,
+              client_key_id,
+              created_at,
+              updated_at,
+              expires_at
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            (
+                key,
+                next_version,
+                &encrypted_data,
+                &first_encrypted_data_key,
+                &first_client_key.id,
+                now_timestamp,
+                now_timestamp,
+                expires_at,
+            ),
+        )?;
+
+        // Step 3: Create associations for ALL client keys with individually encrypted DataKeys
+        for client_key in &client_keys {
+            let pub_key = PublicClientKey::from_str(&client_key.public_key)?;
+            let encrypted_data_key = pub_key.encrypt(data_key.as_bytes())?;
+            
+            let association = crate::repo::SecretClientKeyAssociation {
+                secret_key: key.to_string(),
+                secret_version: next_version,
+                client_key_id: client_key.id,
+                encrypted_data_key,  // Each client gets DataKey encrypted with their own public key
+                created_at: now_timestamp,
+            };
+
+            tx.execute(
+                "INSERT INTO secret_client_keys (secret_key, secret_version, client_key_id, encrypted_data_key, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    &association.secret_key,
+                    &association.secret_version,
+                    &association.client_key_id,
+                    &association.encrypted_data_key,
+                    &association.created_at,
+                ),
+            )?;
+        }
+
+        // Step 4: Create the return secret object
+        let secret = Secret {
+            key: key.to_string(),
+            version: next_version,
+            encrypted_data,
+            encrypted_data_key: first_encrypted_data_key,
+            client_key_id: first_client_key.id,
+            created_at: now_timestamp,
+            updated_at: now_timestamp,
+            expires_at,
+        };
+
+        tx.commit()?;
         Ok(secret)
     }
 
@@ -221,46 +345,43 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(())
     }
 
-    fn fetch_secrets_by_master_key(
+    fn fetch_secrets_by_client_key(
         &self,
         conn: &rusqlite::Connection,
-        master_key_id: &Uuid,
+        client_key_id: &Uuid,
     ) -> Result<Vec<Secret>> {
         let mut stmt = conn.prepare(
             "SELECT
-                namespace,
                 key,
                 version,
                 encrypted_data,
                 encrypted_data_key,
-                master_key_id,
+                client_key_id,
                 created_at,
                 updated_at,
-                expires_at,
-                metadata
+                expires_at
             FROM secrets
-            WHERE master_key_id = ?1",
+            WHERE client_key_id = ?1",
         )?;
         // Using query() and from_rows(), the most efficient way as shown in the official example
-        let rows = stmt.query([master_key_id])?;
+        let rows = stmt.query([client_key_id])?;
         let secrets: Vec<Secret> = from_rows::<Secret>(rows)
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| SealboxError::DatabaseError(e.to_string()))?;
         Ok(secrets)
     }
 
-    fn update_secret_master_key(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()> {
+    fn update_secret_client_key(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()> {
         conn.execute(
             "UPDATE secrets SET
                 encrypted_data_key = ?1,
-                master_key_id = ?2,
+                client_key_id = ?2,
                 updated_at = ?3
-             WHERE namespace = ?4 AND key = ?5 AND version = ?6",
+             WHERE key = ?4 AND version = ?5",
             rusqlite::params![
                 &secret.encrypted_data_key,
-                &secret.master_key_id,
+                &secret.client_key_id,
                 &secret.updated_at,
-                &secret.namespace,
                 &secret.key,
                 &secret.version,
             ],
@@ -284,13 +405,13 @@ impl SecretRepo for SqliteSecretRepo {
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
 
         let mut stmt = conn.prepare(
-            "SELECT 
+            "SELECT
                 key,
                 MAX(version) as version,
                 created_at,
                 MAX(updated_at) as updated_at,
                 expires_at
-            FROM secrets 
+            FROM secrets
             WHERE expires_at IS NULL OR expires_at > ?1
             GROUP BY key
             ORDER BY updated_at DESC",
@@ -316,8 +437,8 @@ impl SecretRepo for SqliteSecretRepo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::master_key::generate_key_pair;
-    use crate::repo::MasterKey;
+    use crate::crypto::client_key::generate_key_pair;
+    use crate::repo::ClientKey;
 
     fn setup_test_db() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
@@ -325,9 +446,9 @@ mod tests {
         conn
     }
 
-    fn create_test_master_key() -> MasterKey {
+    fn create_test_client_key() -> ClientKey {
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
-        MasterKey::new(public_pem).expect("Should create master key")
+        ClientKey::new(public_pem).expect("Should create client key")
     }
 
     #[test]
@@ -347,16 +468,14 @@ mod tests {
             .expect("Should collect results");
 
         let expected_columns = vec![
-            "namespace",
             "key",
             "version",
             "encrypted_data",
             "encrypted_data_key",
-            "master_key_id",
+            "client_key_id",
             "created_at",
             "updated_at",
             "expires_at",
-            "metadata",
         ];
 
         for expected_col in expected_columns {
@@ -371,7 +490,7 @@ mod tests {
     fn test_create_and_get_secret() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         let secret_key = "test-secret";
         let secret_data = "This is secret data";
@@ -379,7 +498,7 @@ mod tests {
         // Create secret
         let mut conn_mut = conn;
         let created_secret = repo
-            .create_new_version(&mut conn_mut, secret_key, secret_data, master_key, None)
+            .create_new_version(&mut conn_mut, secret_key, secret_data, client_key, None)
             .expect("Should create secret");
 
         // Get secret back
@@ -397,7 +516,7 @@ mod tests {
             created_secret.encrypted_data_key,
             retrieved_secret.encrypted_data_key
         );
-        assert_eq!(created_secret.master_key_id, retrieved_secret.master_key_id);
+        assert_eq!(created_secret.client_key_id, retrieved_secret.client_key_id);
     }
 
     #[test]
@@ -419,7 +538,7 @@ mod tests {
     fn test_create_multiple_versions() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         let secret_key = "test-secret";
 
@@ -430,7 +549,7 @@ mod tests {
                 &mut conn_mut,
                 secret_key,
                 "data version 1",
-                master_key.clone(),
+                client_key.clone(),
                 None,
             )
             .expect("Should create version 1");
@@ -441,7 +560,7 @@ mod tests {
                 &mut conn_mut,
                 secret_key,
                 "data version 2",
-                master_key,
+                client_key,
                 None,
             )
             .expect("Should create version 2");
@@ -462,7 +581,7 @@ mod tests {
     fn test_get_secret_by_version() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         let secret_key = "test-secret";
 
@@ -473,7 +592,7 @@ mod tests {
                 &mut conn_mut,
                 secret_key,
                 "data version 1",
-                master_key.clone(),
+                client_key.clone(),
                 None,
             )
             .expect("Should create version 1");
@@ -483,7 +602,7 @@ mod tests {
                 &mut conn_mut,
                 secret_key,
                 "data version 2",
-                master_key,
+                client_key,
                 None,
             )
             .expect("Should create version 2");
@@ -516,7 +635,7 @@ mod tests {
     fn test_delete_secret_by_version() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         let secret_key = "test-secret";
 
@@ -527,7 +646,7 @@ mod tests {
                 &mut conn_mut,
                 secret_key,
                 "data version 1",
-                master_key.clone(),
+                client_key.clone(),
                 None,
             )
             .expect("Should create version 1");
@@ -537,7 +656,7 @@ mod tests {
                 &mut conn_mut,
                 secret_key,
                 "data version 2",
-                master_key,
+                client_key,
                 None,
             )
             .expect("Should create version 2");
@@ -573,67 +692,67 @@ mod tests {
     }
 
     #[test]
-    fn test_fetch_secrets_by_master_key() {
+    fn test_fetch_secrets_by_client_key() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key1 = create_test_master_key();
-        let master_key2 = create_test_master_key();
+        let client_key1 = create_test_client_key();
+        let client_key2 = create_test_client_key();
 
-        // Create secrets with different master keys
+        // Create secrets with different client keys
         let mut conn_mut = conn;
         let _secret1 = repo
-            .create_new_version(&mut conn_mut, "secret1", "data1", master_key1.clone(), None)
+            .create_new_version(&mut conn_mut, "secret1", "data1", client_key1.clone(), None)
             .expect("Should create secret1");
 
         let _secret2 = repo
-            .create_new_version(&mut conn_mut, "secret2", "data2", master_key1.clone(), None)
+            .create_new_version(&mut conn_mut, "secret2", "data2", client_key1.clone(), None)
             .expect("Should create secret2");
 
         let _secret3 = repo
-            .create_new_version(&mut conn_mut, "secret3", "data3", master_key2.clone(), None)
+            .create_new_version(&mut conn_mut, "secret3", "data3", client_key2.clone(), None)
             .expect("Should create secret3");
 
-        // Fetch secrets by master key 1
+        // Fetch secrets by client key 1
         let secrets_mk1 = repo
-            .fetch_secrets_by_master_key(&conn_mut, &master_key1.id)
-            .expect("Should fetch secrets for master key 1");
+            .fetch_secrets_by_client_key(&conn_mut, &client_key1.id)
+            .expect("Should fetch secrets for client key 1");
 
         assert_eq!(secrets_mk1.len(), 2);
         assert!(
             secrets_mk1
                 .iter()
-                .all(|s| s.master_key_id == master_key1.id)
+                .all(|s| s.client_key_id == client_key1.id)
         );
 
-        // Fetch secrets by master key 2
+        // Fetch secrets by client key 2
         let secrets_mk2 = repo
-            .fetch_secrets_by_master_key(&conn_mut, &master_key2.id)
-            .expect("Should fetch secrets for master key 2");
+            .fetch_secrets_by_client_key(&conn_mut, &client_key2.id)
+            .expect("Should fetch secrets for client key 2");
 
         assert_eq!(secrets_mk2.len(), 1);
-        assert_eq!(secrets_mk2[0].master_key_id, master_key2.id);
+        assert_eq!(secrets_mk2[0].client_key_id, client_key2.id);
     }
 
     #[test]
-    fn test_update_secret_master_key() {
+    fn test_update_secret_client_key() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         // Create a secret
         let mut conn_mut = conn;
         let mut secret = repo
-            .create_new_version(&mut conn_mut, "test-secret", "test-data", master_key, None)
+            .create_new_version(&mut conn_mut, "test-secret", "test-data", client_key, None)
             .expect("Should create secret");
 
         // Modify the secret
-        let new_master_key = create_test_master_key();
-        secret.master_key_id = new_master_key.id;
+        let new_client_key = create_test_client_key();
+        secret.client_key_id = new_client_key.id;
         secret.encrypted_data_key = vec![1, 2, 3, 4]; // Dummy new encrypted key
         secret.updated_at = time::OffsetDateTime::now_utc().unix_timestamp();
 
         // Update in database
-        repo.update_secret_master_key(&conn_mut, &secret)
+        repo.update_secret_client_key(&conn_mut, &secret)
             .expect("Should update secret");
 
         // Verify the update
@@ -641,7 +760,7 @@ mod tests {
             .get_secret(&mut conn_mut, "test-secret")
             .expect("Should retrieve updated secret");
 
-        assert_eq!(updated_secret.master_key_id, new_master_key.id);
+        assert_eq!(updated_secret.client_key_id, new_client_key.id);
         assert_eq!(updated_secret.encrypted_data_key, vec![1, 2, 3, 4]);
     }
 
@@ -649,7 +768,7 @@ mod tests {
     fn test_secret_with_ttl() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         let ttl = Some(3600i64); // 1 hour
 
@@ -660,7 +779,7 @@ mod tests {
                 &mut conn_mut,
                 "ttl-secret",
                 "temporary-data",
-                master_key,
+                client_key,
                 ttl,
             )
             .expect("Should create secret with TTL");
@@ -680,7 +799,7 @@ mod tests {
     fn test_expired_secret_not_retrievable() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         // Create a secret that expires immediately (TTL = 1 second)
         let mut conn_mut = conn;
@@ -689,7 +808,7 @@ mod tests {
                 &mut conn_mut,
                 "expired-secret",
                 "temporary-data",
-                master_key,
+                client_key,
                 Some(1i64), // 1 second
             )
             .expect("Should create secret with short TTL");
@@ -711,7 +830,7 @@ mod tests {
     fn test_expired_secret_by_version_not_retrievable() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         // Create a secret that expires immediately
         let mut conn_mut = conn;
@@ -720,7 +839,7 @@ mod tests {
                 &mut conn_mut,
                 "expired-secret-v",
                 "temporary-data",
-                master_key,
+                client_key,
                 Some(1i64), // 1 second
             )
             .expect("Should create secret with short TTL");
@@ -742,7 +861,7 @@ mod tests {
     fn test_cleanup_expired_secrets() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         let mut conn_mut = conn;
 
@@ -752,7 +871,7 @@ mod tests {
                 &mut conn_mut,
                 "expired1",
                 "data1",
-                master_key.clone(),
+                client_key.clone(),
                 Some(1i64), // 1 second
             )
             .expect("Should create expired secret 1");
@@ -762,7 +881,7 @@ mod tests {
                 &mut conn_mut,
                 "expired2",
                 "data2",
-                master_key.clone(),
+                client_key.clone(),
                 Some(1i64), // 1 second
             )
             .expect("Should create expired secret 2");
@@ -772,7 +891,7 @@ mod tests {
                 &mut conn_mut,
                 "permanent",
                 "permanent-data",
-                master_key.clone(),
+                client_key.clone(),
                 None, // No TTL
             )
             .expect("Should create permanent secret");
@@ -782,7 +901,7 @@ mod tests {
                 &mut conn_mut,
                 "long-lived",
                 "long-data",
-                master_key,
+                client_key,
                 Some(3600i64), // 1 hour
             )
             .expect("Should create long-lived secret");
@@ -821,13 +940,13 @@ mod tests {
     fn test_cleanup_no_expired_secrets() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         let mut conn_mut = conn;
 
         // Create only non-expired secrets
         let _permanent = repo
-            .create_new_version(&mut conn_mut, "permanent", "data", master_key.clone(), None)
+            .create_new_version(&mut conn_mut, "permanent", "data", client_key.clone(), None)
             .expect("Should create permanent secret");
 
         let _long_lived = repo
@@ -835,7 +954,7 @@ mod tests {
                 &mut conn_mut,
                 "long-lived",
                 "data",
-                master_key,
+                client_key,
                 Some(3600i64),
             )
             .expect("Should create long-lived secret");
@@ -859,13 +978,13 @@ mod tests {
     fn test_list_secrets() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         let mut conn_mut = conn;
 
         // Create several secrets
         let _secret1 = repo
-            .create_new_version(&mut conn_mut, "secret1", "data1", master_key.clone(), None)
+            .create_new_version(&mut conn_mut, "secret1", "data1", client_key.clone(), None)
             .expect("Should create secret1");
 
         let _secret2 = repo
@@ -873,18 +992,18 @@ mod tests {
                 &mut conn_mut,
                 "secret2",
                 "data2",
-                master_key.clone(),
+                client_key.clone(),
                 Some(3600),
             )
             .expect("Should create secret2 with TTL");
 
         let _secret3 = repo
-            .create_new_version(&mut conn_mut, "secret3", "data3", master_key.clone(), None)
+            .create_new_version(&mut conn_mut, "secret3", "data3", client_key.clone(), None)
             .expect("Should create secret3");
 
         // Create multiple versions of secret1
         let _secret1_v2 = repo
-            .create_new_version(&mut conn_mut, "secret1", "data1-v2", master_key, None)
+            .create_new_version(&mut conn_mut, "secret1", "data1-v2", client_key, None)
             .expect("Should create secret1 version 2");
 
         // List all secrets
@@ -919,7 +1038,7 @@ mod tests {
     fn test_list_secrets_excludes_expired() {
         let conn = setup_test_db();
         let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
+        let client_key = create_test_client_key();
 
         let mut conn_mut = conn;
 
@@ -929,7 +1048,7 @@ mod tests {
                 &mut conn_mut,
                 "expired-secret",
                 "temporary-data",
-                master_key.clone(),
+                client_key.clone(),
                 Some(1i64), // 1 second
             )
             .expect("Should create expired secret");
@@ -940,7 +1059,7 @@ mod tests {
                 &mut conn_mut,
                 "permanent-secret",
                 "permanent-data",
-                master_key,
+                client_key,
                 None,
             )
             .expect("Should create permanent secret");

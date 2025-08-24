@@ -1,16 +1,15 @@
+pub(crate) mod client_key;
 pub(crate) mod health;
-pub(crate) mod master_key;
 pub(crate) mod secret;
-pub(crate) mod secret_master_key;
+pub(crate) mod secret_client_key;
 
 use rusqlite::Connection;
 
 use crate::error::Result;
 
-#[allow(unused_imports)] // SqliteSecretMasterKeyRepo will be used in Phase 2 TDD
 pub(crate) use self::{
-    health::SqliteHealthRepo, master_key::SqliteMasterKeyRepo, secret::SqliteSecretRepo,
-    secret_master_key::SqliteSecretMasterKeyRepo,
+    client_key::SqliteClientKeyRepo, health::SqliteHealthRepo, secret::SqliteSecretRepo,
+    secret_client_key::SqliteSecretClientKeyRepo,
 };
 
 pub(crate) fn create_db_connection(db_path: &str) -> Result<Connection> {

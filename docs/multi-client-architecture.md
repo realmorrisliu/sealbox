@@ -6,11 +6,11 @@
 
 #### Current Architecture Limitations
 
-After analyzing Sealbox's existing Master Key lifecycle, we identified an important architectural issue: **scalability problems of the current "by user" model in multi-user environments**.
+After analyzing Sealbox's existing Client Key lifecycle, we identified an important architectural issue: **scalability problems of the current "by user" model in multi-user environments**.
 
 **Current Architecture Characteristics**:
-- Each user owns one Master Key pair (public/private key)
-- A secret can only be decrypted by one master key
+- Each user owns one Client Key pair (public/private key)
+- A secret can only be decrypted by one client key
 - Multi-user access requires sharing private keys, violating security principles
 
 **Identified Problems**:
@@ -23,10 +23,10 @@ After analyzing Sealbox's existing Master Key lifecycle, we identified an import
 
 #### "by client" Architecture Philosophy
 
-After deep consideration, we proposed an important architectural improvement: **Master Key should be by client rather than by user**.
+After deep consideration, we proposed an important architectural improvement: **Client Key should be by client rather than by user**.
 
 **Core Concept**:
-- Each `sealbox-cli` instance has its own independent Master Key
+- Each `sealbox-cli` instance has its own independent Client Key
 - Each secret can be authorized to multiple clients
 - Choose which clients can access when creating secrets
 - No support for subsequent dynamic permission addition (server doesn't store plaintext)
@@ -88,7 +88,7 @@ We thoroughly analyzed the security properties of the new architecture:
 
 **Current Architecture (by user)**:
 ```
-User ——— Master Key ——— Multiple Secrets
+User ——— Client Key ——— Multiple Secrets
   │          │               │
   └─ Private Key └─ Public Key └─ Encrypted Data
 ```
@@ -147,7 +147,7 @@ CREATE INDEX idx_secret_client_keys_secret ON secret_client_keys(secret_key, sec
 
 **Phase One: Compatibility Migration**
 1. Create new table structures
-2. Keep existing master_keys table unchanged
+2. Keep existing client_keys table unchanged
 3. Create default client records for existing secrets
 4. Migrate existing encrypted_data_key to secret_client_keys table
 
@@ -615,3 +615,163 @@ CREATE TABLE access_audit (
 - Operational error risk: Reduced through confirmation mechanisms and operation logs
 
 This multi-client architecture proposal has undergone thorough security analysis and practical considerations. It addresses the limitations of the existing architecture while laying the foundation for future expansion. Through phased implementation, new features can be gradually introduced while ensuring stability.
+
+## Implementation Status (2025-08-24)
+
+### ✅ Completed Features
+
+**Phase 1: Infrastructure Setup (Completed)**
+- ✅ Database migrations and new table structures
+- ✅ Core API development (Client management, Multi-client secret creation)
+- ✅ CLI basic functionality (Client operations, Multi-client secret commands)
+- ✅ Backward compatibility maintained
+
+**Phase 2: Complete Feature Implementation (Completed)**
+- ✅ Permission management APIs (view, revoke permissions)
+- ✅ Complete CLI functionality (permissions, revocation commands)  
+- ✅ Security enhancements (client authentication, access validation)
+- ✅ Comprehensive testing (77 test cases covering multi-client scenarios)
+
+**Phase 3: Web UI and Optimization (Completed)**
+- ✅ Web UI development (client management, permission visualization)
+- ✅ Multi-client secret creation interface
+- ✅ Permission management UI with revocation capabilities
+- ✅ Complete internationalization (English, Chinese, Japanese, German)
+- ✅ TypeScript type safety and modern React architecture
+
+### 🚀 Complete Usage Examples
+
+#### Basic Multi-Client Secret Management
+
+```bash
+# 1. Generate and register client keys for different environments
+# Development laptop
+sealbox-cli key generate --force
+sealbox-cli key register
+
+# Get client ID for development laptop  
+DEV_CLIENT_ID=$(sealbox-cli key list --output json | jq -r '.client_keys[0].id')
+
+# Production server (on production machine)
+sealbox-cli key generate --force  
+sealbox-cli key register
+PROD_CLIENT_ID=$(sealbox-cli key list --output json | jq -r '.client_keys[0].id')
+
+# CI/CD pipeline (on CI machine)
+sealbox-cli key generate --force
+sealbox-cli key register  
+CI_CLIENT_ID=$(sealbox-cli key list --output json | jq -r '.client_keys[0].id')
+
+# 2. Create multi-client secrets
+# Database password accessible by all environments
+sealbox-cli secret set-multi-client database-password \
+    --clients "$DEV_CLIENT_ID,$PROD_CLIENT_ID,$CI_CLIENT_ID" \
+    --ttl 86400
+
+# API key only for production and CI
+sealbox-cli secret set-multi-client api-key \
+    --clients "$PROD_CLIENT_ID,$CI_CLIENT_ID" \
+    --ttl 3600
+
+# Development-only secret
+sealbox-cli secret set dev-debug-token "debug-12345" --ttl 7200
+```
+
+#### Permission Management
+
+```bash  
+# View permissions for a secret
+sealbox-cli secret permissions database-password
+
+# Sample output:
+# {
+#   "key": "database-password",
+#   "authorized_clients": [
+#     {
+#       "client_id": "550e8400-e29b-41d4-a716-446655440000",
+#       "authorized_at": 1692889200
+#     },
+#     {
+#       "client_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8", 
+#       "authorized_at": 1692889200
+#     }
+#   ]
+# }
+
+# Revoke access for specific client
+sealbox-cli secret revoke database-password --client "$DEV_CLIENT_ID"
+
+# Verify revocation
+sealbox-cli secret permissions database-password
+```
+
+#### Team Collaboration Workflow
+
+```bash
+# Team lead creates shared secrets
+sealbox-cli secret set-multi-client shared-db-connection \
+    --clients "$ALICE_CLIENT,$BOB_CLIENT,$CHARLIE_CLIENT" \
+    "postgresql://user:pass@db.company.com/app"
+
+# Each team member can access the secret independently  
+# Alice's machine:
+sealbox-cli secret get shared-db-connection
+# Output: postgresql://user:pass@db.company.com/app
+
+# Bob's machine:  
+sealbox-cli secret get shared-db-connection
+# Output: postgresql://user:pass@db.company.com/app
+
+# If Bob leaves the team, revoke his access
+sealbox-cli secret revoke shared-db-connection --client "$BOB_CLIENT"
+
+# Bob can no longer access the secret, Alice and Charlie can still access it
+```
+
+#### Web UI Multi-Client Management
+
+The Web UI now provides complete multi-client support:
+
+1. **Multi-Client Secret Creation**: 
+   - Toggle "Multi-Client Mode" in the create secret dialog
+   - Select multiple active client keys from the list
+   - Visual client badges show selected clients
+
+2. **Permission Management**:
+   - Click the shield (🛡️) icon next to any secret in the table/card view  
+   - View all authorized clients with timestamps
+   - Revoke individual client permissions with confirmation dialog
+   - Real-time permission updates
+
+3. **Client Key Management**:
+   - View all registered client keys with status
+   - CLI integration guide for key operations
+   - Status indicators (Active/Disabled/Retired)
+
+### 🔒 Security Properties Verified
+
+- ✅ **True Shared DataKey Design**: One secret = one DataKey, encrypted separately for each authorized client
+- ✅ **Zero Server Knowledge**: Server never sees plaintext data or DataKeys
+- ✅ **Client Isolation**: Compromise of one client doesn't affect others  
+- ✅ **Permission Immutability**: Permissions set at creation time, preventing unauthorized expansion
+- ✅ **Cryptographic Integrity**: RSA-2048 + AES-256-GCM with authenticated encryption
+
+### 📊 Test Coverage
+
+- **77 total test cases** across CLI and server components
+- **Multi-client specific tests**: 15+ test cases covering creation, retrieval, permission management
+- **Backward compatibility**: All existing single-client functionality preserved
+- **Error handling**: Comprehensive validation and error scenarios covered
+- **Security validation**: Client key validation, authorization checks, permission boundaries
+
+### 🌐 Internationalization
+
+Complete multi-language support for all new features:
+- **English** (default)
+- **中文** (Chinese Simplified) 
+- **日本語** (Japanese)
+- **Deutsch** (German)
+
+All UI text, error messages, and help text fully translated.
+
+This implementation represents a complete, production-ready multi-client architecture that maintains backward compatibility while providing powerful new capabilities for team collaboration and fine-grained access control.

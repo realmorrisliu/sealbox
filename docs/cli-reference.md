@@ -315,12 +315,12 @@ curl -X DELETE \
 
 ## Legacy Commands
 
-### `master-key create`
+### `client-key create`
 
 Legacy command for key generation and registration in one step.
 
 ```bash
-sealbox-cli master-key create [OPTIONS]
+sealbox-cli client-key create [OPTIONS]
 ```
 
 **Options:**

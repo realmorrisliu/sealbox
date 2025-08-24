@@ -234,7 +234,7 @@ export SEALBOX_PRIVATE_KEY="/secrets/sealbox_private_key.pem"
    ```bash
    # Localhost only
    export LISTEN_ADDR="127.0.0.1:8080"
-   
+
    # Or use a reverse proxy with TLS
    export LISTEN_ADDR="127.0.0.1:8080"  # Behind nginx/apache
    ```
@@ -275,7 +275,7 @@ env | grep -E "(STORE_PATH|AUTH_TOKEN|LISTEN_ADDR)"
 sealbox-cli config show
 
 # Test server connectivity
-curl -H "Authorization: Bearer $SEALBOX_TOKEN" $SEALBOX_URL/v1/master-key
+curl -H "Authorization: Bearer $SEALBOX_TOKEN" $SEALBOX_URL/v1/client-key
 
 # Verify key files exist and are readable
 ls -la ~/.config/sealbox/*.pem

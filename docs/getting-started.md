@@ -170,7 +170,7 @@ Sealbox supports automatic expiration of secrets using TTL:
 
 ### CLI can't connect to server
 - **Network Proxy Issues**: If you're using Surge, ClashX, or other proxy software, disable it for localhost connections or add localhost to bypass list
-- Verify the server is running: `curl -H "Authorization: Bearer your-token" http://localhost:8080/v1/master-key`
+- Verify the server is running: `curl -H "Authorization: Bearer your-token" http://localhost:8080/v1/client-key`
 - Check the URL and token in your configuration: `./target/release/sealbox-cli config show`
 
 ### Configuration Issues

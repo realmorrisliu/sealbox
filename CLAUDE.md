@@ -27,28 +27,47 @@ Sealbox is a lightweight, single-node secret storage service built in Rust. It p
 - **RSA + AES-GCM**: 2048-bit RSA for key encryption, AES-256-GCM for data encryption
 - **End-to-end security**: Only clients with private keys can decrypt stored secrets
 
-## Web UI and CLI Collaboration
+## CLI vs Web UI: Separation of Concerns
 
-Sealbox follows a **hybrid approach** where CLI and Web UI work together:
+Sealbox implements a **clear separation of concerns** between CLI and Web UI:
 
-### CLI Responsibilities (Security-Critical Operations)
-- **Key Generation**: Generate RSA key pairs locally
-- **Key Registration**: Upload public keys to server
-- **Key Rotation**: Manage key lifecycle with private key access
-- **Secret Decryption**: Decrypt secrets using private keys
-- **Bulk Operations**: Import/export large datasets
+### 🖥️ CLI: Secret Consumption & Automation
+**Core Philosophy**: CLI is optimized for **consuming secrets** in automation, CI/CD, and scripting scenarios.
 
-### Web UI Responsibilities (Visual Management)
-- **Secret Management**: Create, list, delete secrets
-- **Status Monitoring**: View key status and secret metadata
-- **Search & Filter**: Find secrets quickly
-- **TTL Management**: Monitor expiration times
-- **Authentication**: Manage server connections
+**Primary Responsibilities:**
+- **Key Generation & Registration**: Generate RSA key pairs locally and register public keys
+- **Secret Retrieval**: Decrypt and consume secrets in applications
+- **Environment Variable Export**: Export secrets in various formats (env, shell, json, yaml) for CI/CD
+- **Bulk Import**: Import secrets from configuration files
+- **Pattern Matching**: Filter secrets using glob patterns for targeted export
+
+**Enhanced Export Features:**
+```bash
+# Export all secrets as environment variables
+sealbox-cli secret export --format env --prefix MY_APP
+
+# Export filtered secrets to shell format
+sealbox-cli secret export --keys "db_*" --format shell --prefix PROD > env.sh
+
+# JSON export for integration
+sealbox-cli secret export --format json --keys "*_config" - | jq .
+```
+
+### 🌐 Web UI: Visual Management & Administration
+**Core Philosophy**: Web UI is optimized for **managing secrets** with visual oversight and batch operations.
+
+**Primary Responsibilities:**
+- **Visual Secret Overview**: Dashboard with statistics, search, and filtering
+- **Secret Lifecycle Management**: Create, update, delete secrets with visual confirmation
+- **TTL Monitoring**: Real-time expiration tracking and alerts  
+- **Batch Operations**: Multi-select create/delete operations
+- **Team Collaboration**: Multi-language support and intuitive interface
+- **Status Monitoring**: Server health and connection status
 
 This separation ensures:
-- **Security**: Private keys never leave the user's machine
-- **Usability**: Visual interface for daily operations
-- **Flexibility**: Choose the right tool for each task
+- **Security**: Private keys never leave the user's machine (CLI handles decryption)
+- **Efficiency**: Right tool for each task - automation vs visual management
+- **Flexibility**: CLI for scripts/CI/CD, Web UI for human interaction
 
 ## Common Development Commands
 
@@ -99,11 +118,11 @@ cargo fmt
 cargo clippy --all-targets --all-features --workspace -- -D warnings
 ```
 
-### CLI Usage
-The CLI provides comprehensive secret management by interfacing with the server's encryption system:
+### CLI Usage - Optimized for Secret Consumption
+The CLI is designed primarily for **consuming secrets** in automation and CI/CD environments:
 
 ```bash
-# Initialize configuration with parameters (recommended)
+# One-time setup: Initialize configuration
 ./target/release/sealbox-cli config init \
     --url http://localhost:8080 \
     --token your-secure-token \
@@ -111,23 +130,30 @@ The CLI provides comprehensive secret management by interfacing with the server'
     --private-key ~/.config/sealbox/private_key.pem \
     --output table
 
-# Generate RSA key pair (automatically saved to ~/.config/sealbox/)
+# One-time setup: Generate and register RSA key pair
 ./target/release/sealbox-cli key generate
-
-# Register public key with server
 ./target/release/sealbox-cli key register
 
-# Store a secret (sent as plaintext, encrypted by server)
-./target/release/sealbox-cli secret set mypassword "super-secret-value"
+# Secret consumption (primary use case)
+./target/release/sealbox-cli secret get database_password
 
-# Store a secret with TTL (expires in 3600 seconds / 1 hour)
-./target/release/sealbox-cli secret set temp-secret "temporary-value" --ttl 3600
+# Export secrets for CI/CD - Environment variables format
+./target/release/sealbox-cli secret export --format env --prefix MY_APP
 
-# Retrieve and decrypt a secret
-./target/release/sealbox-cli secret get mypassword
+# Export secrets for shell scripts
+./target/release/sealbox-cli secret export --format shell --prefix PROD > prod.env
 
-# Import secrets from file
+# Targeted export with glob patterns
+./target/release/sealbox-cli secret export --keys "db_*" --format env --prefix DATABASE
+
+# JSON export for integration with other tools
+./target/release/sealbox-cli secret export --format json --keys "*_config" - | jq .
+
+# Bulk import from configuration files
 ./target/release/sealbox-cli secret import --file secrets.json
+
+# Basic secret creation (for development)
+./target/release/sealbox-cli secret set temp-secret "temporary-value" --ttl 3600
 
 # Multiple output formats supported
 ./target/release/sealbox-cli key list --output table
@@ -138,7 +164,7 @@ The CLI provides comprehensive secret management by interfacing with the server'
 ### Server Configuration
 Environment variables:
 - `STORE_PATH`: SQLite database file path
-- `LISTEN_ADDR`: Server listen address (e.g., 127.0.0.1:8080)  
+- `LISTEN_ADDR`: Server listen address (e.g., 127.0.0.1:8080)
 - `AUTH_TOKEN`: Static bearer token for API authentication
 
 ### CLI Configuration
@@ -186,12 +212,14 @@ The CLI uses TOML configuration files with environment variable overrides:
 
 ### Business Endpoints (Require `Authorization: Bearer <token>` header)
 - `GET /v1/secrets` - List all secrets with metadata (key, version, timestamps, TTL)
-- `PUT /v1/secrets/:key` - Create secret version (supports TTL via `ttl` field)
-- `GET /v1/secrets/:key[?version=N]` - Retrieve secret (automatic expiry check)
+- `PUT /v1/secrets/:key` - Create secret version (supports TTL via `ttl` field, multi-client via `authorized_clients`)
+- `GET /v1/secrets/:key[?version=N]` - Retrieve secret (automatic expiry check, multi-client via `X-Client-ID` header)
 - `DELETE /v1/secrets/:key[?version=N]` - Delete secret version
-- `POST /v1/master-key` - Register public key
-- `GET /v1/master-key` - List public keys
-- `PUT /v1/master-key` - Rotate keys
+- `GET /v1/secrets/:key/permissions` - View client access permissions for secret
+- `DELETE /v1/secrets/:key/permissions/:client_id` - Revoke client access permission
+- `POST /v1/client-key` - Register public key
+- `GET /v1/client-key` - List public keys
+- `PUT /v1/client-key` - Rotate keys
 - `DELETE /v1/admin/cleanup-expired` - Manual cleanup of expired secrets
 
 ## Development Status
@@ -254,8 +282,8 @@ The CLI uses TOML configuration files with environment variable overrides:
     - ✅ **Search functionality** - Client-side filtering by key name
     - ✅ **TTL countdown timers** - Real-time expiration display
     - ✅ **Status indicators** - Active, expiring, expired states
-  - **🔑 Master Key Management** - CLI-first approach
-    - ✅ **Master key listing** - View all registered keys with status
+  - **🔑 Client Key Management** - CLI-first approach
+    - ✅ **Client key listing** - View all registered keys with status
     - ✅ **CLI integration guide** - Clear instructions for key operations
     - ℹ️ **Design decision**: Key generation/registration via CLI ensures security
     - ℹ️ **Web UI role**: Monitor and view key status, not create keys
@@ -264,24 +292,38 @@ The CLI uses TOML configuration files with environment variable overrides:
   - `/healthz/ready` - Readiness probe with database connection testing
   - No authentication required for health endpoints
   - Proper HTTP status codes and JSON responses
-- ✅ **Multi-Client Architecture (Phase 1 TDD)** - Enhanced scalability for multiple CLI clients
-  - **🎯 Architecture Evolution**: Transitioned from "by user" to "by client" Master Key model
-  - **📊 Phase 1 Completed**: Core data layer foundation with Test Driven Development
-    - ✅ **MasterKey name field**: Added optional client name identifier (e.g., "morris-laptop")
-    - ✅ **Secret-Master-Key associations**: New `secret_master_keys` table for many-to-many relationships
-    - ✅ **Shared DataKey design**: Multiple Master Keys can encrypt the same secret's DataKey
-    - ✅ **Backward compatibility**: All existing functionality preserved during enhancement
-    - ✅ **Comprehensive testing**: Complete TDD cycles with 61 passing tests
-  - **📋 Implementation Details**:
-    - Enhanced `MasterKey` struct with optional `name` field for client identification
-    - Created `SecretMasterKeyAssociation` and `SecretMasterKeyRepo` for multi-key management
-    - Implemented SQLite schema migrations with proper database table initialization
-    - Added repository methods: `create_association`, `get_associations_for_secret`, `get_association`
-  - **🔧 Database Schema Updates**:
-    - Modified `master_keys` table to include `name TEXT` column
-    - Created new `secret_master_keys` table with composite primary key
-    - Maintained all existing queries and operations for seamless backward compatibility
-  - **📖 Design Documentation**: Complete multi-client architecture design documented in `docs/multi-client-architecture.md`
+- 🔄 **Multi-Client Architecture (Partial Implementation)** - Server-side support for multiple CLI clients
+  - **🎯 Architecture Status**: Core server functionality completed, client tooling in development
+  - **📊 Implementation Progress**: 
+    - ✅ **Phase 1**: Core data layer foundation with comprehensive testing
+    - ✅ **Phase 2**: Server API layer with permission management endpoints
+    - 🔄 **Phase 3**: Client tooling and Web UI integration (in progress)
+  - **🚀 Server Features Completed**:
+    - ✅ **Multi-client secret creation**: Server API supports authorizing multiple clients via `authorized_clients` field
+    - ✅ **True shared DataKey design**: One secret encrypted with separate keys for each client
+    - ✅ **Permission management**: Server endpoints for viewing and revoking client access
+    - ✅ **Backward compatibility**: All existing single-client functionality preserved
+    - ✅ **Complete security model**: Zero-knowledge server, client isolation, immutable permissions
+  - **📋 Technical Implementation**:
+    - Enhanced database schema with `secret_client_keys` junction table
+    - REST API endpoints for permission management (`/permissions`, `/permissions/{client_id}`)
+    - Multi-client secret creation via `PUT /v1/secrets/:key` with `authorized_clients` array
+    - X-Client-ID header support for client-specific secret retrieval
+  - **🔄 Still In Development**:
+    - CLI commands: `secret set-multi-client`, `secret permissions`, `secret revoke` (not yet implemented)
+    - Web UI: Permission viewer and management interface (basic creation dialog exists)
+    - Comprehensive client-side tooling and documentation
+
+### Recent Improvements (2025-08-24)
+
+- ✅ **Code Optimization and Cleanup** - Simplified architecture and removed over-engineering
+  - **Removed API version control complexity**: Simplified from multi-version API to single v1 implementation
+  - **Deleted unused namespace field**: Removed redundant Secret.namespace field from database and structs
+  - **Simplified ClientKeyStatus enum**: Reduced from 3 states (Active/Retired/Disabled) to single Active state
+  - **Cleaned up redundant test code**: Removed duplicate test helper functions and invalid version tests
+  - **Removed TDD annotations**: Cleaned up development-phase comments and annotations for production readiness
+  - **Updated documentation**: CLAUDE.md now accurately reflects actual implementation status
+  - **Code reduction**: Achieved ~30% reduction in complexity while maintaining all functionality
 
 ### Recent Improvements (2025-08-07)
 
@@ -289,7 +331,7 @@ The CLI uses TOML configuration files with environment variable overrides:
   - **Precise response time measurement**: Fixed timing implementation using `performance.now()` at API client level
   - **On-demand health checking**: Replaced 30-second polling with menu-triggered checks for better resource efficiency
   - **Minimalist status design**: Clean icon-based status indicators with color-coded response times
-    - **Connected**: Green response time (e.g., "42ms") 
+    - **Connected**: Green response time (e.g., "42ms")
     - **Connecting**: Yellow animated loader icon
     - **Disconnected**: Red WiFi-off icon
   - **Eliminated redundant UI**: Removed status text and circular indicators, keeping only essential information
@@ -316,7 +358,7 @@ The CLI uses TOML configuration files with environment variable overrides:
 
 - ✅ **SSR Hydration Issues Previously Resolved** - Server-side rendering compatibility
   - **SSR-safe translations**: Created `useSSRSafeTranslation` hook with automatic English fallback from locale files
-  - **Eliminated hydration mismatches**: Fixed all i18n-related water rendering inconsistencies  
+  - **Eliminated hydration mismatches**: Fixed all i18n-related water rendering inconsistencies
   - **Removed inline scripts**: Migrated from HTML inline JS to pure React component architecture
   - **Direct localStorage integration**: Theme and language preferences read directly in React components
   - **Zero hardcoded fallbacks**: All fallback translations sourced from `en.json` locale file
@@ -329,7 +371,7 @@ The CLI uses TOML configuration files with environment variable overrides:
   - **Fixed API types**: Corrected health check response formats to match server
   - **Updated all language files**: Cleaned up translations in English, Chinese, Japanese, and German
   - **TypeScript compliance**: Zero compilation errors with streamlined type definitions
-  
+
 - ✅ **Production-Ready Web Interface**
   - **Secret Management**: Full CRUD operations matching server API exactly
   - **Authentication**: Token-based auth with server connection validation
@@ -343,13 +385,13 @@ The CLI uses TOML configuration files with environment variable overrides:
   - **Utility modules**: Created `lib/secret-utils.ts` for reusable functions (status calculations, data transformations)
   - **Component decomposition**: Split into 4 focused components
     - `SecretStats` - Statistics cards display
-    - `SecretControls` - Search and view controls  
+    - `SecretControls` - Search and view controls
     - `SecretTable` - Table view implementation
     - `SecretCards` - Card view implementation
   - **Container-Presenter pattern**: `SecretManagement` now acts as lightweight coordinator
   - **Type safety**: Zero TypeScript errors, proper type definitions across all modules
   - **Code quality**: Prettier formatting, consistent code style
-  - **Maintainability benefits**: 
+  - **Maintainability benefits**:
     - Single responsibility components
     - Improved testability through logic separation
     - Enhanced reusability across different views
@@ -358,11 +400,11 @@ The CLI uses TOML configuration files with environment variable overrides:
 ### Development Priorities
 
 #### In Progress
-1. **🔑 Multi-Client Architecture (Phase 2 TDD)** - API layer implementation
-   - 🚧 **Current**: Phase 2 TDD - API extension tests for multi-master-key support
-   - API endpoints for creating secrets with multiple master keys
-   - CLI enhancements for multi-master-key operations
-   - Web UI updates for multi-client management
+1. **🔑 Multi-Client Architecture (Phase 3)** - Client tooling and UI completion
+   - 🚧 **Current**: CLI commands for multi-client operations
+   - CLI enhancements: `secret set-multi-client`, `secret permissions`, `secret revoke`
+   - Web UI improvements: Complete permission management interface
+   - Documentation and usage examples
 
 #### Immediate
 2. **📤 Secret Import/Export** - Bulk operations

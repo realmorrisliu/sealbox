@@ -1,11 +1,11 @@
 import type {
   SecretInfo,
   Secret,
-  MasterKey,
+  ClientKey,
   SecretsListResponse,
   CreateSecretRequest,
-  CreateMasterKeyRequest,
-  MasterKeysListResponse,
+  CreateClientKeyRequest,
+  ClientKeysListResponse,
   CleanupExpiredResponse,
   ApiError,
 } from "./types";
@@ -85,12 +85,12 @@ export class SealboxApi {
     options: RequestInit = {},
   ): Promise<T & { responseTime: number }> {
     const startTime = performance.now();
-    
+
     try {
       const result = await this.request<T>(endpoint, options);
       const endTime = performance.now();
       const responseTime = Math.round(endTime - startTime);
-      
+
       return {
         ...result,
         responseTime,
@@ -98,12 +98,12 @@ export class SealboxApi {
     } catch (error) {
       const endTime = performance.now();
       const responseTime = Math.round(endTime - startTime);
-      
+
       if (error instanceof SealboxApiError) {
         // Add response time to error for potential debugging
         (error as any).responseTime = responseTime;
       }
-      
+
       throw error;
     }
   }
@@ -136,20 +136,21 @@ export class SealboxApi {
     );
   }
 
-  // Master key management API
-  async listMasterKeys(): Promise<MasterKeysListResponse> {
-    return this.request<MasterKeysListResponse>("/v1/master-key");
+
+  // Client key management API
+  async listClientKeys(): Promise<ClientKeysListResponse> {
+    return this.request<ClientKeysListResponse>("/v1/client-key");
   }
 
-  async createMasterKey(data: CreateMasterKeyRequest): Promise<void> {
-    return this.request<void>("/v1/master-key", {
+  async createClientKey(data: CreateClientKeyRequest): Promise<void> {
+    return this.request<void>("/v1/client-key", {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async rotateMasterKey(data: CreateMasterKeyRequest): Promise<void> {
-    return this.request<void>("/v1/master-key", {
+  async rotateClientKey(data: CreateClientKeyRequest): Promise<void> {
+    return this.request<void>("/v1/client-key", {
       method: "PUT",
       body: JSON.stringify(data),
     });
@@ -168,8 +169,14 @@ export class SealboxApi {
   }
 
   // Health check with response time measurement
-  async healthWithTiming(): Promise<{ result: string; timestamp: number; responseTime: number }> {
-    return this.requestWithTiming<{ result: string; timestamp: number }>("/healthz/live");
+  async healthWithTiming(): Promise<{
+    result: string;
+    timestamp: number;
+    responseTime: number;
+  }> {
+    return this.requestWithTiming<{ result: string; timestamp: number }>(
+      "/healthz/live",
+    );
   }
 
   // Readiness check
@@ -189,5 +196,5 @@ export const createApiClient = (baseUrl: string, token?: string) => {
 export const queryKeys = {
   secrets: ["secrets"] as const,
   secret: (key: string, version?: number) => ["secret", key, version] as const,
-  masterKeys: ["masterKeys"] as const,
+  clientKeys: ["clientKeys"] as const,
 } as const;

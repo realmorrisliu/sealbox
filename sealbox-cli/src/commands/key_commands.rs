@@ -7,6 +7,14 @@ use uuid::Uuid;
 
 use crate::{KeyCommands, config::Config, output::OutputManager};
 
+// Create configured HTTP client for API requests
+fn create_http_client() -> Client {
+    Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .expect("Failed to create HTTP client")
+}
+
 pub async fn handle_command(command: KeyCommands, config: &Config) -> Result<()> {
     let output = OutputManager::new(config.output.format.clone());
 
@@ -17,7 +25,6 @@ pub async fn handle_command(command: KeyCommands, config: &Config) -> Result<()>
             force,
         } => generate_keys(config, &output, public_key_path, private_key_path, force).await,
         KeyCommands::Register => register_key(config, &output).await,
-        KeyCommands::List => list_keys(config, &output).await,
         KeyCommands::Rotate {
             new_key_id,
             old_key_id,
@@ -51,7 +58,7 @@ async fn generate_keys(
 
     output.print_info("Generating RSA key pair...");
 
-    let (private_key_pem, public_key_pem) = sealbox_server::crypto::master_key::generate_key_pair()
+    let (private_key_pem, public_key_pem) = sealbox_server::crypto::client_key::generate_key_pair()
         .context("Failed to generate key pair")?;
 
     // Ensure directories exist
@@ -123,9 +130,9 @@ async fn register_key(config: &Config, output: &OutputManager) -> Result<()> {
 
     output.print_info("Registering public key to server...");
 
-    let client = Client::new();
+    let client = create_http_client();
     let response = client
-        .post(format!("{}/v1/master-key", config.server.url))
+        .post(format!("{}/v1/client-key", config.server.url))
         .bearer_auth(&config.server.token)
         .json(&json!({ "public_key": public_key_pem }))
         .send()
@@ -134,15 +141,15 @@ async fn register_key(config: &Config, output: &OutputManager) -> Result<()> {
 
     let status = response.status();
     if status.is_success() {
-        let master_key: sealbox_server::repo::MasterKey = response
+        let client_key: sealbox_server::repo::ClientKey = response
             .json()
             .await
             .context("Failed to parse server response")?;
 
         output.print_success("Public key registered successfully!");
 
-        let formatted_keys = vec![master_key];
-        output.print_master_keys(&formatted_keys)?;
+        let formatted_keys = vec![client_key];
+        output.print_client_keys(&formatted_keys)?;
     } else {
         let error_body = response
             .text()
@@ -158,47 +165,6 @@ async fn register_key(config: &Config, output: &OutputManager) -> Result<()> {
     Ok(())
 }
 
-async fn list_keys(config: &Config, output: &OutputManager) -> Result<()> {
-    config
-        .validate()
-        .context("Configuration validation failed")?;
-
-    output.print_info("Fetching master key list...");
-
-    let client = Client::new();
-    let response = client
-        .get(format!("{}/v1/master-key", config.server.url))
-        .bearer_auth(&config.server.token)
-        .send()
-        .await
-        .context("Failed to request server")?;
-
-    let status = response.status();
-    if status.is_success() {
-        let master_keys: Vec<sealbox_server::repo::MasterKey> = response
-            .json()
-            .await
-            .context("Failed to parse server response")?;
-
-        if master_keys.is_empty() {
-            output.print_info("No master keys on server");
-        } else {
-            output.print_master_keys(&master_keys)?;
-        }
-    } else {
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unable to get error information".to_string());
-        anyhow::bail!(
-            "Server returned error (status code: {}):\n{}",
-            status,
-            error_body
-        );
-    }
-
-    Ok(())
-}
 
 async fn rotate_keys(
     config: &Config,
@@ -235,14 +201,14 @@ async fn rotate_keys(
     output.print_warning("This operation will re-encrypt all secrets using the old key, please ensure the operation is correct!");
 
     let payload = json!({
-        "new_master_key_id": new_key_uuid,
-        "old_master_key_id": old_key_uuid,
+        "new_client_key_id": new_key_uuid,
+        "old_client_key_id": old_key_uuid,
         "old_private_key_pem": old_private_key_pem
     });
 
-    let client = Client::new();
+    let client = create_http_client();
     let response = client
-        .put(format!("{}/v1/master-key", config.server.url))
+        .put(format!("{}/v1/client-key", config.server.url))
         .bearer_auth(&config.server.token)
         .json(&payload)
         .send()
@@ -312,8 +278,8 @@ async fn check_key_status(config: &Config, output: &OutputManager) -> Result<()>
                 Ok(private_pem) => {
                     // Try to parse both keys
                     match (
-                        sealbox_server::crypto::master_key::PublicMasterKey::from_str(&public_pem),
-                        sealbox_server::crypto::master_key::PrivateMasterKey::from_str(
+                        sealbox_server::crypto::client_key::PublicClientKey::from_str(&public_pem),
+                        sealbox_server::crypto::client_key::PrivateClientKey::from_str(
                             &private_pem,
                         ),
                     ) {
@@ -392,10 +358,10 @@ async fn check_key_status(config: &Config, output: &OutputManager) -> Result<()>
 
 async fn list_server_keys_internal(
     config: &Config,
-) -> Result<Vec<sealbox_server::repo::MasterKey>> {
-    let client = Client::new();
+) -> Result<Vec<sealbox_server::repo::ClientKey>> {
+    let client = create_http_client();
     let response = client
-        .get(format!("{}/v1/master-key", config.server.url))
+        .get(format!("{}/v1/client-key", config.server.url))
         .bearer_auth(&config.server.token)
         .send()
         .await

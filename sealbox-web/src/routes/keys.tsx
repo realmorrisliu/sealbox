@@ -30,13 +30,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert } from "@/components/ui/alert";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { MainLayout } from "@/components/layout/main-layout";
-import { MasterKeyListSkeleton } from "@/components/common/loading-skeletons";
+import { ClientKeyListSkeleton } from "@/components/common/loading-skeletons";
 import {
-  useMasterKeys,
-  useCreateMasterKey,
-  useRotateMasterKey,
+  useClientKeys,
+  useCreateClientKey,
+  useRotateClientKey,
 } from "@/hooks/use-api";
-import type { MasterKey } from "@/lib/types";
+import type { ClientKey } from "@/lib/types";
 
 export const Route = createFileRoute("/keys")({
   component: KeysPage,
@@ -46,16 +46,16 @@ function KeysPage() {
   return (
     <AuthGuard>
       <MainLayout>
-        <MasterKeysPage />
+        <ClientKeysPage />
       </MainLayout>
     </AuthGuard>
   );
 }
 
-function MasterKeysPage() {
-  const { data: masterKeysData, isLoading, error, refetch } = useMasterKeys();
-  const createMasterKey = useCreateMasterKey();
-  const rotateMasterKey = useRotateMasterKey();
+function ClientKeysPage() {
+  const { data: clientKeysData, isLoading, error, refetch } = useClientKeys();
+  const createClientKey = useCreateClientKey();
+  const rotateClientKey = useRotateClientKey();
   const { t, i18n } = useTranslation();
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 
@@ -78,7 +78,7 @@ function MasterKeysPage() {
     });
   };
 
-  const getStatusBadge = (status: MasterKey["status"]) => {
+  const getStatusBadge = (status: ClientKey["status"]) => {
     switch (status) {
       case "Active":
         return (
@@ -134,7 +134,7 @@ function MasterKeysPage() {
   };
 
   if (isLoading) {
-    return <MasterKeyListSkeleton />;
+    return <ClientKeyListSkeleton />;
   }
 
   if (error) {
@@ -152,7 +152,7 @@ function MasterKeysPage() {
     );
   }
 
-  const masterKeys = masterKeysData?.master_keys || [];
+  const clientKeys = clientKeysData?.client_keys || [];
 
   return (
     <div className="space-y-6">
@@ -191,7 +191,7 @@ function MasterKeysPage() {
           <Button
             variant="outline"
             onClick={handleRotateKey}
-            disabled={rotateMasterKey.isPending}
+            disabled={rotateClientKey.isPending}
             className="border-border"
           >
             <RotateCw className="h-4 w-4 mr-2" />
@@ -199,7 +199,7 @@ function MasterKeysPage() {
           </Button>
           <Button
             onClick={handleRegisterKey}
-            disabled={createMasterKey.isPending}
+            disabled={createClientKey.isPending}
             className="border-border"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -210,7 +210,7 @@ function MasterKeysPage() {
 
       {/* [Middle Layer] Content sections - Section cards */}
       <Card className="bg-card border border-border">
-        {masterKeys.length === 0 ? (
+        {clientKeys.length === 0 ? (
           <div className="p-6 text-center space-y-4">
             <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
               <Key className="h-6 w-6 text-muted-foreground" />
@@ -223,7 +223,7 @@ function MasterKeysPage() {
             </p>
             <Button
               onClick={handleRegisterKey}
-              disabled={createMasterKey.isPending}
+              disabled={createClientKey.isPending}
               variant="outline"
               className="mt-4"
             >
@@ -236,7 +236,7 @@ function MasterKeysPage() {
             {/* Card View */}
             {viewMode === "cards" ? (
               <div className="space-y-4 p-6">
-                {masterKeys.map((key: MasterKey) => (
+                {clientKeys.map((key: ClientKey) => (
                   <div
                     key={key.id}
                     className="bg-card border border-border rounded-md p-4 space-y-4 hover:bg-accent/50 transition-colors duration-150"
@@ -292,7 +292,7 @@ function MasterKeysPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {masterKeys.map((key: MasterKey) => (
+                    {clientKeys.map((key: ClientKey) => (
                       <TableRow
                         key={key.id}
                         className="min-h-12 border-b border-border hover:bg-accent/50 transition-colors duration-150"

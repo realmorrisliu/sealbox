@@ -76,7 +76,16 @@
       "missingFields": "必須フィールドが不足",
       "nameAndValueRequired": "名前と値は必須です",
       "secretAdded": "シークレットが追加されました",
-      "hasBeenCreated": "{{name}} が作成されました"
+      "hasBeenCreated": "{{name}} が作成されました",
+      "multiClient": {
+        "enableMode": "マルチクライアントモード",
+        "description": "複数のクライアントがこのシークレットにアクセスできるようにする",
+        "selectClients": "クライアントを選択",
+        "noClientsSelected": "クライアントが選択されていません",
+        "selectAtLeastOne": "マルチクライアントモードでは少なくとも1つのクライアントを選択してください",
+        "noActiveClients": "アクティブなクライアントキーが見つかりません",
+        "secretCreated": "{{name}} が {{count}} 個のクライアント用に作成されました"
+      }
     },
     "decryptHint": {
       "title": "CLIで復号化",
@@ -89,7 +98,21 @@
     "refreshed": "シークレットが更新されました",
     "cleanupSuccess": "クリーンアップ完了",
     "cleanupSuccessDescription": "{{count}}個の期限切れシークレットを削除しました",
-    "cleanupNoExpired": "クリーンアップする期限切れシークレットはありません"
+    "cleanupNoExpired": "クリーンアップする期限切れシークレットはありません",
+    "permissions": {
+      "title": "{{key}} の権限",
+      "description": "このシークレットのクライアントアクセス権限を管理",
+      "noPermissions": "クライアント権限が見つかりません",
+      "authorizedClients": "{{count}} 個の認可クライアント",
+      "clients": "クライアント",
+      "authorizedAt": "認可時刻",
+      "revoke": "取り消し",
+      "revoked": "権限が取り消されました",
+      "revokedDescription": "クライアント {{clientId}}... のアクセス権限を取り消しました",
+      "confirmRevoke": "権限を取り消す",
+      "confirmRevokeDescription": "クライアント {{clientId}}... のシークレット {{secretKey}} へのアクセス権限を取り消しますか？この操作は元に戻せません。",
+      "viewPermissions": "権限を表示"
+    }
   },
   "keys": {
     "title": "マスターキー管理",

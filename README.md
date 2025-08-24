@@ -65,7 +65,7 @@ export LISTEN_ADDR=127.0.0.1:8080
 
 ### Managing Secrets
 
-#### Using the CLI
+#### Using the CLI (Optimized for Secret Consumption)
 ```bash
 # Store a secret
 ./target/release/sealbox-cli secret set mypassword "super-secret-value"
@@ -76,11 +76,20 @@ export LISTEN_ADDR=127.0.0.1:8080
 # Retrieve a secret
 ./target/release/sealbox-cli secret get mypassword
 
+# Export secrets as environment variables (perfect for CI/CD)
+./target/release/sealbox-cli secret export --format env --prefix MY_APP
+
+# Export specific secrets to shell format
+./target/release/sealbox-cli secret export --keys "db_*" --format shell --prefix PROD > env.sh
+
+# Import secrets from file
+./target/release/sealbox-cli secret import secrets.json
+
 # List all commands
 ./target/release/sealbox-cli --help
 ```
 
-#### Using the Web UI
+#### Using the Web UI (Optimized for Secret Management)
 1. Navigate to the `sealbox-web` directory
 2. Install dependencies: `pnpm install`
 3. Start the development server: `pnpm run dev`
@@ -88,15 +97,61 @@ export LISTEN_ADDR=127.0.0.1:8080
 5. Enter your server URL and AUTH_TOKEN to login
 6. Manage secrets through the intuitive web interface
 
-**Web UI Features:**
+**Web UI Features (Management Focus):**
 - 🔐 Secure token-based authentication
-- 📋 Secret list with TTL status indicators
-- ⏰ Real-time expiration warnings
-- 🗑️ Delete secrets with confirmation
+- 📋 Visual secret overview with search and filtering
+- ⏰ Real-time TTL monitoring with expiration warnings
+- ➕ Create and delete secrets with visual confirmation
+- 🗂️ Batch operations for multiple secrets
+- 📊 Secret statistics and usage metrics
 - 📱 Responsive design for mobile devices
-- 🌐 CORS support for development
-- 🌍 **English-first interface** - All UI elements use clear English text
+- 🌍 **4-language support** - English, Chinese, Japanese, German
 - 🎨 Modern design with TailwindCSS and shadcn/ui components
+- 🌐 CORS support for development
+
+## CLI vs Web UI: Designed for Different Use Cases
+
+Sealbox follows a **separation of concerns** philosophy between its CLI and Web UI:
+
+### 🖥️ CLI: Secret Consumption (Automation & CI/CD)
+**Perfect for:**
+- Retrieving secrets in scripts and CI/CD pipelines
+- Exporting secrets as environment variables
+- Importing secrets from configuration files
+- One-time secret creation in development
+- Key pair generation and registration
+
+**Key Commands:**
+```bash
+# Generate and register keys (one-time setup)
+sealbox-cli key generate && sealbox-cli key register
+
+# Retrieve secrets for use in applications
+sealbox-cli secret get database_password
+
+# Export all secrets for CI/CD
+sealbox-cli secret export --format shell --prefix PROD
+
+# Import secrets from deployment configs
+sealbox-cli secret import config.json
+```
+
+### 🌐 Web UI: Secret Management (Visual Administration)
+**Perfect for:**
+- Visual overview of all secrets and their status
+- Creating, editing, and organizing secrets
+- Monitoring TTL expiration status
+- Managing batch operations
+- Team collaboration and secret lifecycle management
+
+**Key Features:**
+- 📊 Dashboard with secret statistics
+- 🔍 Search and filter capabilities
+- ⏰ TTL countdown and expiration alerts
+- 🗂️ Batch create/delete operations
+- 👥 Multi-language support for teams
+
+This design ensures that **CLI excels at automation** while **Web UI excels at management**, giving you the right tool for each task.
 
 ## Configuration
 
@@ -155,7 +210,7 @@ GET /v1/secrets
 # Store a secret
 PUT /v1/secrets/:key
 Content-Type: application/json
-{ 
+{
   "secret": "your-secret-value",
   "ttl": 3600  # Optional: expires in 3600 seconds (1 hour)
 }
@@ -179,15 +234,15 @@ DELETE /v1/secrets/:key?version=1
 ### Key Management
 ```bash
 # Register public key
-POST /v1/master-key
+POST /v1/client-key
 Content-Type: application/json
 { "public_key": "-----BEGIN PUBLIC KEY-----..." }
 
 # List public keys
-GET /v1/master-key
+GET /v1/client-key
 
 # Rotate keys
-PUT /v1/master-key
+PUT /v1/client-key
 ```
 
 ### Health Check Endpoints
@@ -196,7 +251,7 @@ PUT /v1/master-key
 GET /healthz/live
 # Returns: {"result": "Ok", "timestamp": 1640995200}
 
-# Readiness probe (no authentication required)  
+# Readiness probe (no authentication required)
 GET /healthz/ready
 # Returns: {"result": "Ok", "timestamp": 1640995200} if ready
 # Returns: 503 status with error details if not ready
@@ -277,7 +332,7 @@ cargo audit
 - [ ] **i18n Support** - Multi-language interface with language switching
 - [ ] **JWT Authentication** - Replace static token with JWT-based auth
 - [ ] **Advanced Secret Operations** - Create, edit, and manage secrets via Web UI
-- [ ] **Master Key Management UI** - Complete key management through web interface
+- [ ] **Client Key Management UI** - Complete key management through web interface
 - [ ] **Docker and Kubernetes** - Production deployment guides and manifests
 - [ ] **Multi-node Replication** - High availability with Raft consensus
 

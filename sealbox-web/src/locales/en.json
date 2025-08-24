@@ -76,7 +76,16 @@
       "missingFields": "Missing fields",
       "nameAndValueRequired": "Name and value are required",
       "secretAdded": "Secret added",
-      "hasBeenCreated": "{{name}} has been created"
+      "hasBeenCreated": "{{name}} has been created",
+      "multiClient": {
+        "enableMode": "Multi-Client Mode",
+        "description": "Allow multiple clients to access this secret",
+        "selectClients": "Select Clients",
+        "noClientsSelected": "No clients selected",
+        "selectAtLeastOne": "Please select at least one client for multi-client mode",
+        "noActiveClients": "No active client keys found",
+        "secretCreated": "{{name}} has been created for {{count}} clients"
+      }
     },
     "decryptHint": {
       "title": "Decrypt with CLI",
@@ -89,10 +98,25 @@
     "refreshed": "Secrets refreshed",
     "cleanupSuccess": "Cleanup completed",
     "cleanupSuccessDescription": "Deleted {{count}} expired secrets",
-    "cleanupNoExpired": "No expired secrets to clean up"
+    "cleanupNoExpired": "No expired secrets to clean up",
+    "permissions": {
+      "title": "Permissions for {{key}}",
+      "description": "Manage client access permissions for this secret",
+      "noPermissions": "No client permissions found",
+      "authorizedClients": "{{count}} authorized client",
+      "authorizedClients_other": "{{count}} authorized clients",
+      "clients": "clients",
+      "authorizedAt": "Authorized at",
+      "revoke": "Revoke",
+      "revoked": "Permission revoked",
+      "revokedDescription": "Access revoked for client {{clientId}}...",
+      "confirmRevoke": "Revoke Permission",
+      "confirmRevokeDescription": "Are you sure you want to revoke access for client {{clientId}}... to secret {{secretKey}}? This action cannot be undone.",
+      "viewPermissions": "View Permissions"
+    }
   },
   "keys": {
-    "title": "Master Key Management",
+    "title": "Client Key Management",
     "registerKey": "Register Key",
     "rotateKey": "Rotate Key",
     "keyId": "Key ID",
@@ -103,7 +127,7 @@
     "active": "Active",
     "retired": "Retired",
     "disabled": "Disabled",
-    "noKeysFound": "No master keys found",
+    "noKeysFound": "No client keys found",
     "noKeysFoundDescription": "Register your first RSA key pair to start encrypting secrets",
     "registerFirstKey": "Register First Key",
     "noDescription": "No description",
@@ -111,16 +135,16 @@
     "cliRequired": {
       "title": "Use CLI for Key Operations",
       "registerDescription": "Generate and register keys using: sealbox-cli key generate && sealbox-cli key register",
-      "rotateDescription": "Rotate master keys using: sealbox-cli key rotate"
+      "rotateDescription": "Rotate client keys using: sealbox-cli key rotate"
     },
     "cliGuide": {
-      "title": "Master Key Operations via CLI",
+      "title": "Client Key Operations via CLI",
       "generateKeys": "Generate RSA Key Pair:",
       "registerKey": "Register Public Key:",
-      "rotateKey": "Rotate Master Key:"
+      "rotateKey": "Rotate Client Key:"
     },
     "securityNote": "RSA Key Pair Security",
-    "securityNoteDescription": "Master keys use 2048-bit RSA encryption. Your private key should be kept secure and never shared."
+    "securityNoteDescription": "Client keys use 2048-bit RSA encryption. Your private key should be kept secure and never shared."
   },
   "common": {
     "loading": "Loading...",

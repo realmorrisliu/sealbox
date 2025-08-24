@@ -6,7 +6,7 @@ use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::crypto::{data_key::DataKeyCryptoError, master_key::MasterKeyCryptoError};
+use crate::crypto::{client_key::ClientKeyCryptoError, data_key::DataKeyCryptoError};
 
 pub type Result<T, E = SealboxError> = std::result::Result<T, E>;
 
@@ -15,14 +15,14 @@ pub enum SealboxError {
     #[error("Secret not found: {0}")]
     SecretNotFound(String),
 
-    #[error("Missing valid master key")]
-    MissingValidMasterKey,
+    #[error("Missing valid client key")]
+    MissingValidClientKey,
 
-    #[error("Master key not found: {0}")]
-    MasterKeyNotFound(Uuid),
+    #[error("Client key not found: {0}")]
+    ClientKeyNotFound(Uuid),
 
-    #[error("Master key mismatch for {0}: expected {1}, got {2}")]
-    MasterKeyMismatch(String, String, String),
+    #[error("Client key mismatch for {0}: expected {1}, got {2}")]
+    ClientKeyMismatch(String, String, String),
 
     #[error("Crypto error: {0}")]
     CryptoError(String),
@@ -39,33 +39,34 @@ pub enum SealboxError {
     #[error("Invalid API version")]
     InvalidApiVersion,
 
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     #[error("Unknown error")]
     Unknown,
 }
 
-fn errorfmt(error: &SealboxError) -> String {
-    format!("[SealboxError] {error}")
-}
 
 impl IntoResponse for SealboxError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
-            SealboxError::MissingValidMasterKey => {
-                (StatusCode::PRECONDITION_REQUIRED, errorfmt(&self))
+            SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, format!("[SealboxError] {self}")),
+            SealboxError::MissingValidClientKey => {
+                (StatusCode::PRECONDITION_REQUIRED, format!("[SealboxError] {self}"))
             }
-            SealboxError::MasterKeyNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
-            SealboxError::MasterKeyMismatch(_, _, _) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
+            SealboxError::ClientKeyNotFound(_) => (StatusCode::NOT_FOUND, format!("[SealboxError] {self}")),
+            SealboxError::ClientKeyMismatch(_, _, _) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}"))
             }
-            SealboxError::CryptoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
-            SealboxError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
+            SealboxError::CryptoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}")),
+            SealboxError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}")),
             SealboxError::ResponseBuildFailed(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}"))
             }
-            SealboxError::Unauthorized => (StatusCode::UNAUTHORIZED, errorfmt(&self)),
-            SealboxError::InvalidApiVersion => (StatusCode::NOT_FOUND, errorfmt(&self)),
-            SealboxError::Unknown => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
+            SealboxError::Unauthorized => (StatusCode::UNAUTHORIZED, format!("[SealboxError] {self}")),
+            SealboxError::InvalidApiVersion => (StatusCode::NOT_FOUND, format!("[SealboxError] {self}")),
+            SealboxError::InvalidInput(_) => (StatusCode::BAD_REQUEST, format!("[SealboxError] {self}")),
+            SealboxError::Unknown => (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}")),
         };
 
         let body = axum::Json(json!({
@@ -76,8 +77,8 @@ impl IntoResponse for SealboxError {
     }
 }
 
-impl From<MasterKeyCryptoError> for SealboxError {
-    fn from(err: MasterKeyCryptoError) -> Self {
+impl From<ClientKeyCryptoError> for SealboxError {
+    fn from(err: ClientKeyCryptoError) -> Self {
         SealboxError::CryptoError(err.to_string())
     }
 }

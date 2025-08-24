@@ -64,7 +64,7 @@ export function SecretTable({
             <TableHead className="h-10 px-3 font-semibold">
               {t("secrets.table.ttl")}
             </TableHead>
-            <TableHead className="w-24 h-10 px-3 font-semibold">
+            <TableHead className="w-32 h-10 px-3 font-semibold">
               {t("secrets.actions")}
             </TableHead>
           </TableRow>
@@ -118,15 +118,18 @@ export function SecretTable({
                 )}
               </TableCell>
               <TableCell className="px-3 py-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 text-red-600"
-                  onClick={() => onDeleteSecret(secret)}
-                  disabled={isDeleting}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-red-600"
+                    onClick={() => onDeleteSecret(secret)}
+                    disabled={isDeleting}
+                    title={t("secrets.confirmDelete", { name: secret.key })}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}

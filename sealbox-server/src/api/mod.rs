@@ -20,7 +20,7 @@ use tracing::{error, info_span};
 use crate::{
     api::{
         auth::static_auth,
-        handler::{admin, master_key, secret},
+        handler::{admin, client_key, secret},
         state::AppState,
     },
     config::SealboxConfig,
@@ -88,10 +88,18 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             get(secret::get).put(secret::save).delete(secret::delete),
         )
         .route(
-            "/{version}/master-key",
-            get(master_key::list)
-                .put(master_key::rotate)
-                .post(master_key::create),
+            "/{version}/secrets/{secret_key}/permissions",
+            get(secret::get_permissions),
+        )
+        .route(
+            "/{version}/secrets/{secret_key}/permissions/{client_id}",
+            axum::routing::delete(secret::revoke_permission),
+        )
+        .route(
+            "/{version}/client-key",
+            get(client_key::list)
+                .put(client_key::rotate)
+                .post(client_key::create),
         )
         .route(
             "/{version}/admin/cleanup-expired",
@@ -110,7 +118,8 @@ async fn root() -> &'static str {
 /// Liveness probe - check if service is alive
 /// Returns simple status information for Kubernetes liveness probe
 async fn liveness_probe() -> SealboxResponse {
-    SealboxResponse::Ok
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    SealboxResponse::Json(json!({"result": "Ok", "timestamp": now}))
 }
 
 /// Readiness probe - check if service is ready to receive traffic
@@ -126,29 +135,26 @@ async fn readiness_probe(State(state): State<AppState>) -> Result<SealboxRespons
         SealboxError::DatabaseError("Database health check failed".to_string())
     })?;
 
-    Ok(SealboxResponse::Ok)
+    Ok(SealboxResponse::NoContent)
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "lowercase")]
 enum Version {
     V1,
-    V2,
-    V3,
 }
 
 #[derive(Debug)]
 pub enum SealboxResponse {
-    Ok,
+    NoContent,
     Json(serde_json::Value),
     Text(String),
 }
 impl IntoResponse for SealboxResponse {
     fn into_response(self) -> Response {
-        let now = time::OffsetDateTime::now_utc().unix_timestamp();
         match self {
-            SealboxResponse::Ok => {
-                axum::Json(json!({"result": "Ok","timestamp": now})).into_response()
+            SealboxResponse::NoContent => {
+                (StatusCode::NO_CONTENT, "").into_response()
             }
             SealboxResponse::Json(data) => axum::Json(data).into_response(),
             SealboxResponse::Text(data) => axum::response::Response::builder()

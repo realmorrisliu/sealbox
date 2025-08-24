@@ -2,24 +2,23 @@ use rusqlite::OptionalExtension;
 use uuid::Uuid;
 
 use crate::{
-    error::Result,
-    repo::{SecretMasterKeyAssociation, SecretMasterKeyRepo},
+    error::{Result, SealboxError},
+    repo::{SecretClientKeyAssociation, SecretClientKeyRepo},
 };
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Used in Phase 2 TDD
-pub(crate) struct SqliteSecretMasterKeyRepo;
+pub(crate) struct SqliteSecretClientKeyRepo;
 
-impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {
+impl SecretClientKeyRepo for SqliteSecretClientKeyRepo {
     fn init_table(conn: &rusqlite::Connection) -> Result<()> {
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS secret_master_keys (
+            "CREATE TABLE IF NOT EXISTS secret_client_keys (
                 secret_key TEXT NOT NULL,
                 secret_version INTEGER NOT NULL,
-                master_key_id BLOB NOT NULL,
+                client_key_id BLOB NOT NULL,
                 encrypted_data_key BLOB NOT NULL,
                 created_at INTEGER NOT NULL,
-                PRIMARY KEY (secret_key, secret_version, master_key_id)
+                PRIMARY KEY (secret_key, secret_version, client_key_id)
             )",
             (),
         )?;
@@ -31,23 +30,23 @@ impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {
         conn: &rusqlite::Connection,
         secret_key: &str,
         secret_version: i32,
-        master_key_id: &Uuid,
+        client_key_id: &Uuid,
         encrypted_data_key: &[u8],
     ) -> Result<()> {
         let created_at = time::OffsetDateTime::now_utc().unix_timestamp();
 
         conn.execute(
-            "INSERT INTO secret_master_keys (
+            "INSERT INTO secret_client_keys (
                 secret_key,
                 secret_version,
-                master_key_id,
+                client_key_id,
                 encrypted_data_key,
                 created_at
             ) VALUES (?1, ?2, ?3, ?4, ?5)",
             (
                 secret_key,
                 secret_version,
-                master_key_id,
+                client_key_id,
                 encrypted_data_key,
                 created_at,
             ),
@@ -60,18 +59,18 @@ impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {
         conn: &rusqlite::Connection,
         secret_key: &str,
         secret_version: i32,
-    ) -> Result<Vec<SecretMasterKeyAssociation>> {
+    ) -> Result<Vec<SecretClientKeyAssociation>> {
         let mut stmt = conn.prepare(
-            "SELECT secret_key, secret_version, master_key_id, encrypted_data_key, created_at 
-             FROM secret_master_keys 
+            "SELECT secret_key, secret_version, client_key_id, encrypted_data_key, created_at 
+             FROM secret_client_keys 
              WHERE secret_key = ?1 AND secret_version = ?2",
         )?;
 
         let association_iter = stmt.query_map((secret_key, secret_version), |row| {
-            Ok(SecretMasterKeyAssociation {
+            Ok(SecretClientKeyAssociation {
                 secret_key: row.get(0)?,
                 secret_version: row.get(1)?,
-                master_key_id: row.get(2)?,
+                client_key_id: row.get(2)?,
                 encrypted_data_key: row.get(3)?,
                 created_at: row.get(4)?,
             })
@@ -92,20 +91,20 @@ impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {
         conn: &rusqlite::Connection,
         secret_key: &str,
         secret_version: i32,
-        master_key_id: &Uuid,
-    ) -> Result<Option<SecretMasterKeyAssociation>> {
+        client_key_id: &Uuid,
+    ) -> Result<Option<SecretClientKeyAssociation>> {
         let mut stmt = conn.prepare(
-            "SELECT secret_key, secret_version, master_key_id, encrypted_data_key, created_at 
-             FROM secret_master_keys 
-             WHERE secret_key = ?1 AND secret_version = ?2 AND master_key_id = ?3",
+            "SELECT secret_key, secret_version, client_key_id, encrypted_data_key, created_at 
+             FROM secret_client_keys 
+             WHERE secret_key = ?1 AND secret_version = ?2 AND client_key_id = ?3",
         )?;
 
         let association = stmt
-            .query_row((secret_key, secret_version, master_key_id), |row| {
-                Ok(SecretMasterKeyAssociation {
+            .query_row((secret_key, secret_version, client_key_id), |row| {
+                Ok(SecretClientKeyAssociation {
                     secret_key: row.get(0)?,
                     secret_version: row.get(1)?,
-                    master_key_id: row.get(2)?,
+                    client_key_id: row.get(2)?,
                     encrypted_data_key: row.get(3)?,
                     created_at: row.get(4)?,
                 })
@@ -113,5 +112,25 @@ impl SecretMasterKeyRepo for SqliteSecretMasterKeyRepo {
             .optional()?;
 
         Ok(association)
+    }
+
+    fn remove_association(
+        &self,
+        conn: &rusqlite::Connection,
+        secret_key: &str,
+        secret_version: i32,
+        client_key_id: &Uuid,
+    ) -> Result<()> {
+        let changed = conn.execute(
+            "DELETE FROM secret_client_keys 
+             WHERE secret_key = ?1 AND secret_version = ?2 AND client_key_id = ?3",
+            (secret_key, secret_version, client_key_id),
+        )?;
+
+        if changed == 0 {
+            return Err(SealboxError::ClientKeyNotFound(*client_key_id));
+        }
+
+        Ok(())
     }
 }

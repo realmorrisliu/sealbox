@@ -85,15 +85,18 @@ export function SecretCards({
               </div>
             </div>
 
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 text-red-600"
-              onClick={() => onDeleteSecret(secret)}
-              disabled={isDeleting}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-red-600"
+                onClick={() => onDeleteSecret(secret)}
+                disabled={isDeleting}
+                title={t("secrets.confirmDelete", { name: secret.key })}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </Card>
       ))}

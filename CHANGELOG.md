@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Proper HTTP status codes and JSON responses
 - **Complete English Internationalization** - Full language standardization
   - All UI components, error messages, and user-facing text in English
-  - All code comments and documentation in English  
+  - All code comments and documentation in English
   - English locale (enUS) for date formatting throughout the application
   - Prepared foundation for future multi-language i18n support
 - **New API Endpoint**: `GET /v1/secrets` - List all secrets with metadata
@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - End-to-end encryption with RSA + AES-GCM
 - SQLite-based storage with secret versioning
 - REST API for secret management
-- Master key management and rotation
+- Client key management and rotation
 - CLI tool for key generation and registration
 - Static token authentication
 - TTL support for secrets
@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Features
 - Envelope encryption architecture
 - Multiple secret versions
-- Master key rotation
+- Client key rotation
 - Simple REST API
 - Single binary deployment
 - Embedded SQLite storage

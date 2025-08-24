@@ -141,8 +141,8 @@ export function CardListSkeleton({ count = 3 }: { count?: number }) {
   );
 }
 
-// Master key list skeleton
-export function MasterKeyListSkeleton() {
+// Client key list skeleton
+export function ClientKeyListSkeleton() {
   return (
     <div className="space-y-6">
       {/* Page title skeleton */}

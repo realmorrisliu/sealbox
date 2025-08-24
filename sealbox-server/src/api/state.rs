@@ -5,8 +5,8 @@ use crate::{
     config::SealboxConfig,
     error::Result,
     repo::{
-        HealthRepo, MasterKeyRepo, SecretRepo, SqliteHealthRepo, SqliteMasterKeyRepo,
-        SqliteSecretRepo, create_db_connection,
+        ClientKeyRepo, HealthRepo, SecretRepo, SecretClientKeyRepo, SqliteClientKeyRepo, SqliteHealthRepo,
+        SqliteSecretRepo, SqliteSecretClientKeyRepo, create_db_connection,
     },
 };
 
@@ -16,7 +16,8 @@ pub(crate) struct AppState {
     pub(crate) conn_pool: Arc<Mutex<rusqlite::Connection>>,
     pub(crate) health_repo: Arc<dyn HealthRepo>,
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
-    pub(crate) master_key_repo: Arc<dyn MasterKeyRepo>,
+    pub(crate) client_key_repo: Arc<dyn ClientKeyRepo>,
+    pub(crate) secret_client_key_repo: Arc<dyn SecretClientKeyRepo>,
 }
 
 impl AppState {
@@ -24,14 +25,16 @@ impl AppState {
         let conn = create_db_connection(&config.store_path)?;
 
         SqliteSecretRepo::init_table(&conn)?;
-        SqliteMasterKeyRepo::init_table(&conn)?;
+        SqliteClientKeyRepo::init_table(&conn)?;
+        SqliteSecretClientKeyRepo::init_table(&conn)?;
 
         let state = Self {
             config: Arc::new(config.clone()),
             conn_pool: Arc::new(Mutex::new(conn)),
             health_repo: Arc::new(SqliteHealthRepo {}),
             secret_repo: Arc::new(SqliteSecretRepo {}),
-            master_key_repo: Arc::new(SqliteMasterKeyRepo {}),
+            client_key_repo: Arc::new(SqliteClientKeyRepo {}),
+            secret_client_key_repo: Arc::new(SqliteSecretClientKeyRepo {}),
         };
 
         // Perform startup cleanup of expired secrets

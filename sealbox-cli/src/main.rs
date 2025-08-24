@@ -126,14 +126,12 @@ enum KeyCommands {
     },
     /// Register public key to server
     Register,
-    /// List master keys on server
-    List,
-    /// Rotate master key
+    /// Rotate client key
     Rotate {
-        /// New master key ID
+        /// New client key ID
         #[arg(long)]
         new_key_id: String,
-        /// Old master key ID
+        /// Old client key ID
         #[arg(long)]
         old_key_id: String,
     },
@@ -161,16 +159,6 @@ enum SecretCommands {
         #[arg(long)]
         version: Option<i32>,
     },
-    /// Delete secret
-    Delete {
-        /// Secret key name
-        key: String,
-        /// Version number
-        #[arg(long)]
-        version: i32,
-    },
-    /// List all secret keys (requires server support)
-    List,
     /// View secret version history
     History {
         /// Secret key name
@@ -184,16 +172,20 @@ enum SecretCommands {
         #[arg(long, default_value = "json")]
         format: String,
     },
-    /// Export secrets to file
+    /// Export secrets to file or stdout in various formats
     Export {
-        /// Output file path
+        /// Output file path (use "-" for stdout)
+        #[arg(default_value = "-")]
         file: String,
-        /// Key pattern matching
+        /// Key pattern matching (supports glob patterns)
         #[arg(long)]
         keys: Option<String>,
-        /// Output format
-        #[arg(long, default_value = "json")]
+        /// Output format (json, yaml, env, shell)
+        #[arg(long, default_value = "env")]
         format: String,
+        /// Prefix for environment variable names
+        #[arg(long)]
+        prefix: Option<String>,
     },
 }
 

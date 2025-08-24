@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createApiClient, queryKeys } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import type { CreateSecretRequest, CreateMasterKeyRequest } from "@/lib/types";
+import type { CreateSecretRequest, CreateClientKeyRequest } from "@/lib/types";
 
 // Hook for creating API client
 export function useApiClient() {
@@ -67,41 +67,42 @@ export function useDeleteSecret() {
   });
 }
 
-// Master key related hooks
-export function useMasterKeys() {
+
+// Client key related hooks
+export function useClientKeys() {
   const apiClient = useApiClient();
 
   return useQuery({
-    queryKey: queryKeys.masterKeys,
-    queryFn: () => apiClient?.listMasterKeys(),
+    queryKey: queryKeys.clientKeys,
+    queryFn: () => apiClient?.listClientKeys(),
     enabled: !!apiClient,
   });
 }
 
-export function useCreateMasterKey() {
+export function useCreateClientKey() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateMasterKeyRequest) =>
-      apiClient!.createMasterKey(data),
+    mutationFn: (data: CreateClientKeyRequest) =>
+      apiClient!.createClientKey(data),
     onSuccess: () => {
-      // Refresh master keys list
-      queryClient.invalidateQueries({ queryKey: queryKeys.masterKeys });
+      // Refresh client keys list
+      queryClient.invalidateQueries({ queryKey: queryKeys.clientKeys });
     },
   });
 }
 
-export function useRotateMasterKey() {
+export function useRotateClientKey() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateMasterKeyRequest) =>
-      apiClient!.rotateMasterKey(data),
+    mutationFn: (data: CreateClientKeyRequest) =>
+      apiClient!.rotateClientKey(data),
     onSuccess: () => {
-      // Refresh master keys and all secrets (affects encryption)
-      queryClient.invalidateQueries({ queryKey: queryKeys.masterKeys });
+      // Refresh client keys and all secrets (affects encryption)
+      queryClient.invalidateQueries({ queryKey: queryKeys.clientKeys });
       queryClient.invalidateQueries({ queryKey: queryKeys.secrets });
     },
   });

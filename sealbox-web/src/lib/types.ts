@@ -14,14 +14,14 @@ export interface Secret {
   version: number;
   encrypted_data: number[];
   encrypted_data_key: number[];
-  master_key_id: string;
+  client_key_id: string;
   created_at: number;
   updated_at: number;
   expires_at?: number;
   metadata?: string;
 }
 
-export interface MasterKey {
+export interface ClientKey {
   id: string;
   public_key: string;
   created_at: number;
@@ -40,18 +40,19 @@ export interface CreateSecretRequest {
   ttl?: number;
 }
 
-export interface CreateMasterKeyRequest {
+export interface CreateClientKeyRequest {
   public_key: string;
 }
 
-export interface MasterKeysListResponse {
-  master_keys: MasterKey[];
+export interface ClientKeysListResponse {
+  client_keys: ClientKey[];
 }
 
 export interface CleanupExpiredResponse {
   deleted_count: number;
   cleaned_at: number;
 }
+
 
 // Error response types
 export interface ApiError {
