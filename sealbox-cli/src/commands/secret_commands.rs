@@ -26,11 +26,11 @@ fn format_as_env_vars(
         } else {
             key.to_uppercase()
         };
-        
+
         if with_export {
-            lines.push(format!("export {}=\"{}\"", env_key, value));
+            lines.push(format!("export {env_key}=\"{value}\""));
         } else {
-            lines.push(format!("{}={}", env_key, value));
+            lines.push(format!("{env_key}={value}"));
         }
     }
     lines.join("\n")
@@ -48,9 +48,12 @@ pub async fn handle_command(command: SecretCommands, config: &Config) -> Result<
         SecretCommands::Import { file, format } => {
             import_secrets(config, &output, file, format).await
         }
-        SecretCommands::Export { file, keys, format, prefix } => {
-            export_secrets(config, &output, file, keys, format, prefix).await
-        }
+        SecretCommands::Export {
+            file,
+            keys,
+            format,
+            prefix,
+        } => export_secrets(config, &output, file, keys, format, prefix).await,
     }
 }
 
@@ -119,7 +122,6 @@ async fn set_secret(
     Ok(())
 }
 
-
 async fn get_secret(
     config: &Config,
     output: &OutputManager,
@@ -179,7 +181,6 @@ async fn get_secret(
     output.print_secret(&key, &decrypted_value, secret_version, secret_ttl)?;
     Ok(())
 }
-
 
 async fn get_secret_history(_config: &Config, output: &OutputManager, key: String) -> Result<()> {
     // Note: Current server API doesn't directly support version history listing, this is a reserved feature
@@ -371,15 +372,15 @@ async fn export_secrets(
 
     for secret in filtered_secrets {
         if let Some(key) = secret.get("key").and_then(|v| v.as_str()) {
-            output.print_info(&format!("Fetching secret '{}'...", key));
-            
+            output.print_info(&format!("Fetching secret '{key}'..."));
+
             match get_secret_value(config, key).await {
                 Ok(decrypted_value) => {
                     decrypted_secrets.insert(key.to_string(), decrypted_value);
                     success_count += 1;
                 }
                 Err(e) => {
-                    output.print_warning(&format!("Failed to fetch secret '{}': {}", key, e));
+                    output.print_warning(&format!("Failed to fetch secret '{key}': {e}"));
                     error_count += 1;
                 }
             }
@@ -408,15 +409,15 @@ async fn export_secrets(
 
     // Output to file or stdout
     if file_path == "-" {
-        println!("{}", formatted_output);
+        println!("{formatted_output}");
     } else {
         fs::write(&file_path, formatted_output)
-            .with_context(|| format!("Failed to write to file: {}", file_path))?;
-        output.print_success(&format!("Exported {} secrets to {}", success_count, file_path));
+            .with_context(|| format!("Failed to write to file: {file_path}"))?;
+        output.print_success(&format!("Exported {success_count} secrets to {file_path}"));
     }
 
     if error_count > 0 {
-        output.print_warning(&format!("{} secrets failed to export", error_count));
+        output.print_warning(&format!("{error_count} secrets failed to export"));
     }
 
     Ok(())
@@ -453,11 +454,12 @@ fn decrypt_secret_response(config: &Config, secret_data: &Value) -> Result<Strin
         .to_str()
         .context("Private key path contains invalid characters")?;
 
-    let private_key_pem = fs::read_to_string(private_key_path)
-        .context("Failed to read private key file")?;
+    let private_key_pem =
+        fs::read_to_string(private_key_path).context("Failed to read private key file")?;
 
-    let private_key = sealbox_server::crypto::client_key::PrivateClientKey::from_str(&private_key_pem)
-        .context("Failed to parse private key")?;
+    let private_key =
+        sealbox_server::crypto::client_key::PrivateClientKey::from_str(&private_key_pem)
+            .context("Failed to parse private key")?;
 
     // Decrypt the data key using RSA private key
     let decrypted_data_key = private_key
@@ -502,39 +504,37 @@ fn simple_glob_match(pattern: &str, text: &str) -> bool {
     if !pattern.contains('*') {
         return pattern == text;
     }
-    
+
     if pattern == "*" {
         return true;
     }
-    
+
     if pattern.starts_with('*') && pattern.ends_with('*') {
         // Pattern like "*middle*" - check if text contains the middle part
-        let middle = &pattern[1..pattern.len()-1];
+        let middle = &pattern[1..pattern.len() - 1];
         return middle.is_empty() || text.contains(middle);
     }
-    
-    if pattern.starts_with('*') {
+
+    if let Some(suffix) = pattern.strip_prefix('*') {
         // Pattern like "*suffix" - check if text ends with suffix
-        let suffix = &pattern[1..];
         return text.ends_with(suffix);
     }
-    
-    if pattern.ends_with('*') {
+
+    if let Some(prefix) = pattern.strip_suffix('*') {
         // Pattern like "prefix*" - check if text starts with prefix
-        let prefix = &pattern[..pattern.len()-1];
         return text.starts_with(prefix);
     }
-    
+
     // For more complex patterns, fall back to simple substring search
     // This handles patterns like "a*b*c" by checking if all parts exist in order
     let parts: Vec<&str> = pattern.split('*').collect();
     let mut pos = 0;
-    
+
     for (i, part) in parts.iter().enumerate() {
         if part.is_empty() {
             continue;
         }
-        
+
         if i == 0 {
             // First part must be at the beginning
             if !text[pos..].starts_with(part) {
@@ -547,10 +547,9 @@ fn simple_glob_match(pattern: &str, text: &str) -> bool {
             return false;
         }
     }
-    
+
     true
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -608,11 +607,14 @@ mod tests {
     #[test]
     fn test_format_as_env_vars_without_prefix() {
         let mut secrets = std::collections::HashMap::new();
-        secrets.insert("database_url".to_string(), "postgres://localhost".to_string());
+        secrets.insert(
+            "database_url".to_string(),
+            "postgres://localhost".to_string(),
+        );
         secrets.insert("api_key".to_string(), "secret123".to_string());
 
         let result = format_as_env_vars(&secrets, &None, false);
-        
+
         assert!(result.contains("DATABASE_URL=postgres://localhost"));
         assert!(result.contains("API_KEY=secret123"));
         assert!(!result.contains("export"));
@@ -624,7 +626,7 @@ mod tests {
         secrets.insert("db_host".to_string(), "localhost".to_string());
 
         let result = format_as_env_vars(&secrets, &Some("MY_APP".to_string()), false);
-        
+
         assert_eq!(result, "MY_APP_DB_HOST=localhost");
     }
 
@@ -634,7 +636,7 @@ mod tests {
         secrets.insert("port".to_string(), "8080".to_string());
 
         let result = format_as_env_vars(&secrets, &None, true);
-        
+
         assert_eq!(result, "export PORT=\"8080\"");
     }
 
@@ -678,5 +680,4 @@ mod tests {
         // Actual network request testing requires mock server
         // Test placeholder - functionality verified by integration tests
     }
-
 }

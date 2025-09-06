@@ -165,7 +165,6 @@ async fn register_key(config: &Config, output: &OutputManager) -> Result<()> {
     Ok(())
 }
 
-
 async fn rotate_keys(
     config: &Config,
     output: &OutputManager,

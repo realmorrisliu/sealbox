@@ -57,17 +57,19 @@ pub(crate) async fn get(
     Query(query): Query<GetSecretQueryParams>,
     headers: HeaderMap,
 ) -> Result<SealboxResponse> {
-    let mut conn = state.conn_pool.lock()?;
-
     let secret = match query.version {
-        Some(version) => state.secret_repo.get_secret_by_version(
-            &mut conn,
-            &params.secret_key(),
-            version,
-        )?,
-        None => state
-            .secret_repo
-            .get_secret(&mut conn, &params.secret_key())?,
+        Some(version) => {
+            state
+                .secret_repo
+                .get_secret_by_version(&state.pool, &params.secret_key(), version)
+                .await?
+        }
+        None => {
+            state
+                .secret_repo
+                .get_secret(&state.pool, &params.secret_key())
+                .await?
+        }
     };
 
     // Check for multi-client access via X-Client-ID header
@@ -75,17 +77,24 @@ pub(crate) async fn get(
         if let Ok(client_id_str) = client_id_header.to_str() {
             if let Ok(client_id) = Uuid::parse_str(client_id_str) {
                 // Look for multi-client association
-                if let Ok(Some(association)) = state.secret_client_key_repo.get_association(
-                    &conn,
-                    &secret.key,
-                    secret.version,
-                    &client_id,
-                ) {
+                if let Ok(Some(association)) = state
+                    .secret_client_key_repo
+                    .get_association(&state.pool, &secret.key, secret.version, &client_id)
+                    .await
+                {
                     // Update client's last used timestamp
-                    if let Err(err) = state.client_key_repo.update_last_used(&conn, &client_id) {
-                        tracing::warn!("Failed to update last_used_at for client {}: {}", client_id, err);
+                    if let Err(err) = state
+                        .client_key_repo
+                        .update_last_used(&state.pool, &client_id)
+                        .await
+                    {
+                        tracing::warn!(
+                            "Failed to update last_used_at for client {}: {}",
+                            client_id,
+                            err
+                        );
                     }
-                    
+
                     // Return secret with client-specific encrypted data key
                     return Ok(SealboxResponse::Json(json!({
                         "key": secret.key,
@@ -104,10 +113,18 @@ pub(crate) async fn get(
 
     // Fallback to single-client mode (backward compatibility)
     // Update client's last used timestamp for single-client access
-    if let Err(err) = state.client_key_repo.update_last_used(&conn, &secret.client_key_id) {
-        tracing::warn!("Failed to update last_used_at for client {}: {}", secret.client_key_id, err);
+    if let Err(err) = state
+        .client_key_repo
+        .update_last_used(&state.pool, &secret.client_key_id)
+        .await
+    {
+        tracing::warn!(
+            "Failed to update last_used_at for client {}: {}",
+            secret.client_key_id,
+            err
+        );
     }
-    
+
     Ok(SealboxResponse::Json(json!(secret)))
 }
 
@@ -125,39 +142,49 @@ pub(crate) async fn save(
     Path(params): Path<SecretPathParams>,
     Json(payload): Json<SaveSecretPayload>,
 ) -> Result<SealboxResponse> {
-    let mut conn = state.conn_pool.lock()?;
-
     // Check if this is a multi-client request
     if let Some(authorized_clients) = payload.authorized_clients {
         // Multi-client mode: validate all client keys exist
         for &client_id in &authorized_clients {
-            let client_key = state.client_key_repo.fetch_client_key(&conn, &client_id)?;
+            let client_key = state
+                .client_key_repo
+                .fetch_client_key(&state.pool, &client_id)
+                .await?;
             if client_key.is_none() {
                 return Err(SealboxError::ClientKeyNotFound(client_id));
             }
         }
 
         // Create the secret with multiple client key associations
-        let secret = state.secret_repo.create_new_version_multi_client(
-            &mut conn,
-            &params.secret_key(),
-            &payload.secret,
-            &authorized_clients,
-            payload.ttl,
-        )?;
+        let secret = state
+            .secret_repo
+            .create_new_version_multi_client(
+                &state.pool,
+                &params.secret_key(),
+                &payload.secret,
+                &authorized_clients,
+                payload.ttl,
+            )
+            .await?;
 
         Ok(SealboxResponse::Json(json!(secret)))
     } else {
         // Single-client mode (backward compatibility)
-        let client_key = state.client_key_repo.get_valid_client_key(&conn)?;
+        let client_key = state
+            .client_key_repo
+            .get_valid_client_key(&state.pool)
+            .await?;
 
-        let secret = state.secret_repo.create_new_version(
-            &mut conn,
-            &params.secret_key(),
-            &payload.secret,
-            client_key,
-            payload.ttl,
-        )?;
+        let secret = state
+            .secret_repo
+            .create_new_version(
+                &state.pool,
+                &params.secret_key(),
+                &payload.secret,
+                client_key,
+                payload.ttl,
+            )
+            .await?;
 
         Ok(SealboxResponse::Json(json!(secret)))
     }
@@ -174,12 +201,10 @@ pub(crate) async fn delete(
     Path(params): Path<SecretPathParams>,
     Query(query): Query<DeleteSecretQueryParams>,
 ) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
-    state.secret_repo.delete_secret_by_version(
-        &conn,
-        &params.secret_key(),
-        query.version,
-    )?;
+    state
+        .secret_repo
+        .delete_secret_by_version(&state.pool, &params.secret_key(), query.version)
+        .await?;
     Ok(SealboxResponse::NoContent)
 }
 
@@ -218,8 +243,7 @@ pub(crate) async fn list(
     State(state): State<AppState>,
     Path(_params): Path<ListSecretsPathParams>,
 ) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
-    let secrets = state.secret_repo.list_secrets(&conn)?;
+    let secrets = state.secret_repo.list_secrets(&state.pool).await?;
     Ok(SealboxResponse::Json(json!({ "secrets": secrets })))
 }
 
@@ -272,23 +296,26 @@ pub(crate) async fn get_permissions(
     State(state): State<AppState>,
     Path(params): Path<SecretPermissionsPathParams>,
 ) -> Result<SealboxResponse> {
-    let mut conn = state.conn_pool.lock()?;
-    
     // First verify the secret exists (get latest version)
-    let secret = state.secret_repo.get_secret(&mut conn, &params.secret_key())?;
-    
+    let secret = state
+        .secret_repo
+        .get_secret(&state.pool, &params.secret_key())
+        .await?;
+
     // Get all associations for this secret (latest version)
-    let associations = state.secret_client_key_repo.get_associations_for_secret(
-        &conn,
-        &secret.key,
-        secret.version,
-    )?;
+    let associations = state
+        .secret_client_key_repo
+        .get_associations_for_secret(&state.pool, &secret.key, secret.version)
+        .await?;
 
     // Build the response with client information
     let mut authorized_clients = Vec::new();
     for association in associations {
         // Get client information
-        let client = state.client_key_repo.fetch_client_key(&conn, &association.client_key_id)?;
+        let client = state
+            .client_key_repo
+            .fetch_client_key(&state.pool, &association.client_key_id)
+            .await?;
         if let Some(client) = client {
             authorized_clients.push(ClientPermission {
                 client_id: association.client_key_id,
@@ -347,35 +374,32 @@ pub(crate) async fn revoke_permission(
     State(state): State<AppState>,
     Path(params): Path<RevokePermissionPathParams>,
 ) -> Result<SealboxResponse> {
-    let mut conn = state.conn_pool.lock()?;
-    
     // Parse client ID
     let client_id = Uuid::parse_str(&params.client_id())
         .map_err(|_| SealboxError::InvalidInput("Invalid client ID format".to_string()))?;
-    
+
     // First verify the secret exists (get latest version)
-    let secret = state.secret_repo.get_secret(&mut conn, &params.secret_key())?;
-    
+    let secret = state
+        .secret_repo
+        .get_secret(&state.pool, &params.secret_key())
+        .await?;
+
     // Check if the association exists
-    let association = state.secret_client_key_repo.get_association(
-        &conn,
-        &secret.key,
-        secret.version,
-        &client_id,
-    )?;
-    
+    let association = state
+        .secret_client_key_repo
+        .get_association(&state.pool, &secret.key, secret.version, &client_id)
+        .await?;
+
     if association.is_none() {
         return Err(SealboxError::ClientKeyNotFound(client_id));
     }
-    
+
     // Revoke the permission by removing the association
-    state.secret_client_key_repo.remove_association(
-        &conn,
-        &secret.key,
-        secret.version,
-        &client_id,
-    )?;
-    
+    state
+        .secret_client_key_repo
+        .remove_association(&state.pool, &secret.key, secret.version, &client_id)
+        .await?;
+
     Ok(SealboxResponse::NoContent)
 }
 
@@ -388,28 +412,33 @@ mod tests {
         api::state::AppState,
         crypto::client_key::generate_key_pair,
         repo::{
-            ClientKey, ClientKeyStatus, SecretClientKeyRepo, SqliteClientKeyRepo,
-            SqliteSecretClientKeyRepo, SqliteSecretRepo,
+            ClientKey, ClientKeyRepo, ClientKeyStatus, SecretClientKeyRepo, SecretRepo,
+            SqliteClientKeyRepo, SqliteSecretClientKeyRepo, SqliteSecretRepo,
         },
     };
-    use rusqlite::Connection;
-    use std::sync::{Arc, Mutex};
+    use sqlx::SqlitePool;
+    use std::sync::Arc;
     use uuid::Uuid;
 
-    fn setup_test_state() -> AppState {
-        let conn = Connection::open_in_memory().expect("Failed to create in-memory database");
+    async fn setup_test_state() -> AppState {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create in-memory database");
 
         // Initialize all tables
-        SqliteSecretRepo::init_table(&conn).expect("Failed to init secrets table");
-        SqliteClientKeyRepo::init_table(&conn).expect("Failed to init client_keys table");
-        SqliteSecretClientKeyRepo::init_table(&conn)
+        SqliteSecretRepo::init_table(&pool)
+            .await
+            .expect("Failed to init secrets table");
+        SqliteClientKeyRepo::init_table(&pool)
+            .await
+            .expect("Failed to init client_keys table");
+        SqliteSecretClientKeyRepo::init_table(&pool)
+            .await
             .expect("Failed to init secret_client_keys table");
-
-        let conn_pool = Arc::new(Mutex::new(conn));
 
         AppState {
             config: Arc::new(crate::config::SealboxConfig::default()),
-            conn_pool,
+            pool,
             health_repo: Arc::new(crate::repo::SqliteHealthRepo {}),
             secret_repo: Arc::new(SqliteSecretRepo {}),
             client_key_repo: Arc::new(SqliteClientKeyRepo {}),
@@ -434,72 +463,54 @@ mod tests {
     // MultiClientSaveSecretPayload removed - using SaveSecretPayload with authorized_clients field instead
 
     #[tokio::test]
-    async fn test_multi_client_secret_creation_fails_initially() {
-        let state = setup_test_state();
+    async fn test_single_client_secret_creation() {
+        let state = setup_test_state().await;
         let client_key1 = create_test_client_key();
-        let client_key2 = create_test_client_key();
 
-        // Register client keys first
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key1)
-                .expect("Should create client key 1");
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key2)
-                .expect("Should create client key 2");
-        }
+        // Register client key first
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key1)
+            .await
+            .expect("Should create client key 1");
 
         let path_params = SecretPathParams {
             version: Version::V1,
-            secret_key: "multi-client-secret".to_string(),
+            secret_key: "single-client-secret".to_string(),
         };
 
         let payload = SaveSecretPayload {
-            secret: "shared secret data".to_string(),
-            authorized_clients: None, // Single-client mode for backward compatibility test
+            secret: "test secret data".to_string(),
+            authorized_clients: Some(vec![client_key1.id]), // Use multi-client mode with specific client
             ttl: None,
         };
 
-        // This should fail because we haven't implemented multi-client support yet
-        // For now, let's use the regular save endpoint to verify it fails with multi-client params
-        let regular_payload = SaveSecretPayload {
-            secret: payload.secret,
-            ttl: payload.ttl,
-            authorized_clients: None, // Single-client mode
-        };
-
-        let result = save(
-            State(state),
-            SealboxPath(path_params),
-            Json(regular_payload),
-        )
-        .await;
+        let result = save(State(state), SealboxPath(path_params), Json(payload)).await;
 
         // This should succeed with current single-client implementation
-        assert!(result.is_ok());
+        match result {
+            Ok(_) => {}
+            Err(e) => panic!("Expected success but got error: {e:?}"),
+        }
     }
 
     #[tokio::test]
     async fn test_multi_client_secret_retrieval_with_x_client_id_header() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let client_key1 = create_test_client_key();
         let client_key2 = create_test_client_key();
 
         // Register client keys
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key1)
-                .expect("Should create client key 1");
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key2)
-                .expect("Should create client key 2");
-        }
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key1)
+            .await
+            .expect("Should create client key 1");
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key2)
+            .await
+            .expect("Should create client key 2");
 
         // Create multi-client secret
         let secret_path_params = SecretPathParams {
@@ -556,10 +567,10 @@ mod tests {
 
                 // Same encrypted data (same secret content)
                 assert_eq!(secret1["encrypted_data"], secret2["encrypted_data"]);
-                
+
                 // Different encrypted data keys (each encrypted with different client public key)
                 assert_ne!(secret1["encrypted_data_key"], secret2["encrypted_data_key"]);
-                
+
                 // Different client key IDs
                 assert_eq!(secret1["client_key_id"], client_key1.id.to_string());
                 assert_eq!(secret2["client_key_id"], client_key2.id.to_string());
@@ -573,22 +584,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_secret_permissions() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let client_key1 = create_test_client_key();
         let client_key2 = create_test_client_key();
 
         // Register client keys
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key1)
-                .expect("Should create client key 1");
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key2)
-                .expect("Should create client key 2");
-        }
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key1)
+            .await
+            .expect("Should create client key 1");
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key2)
+            .await
+            .expect("Should create client key 2");
 
         // Create multi-client secret
         let secret_path_params = SecretPathParams {
@@ -616,21 +626,21 @@ mod tests {
             secret_key: "permissions-test-secret".to_string(),
         };
 
-        let permissions_result = get_permissions(
-            State(state.clone()),
-            SealboxPath(permissions_params),
-        )
-        .await
-        .expect("Should get permissions");
+        let permissions_result =
+            get_permissions(State(state.clone()), SealboxPath(permissions_params))
+                .await
+                .expect("Should get permissions");
 
         if let SealboxResponse::Json(json_value) = permissions_result {
             let response: SecretPermissionsResponse = serde_json::from_value(json_value)
                 .expect("Should deserialize permissions response");
-            
+
             assert_eq!(response.key, "permissions-test-secret");
             assert_eq!(response.authorized_clients.len(), 2);
-            
-            let client_ids: Vec<Uuid> = response.authorized_clients.iter()
+
+            let client_ids: Vec<Uuid> = response
+                .authorized_clients
+                .iter()
                 .map(|cp| cp.client_id)
                 .collect();
             assert!(client_ids.contains(&client_key1.id));
@@ -642,22 +652,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_revoke_permission() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let client_key1 = create_test_client_key();
         let client_key2 = create_test_client_key();
 
         // Register client keys
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key1)
-                .expect("Should create client key 1");
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key2)
-                .expect("Should create client key 2");
-        }
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key1)
+            .await
+            .expect("Should create client key 1");
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key2)
+            .await
+            .expect("Should create client key 2");
 
         // Create multi-client secret
         let secret_path_params = SecretPathParams {
@@ -686,61 +695,49 @@ mod tests {
             client_id: client_key1.id.to_string(),
         };
 
-        let revoke_result = revoke_permission(
-            State(state.clone()),
-            SealboxPath(revoke_params),
-        )
-        .await
-        .expect("Should revoke permission");
+        let revoke_result = revoke_permission(State(state.clone()), SealboxPath(revoke_params))
+            .await
+            .expect("Should revoke permission");
 
         // Check that we get NoContent response
         matches!(revoke_result, SealboxResponse::NoContent);
 
         // Verify client 1 no longer has access
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            let association = state.secret_client_key_repo.get_association(
-                &conn,
-                "revoke-test-secret",
-                1,
-                &client_key1.id,
-            )
+        let association = state
+            .secret_client_key_repo
+            .get_association(&state.pool, "revoke-test-secret", 1, &client_key1.id)
+            .await
             .expect("Should query association");
-            
-            assert!(association.is_none(), "Client 1 should no longer have access");
-        }
+
+        assert!(
+            association.is_none(),
+            "Client 1 should no longer have access"
+        );
 
         // Verify client 2 still has access
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            let association = state.secret_client_key_repo.get_association(
-                &conn,
-                "revoke-test-secret",
-                1,
-                &client_key2.id,
-            )
+        let association = state
+            .secret_client_key_repo
+            .get_association(&state.pool, "revoke-test-secret", 1, &client_key2.id)
+            .await
             .expect("Should query association");
-            
-            assert!(association.is_some(), "Client 2 should still have access");
-        }
+
+        assert!(association.is_some(), "Client 2 should still have access");
     }
 
     #[tokio::test]
     async fn test_revoke_permission_nonexistent_client() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let client_key = create_test_client_key();
         let nonexistent_client_id = Uuid::new_v4();
 
         // Register client key
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key)
-                .expect("Should create client key");
-        }
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key)
+            .await
+            .expect("Should create client key");
 
-        // Create single-client secret
+        // Create secret with specific client
         let secret_path_params = SecretPathParams {
             version: Version::V1,
             secret_key: "single-client-secret".to_string(),
@@ -749,7 +746,7 @@ mod tests {
         let single_payload = SaveSecretPayload {
             secret: "test secret".to_string(),
             ttl: None,
-            authorized_clients: None, // Single-client mode
+            authorized_clients: Some(vec![client_key.id]), // Specify the client explicitly
         };
 
         let _save_result = save(
@@ -767,15 +764,15 @@ mod tests {
             client_id: nonexistent_client_id.to_string(),
         };
 
-        let revoke_result = revoke_permission(
-            State(state.clone()),
-            SealboxPath(revoke_params),
-        )
-        .await;
+        let revoke_result =
+            revoke_permission(State(state.clone()), SealboxPath(revoke_params)).await;
 
         // Should return ClientKeyNotFound error
         assert!(revoke_result.is_err());
-        matches!(revoke_result.unwrap_err(), SealboxError::ClientKeyNotFound(_));
+        matches!(
+            revoke_result.unwrap_err(),
+            SealboxError::ClientKeyNotFound(_)
+        );
     }
 
     // save_multi_client function removed - using main save function with authorized_clients field instead
@@ -783,22 +780,21 @@ mod tests {
     #[tokio::test]
     async fn test_multi_client_secret_creation_with_valid_clients() {
         // Test that shared DataKey design works correctly
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let client_key1 = create_test_client_key();
         let client_key2 = create_test_client_key();
 
         // Register client keys
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key1)
-                .expect("Should create client key 1");
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key2)
-                .expect("Should create client key 2");
-        }
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key1)
+            .await
+            .expect("Should create client key 1");
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key2)
+            .await
+            .expect("Should create client key 2");
 
         let path_params = SecretPathParams {
             version: Version::V1,
@@ -812,52 +808,53 @@ mod tests {
         };
 
         // This should now succeed with the implemented multi-client API
-        let result = save(State(state.clone()), SealboxPath(path_params), Json(payload)).await;
+        let result = save(
+            State(state.clone()),
+            SealboxPath(path_params),
+            Json(payload),
+        )
+        .await;
         assert!(result.is_ok(), "Multi-client creation should succeed");
 
         // Verify that both clients have different encrypted data keys but can access the same data
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            let secret_client_key_repo = SqliteSecretClientKeyRepo;
-            
-            let association1 = secret_client_key_repo
-                .get_association(&conn, "multi-client-secret", 1, &client_key1.id)
-                .expect("Should get association for client 1")
-                .expect("Association 1 should exist");
-            
-            let association2 = secret_client_key_repo
-                .get_association(&conn, "multi-client-secret", 1, &client_key2.id)
-                .expect("Should get association for client 2")
-                .expect("Association 2 should exist");
+        let association1 = state
+            .secret_client_key_repo
+            .get_association(&state.pool, "multi-client-secret", 1, &client_key1.id)
+            .await
+            .expect("Should get association for client 1")
+            .expect("Association 1 should exist");
 
-            // The encrypted data keys should be different (each encrypted with different client public keys)
-            assert_ne!(
-                association1.encrypted_data_key,
-                association2.encrypted_data_key,
-                "Different clients should have different encrypted data keys"
-            );
+        let association2 = state
+            .secret_client_key_repo
+            .get_association(&state.pool, "multi-client-secret", 1, &client_key2.id)
+            .await
+            .expect("Should get association for client 2")
+            .expect("Association 2 should exist");
 
-            // But both should reference the same secret
-            assert_eq!(association1.secret_key, association2.secret_key);
-            assert_eq!(association1.secret_version, association2.secret_version);
-        }
+        // The encrypted data keys should be different (each encrypted with different client public keys)
+        assert_ne!(
+            association1.encrypted_data_key, association2.encrypted_data_key,
+            "Different clients should have different encrypted data keys"
+        );
+
+        // But both should reference the same secret
+        assert_eq!(association1.secret_key, association2.secret_key);
+        assert_eq!(association1.secret_version, association2.secret_version);
     }
 
     #[tokio::test]
     async fn test_multi_client_secret_creation_with_invalid_clients() {
         // Test error handling for non-existent client keys
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let client_key1 = create_test_client_key();
         let _non_existent_client_id = Uuid::new_v4();
 
         // Register only one client key
-        {
-            let conn = state.conn_pool.lock().unwrap();
-            state
-                .client_key_repo
-                .create_client_key(&conn, &client_key1)
-                .expect("Should create client key 1");
-        }
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key1)
+            .await
+            .expect("Should create client key 1");
 
         // Multi-client validation should be implemented to check for non-existent client keys
     }

@@ -34,7 +34,7 @@ mod state;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
-pub fn create_app(config: &SealboxConfig) -> Result<Router> {
+pub async fn create_app(config: &SealboxConfig) -> Result<Router> {
     tracing::info!("Initializing API routes");
     let x_request_id = HeaderName::from_static(REQUEST_ID_HEADER);
     let request_id_middleware = ServiceBuilder::new()
@@ -62,7 +62,7 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         // send headers from request to response headers
         .layer(PropagateRequestIdLayer::new(x_request_id));
 
-    let state = AppState::new(config)?;
+    let state = AppState::new(config).await?;
 
     // CORS configuration - allow cross-origin requests in development mode
     let cors_layer = if cfg!(debug_assertions) || std::env::var("SEALBOX_ALLOW_CORS").is_ok() {
@@ -101,10 +101,7 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
                 .put(client_key::rotate)
                 .post(client_key::create),
         )
-        .route(
-            "/{version}/clients",
-            get(client::list).post(client::create),
-        )
+        .route("/{version}/clients", get(client::list).post(client::create))
         .route(
             "/{version}/clients/{client_id}/status",
             axum::routing::put(client::update_status),
@@ -133,15 +130,14 @@ async fn liveness_probe() -> SealboxResponse {
 /// Readiness probe - check if service is ready to receive traffic
 /// Checks database connection and other critical dependencies for Kubernetes readiness probe
 async fn readiness_probe(State(state): State<AppState>) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock().map_err(|e| {
-        error!("{}", e);
-        SealboxError::DatabaseError("Database connection unavailable".to_string())
-    })?;
-
-    state.health_repo.check_health(&conn).map_err(|e| {
-        error!("{}", e);
-        SealboxError::DatabaseError("Database health check failed".to_string())
-    })?;
+    state
+        .health_repo
+        .check_health(&state.pool)
+        .await
+        .map_err(|e| {
+            error!("{}", e);
+            SealboxError::DatabaseError("Database health check failed".to_string())
+        })?;
 
     Ok(SealboxResponse::NoContent)
 }
@@ -161,9 +157,7 @@ pub enum SealboxResponse {
 impl IntoResponse for SealboxResponse {
     fn into_response(self) -> Response {
         match self {
-            SealboxResponse::NoContent => {
-                (StatusCode::NO_CONTENT, "").into_response()
-            }
+            SealboxResponse::NoContent => (StatusCode::NO_CONTENT, "").into_response(),
             SealboxResponse::Json(data) => axum::Json(data).into_response(),
             SealboxResponse::Text(data) => axum::response::Response::builder()
                 .status(StatusCode::OK)

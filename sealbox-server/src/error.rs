@@ -18,6 +18,9 @@ pub enum SealboxError {
     #[error("Missing valid client key")]
     MissingValidClientKey,
 
+    #[error("No valid client key found")]
+    NoValidClientKey,
+
     #[error("Client key not found: {0}")]
     ClientKeyNotFound(Uuid),
 
@@ -46,27 +49,52 @@ pub enum SealboxError {
     Unknown,
 }
 
-
 impl IntoResponse for SealboxError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, format!("[SealboxError] {self}")),
-            SealboxError::MissingValidClientKey => {
-                (StatusCode::PRECONDITION_REQUIRED, format!("[SealboxError] {self}"))
+            SealboxError::SecretNotFound(_) => {
+                (StatusCode::NOT_FOUND, format!("[SealboxError] {self}"))
             }
-            SealboxError::ClientKeyNotFound(_) => (StatusCode::NOT_FOUND, format!("[SealboxError] {self}")),
-            SealboxError::ClientKeyMismatch(_, _, _) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}"))
+            SealboxError::MissingValidClientKey => (
+                StatusCode::PRECONDITION_REQUIRED,
+                format!("[SealboxError] {self}"),
+            ),
+            SealboxError::NoValidClientKey => (
+                StatusCode::PRECONDITION_REQUIRED,
+                format!("[SealboxError] {self}"),
+            ),
+            SealboxError::ClientKeyNotFound(_) => {
+                (StatusCode::NOT_FOUND, format!("[SealboxError] {self}"))
             }
-            SealboxError::CryptoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}")),
-            SealboxError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}")),
-            SealboxError::ResponseBuildFailed(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}"))
+            SealboxError::ClientKeyMismatch(_, _, _) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[SealboxError] {self}"),
+            ),
+            SealboxError::CryptoError(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[SealboxError] {self}"),
+            ),
+            SealboxError::DatabaseError(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[SealboxError] {self}"),
+            ),
+            SealboxError::ResponseBuildFailed(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[SealboxError] {self}"),
+            ),
+            SealboxError::Unauthorized => {
+                (StatusCode::UNAUTHORIZED, format!("[SealboxError] {self}"))
             }
-            SealboxError::Unauthorized => (StatusCode::UNAUTHORIZED, format!("[SealboxError] {self}")),
-            SealboxError::InvalidApiVersion => (StatusCode::NOT_FOUND, format!("[SealboxError] {self}")),
-            SealboxError::InvalidInput(_) => (StatusCode::BAD_REQUEST, format!("[SealboxError] {self}")),
-            SealboxError::Unknown => (StatusCode::INTERNAL_SERVER_ERROR, format!("[SealboxError] {self}")),
+            SealboxError::InvalidApiVersion => {
+                (StatusCode::NOT_FOUND, format!("[SealboxError] {self}"))
+            }
+            SealboxError::InvalidInput(_) => {
+                (StatusCode::BAD_REQUEST, format!("[SealboxError] {self}"))
+            }
+            SealboxError::Unknown => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[SealboxError] {self}"),
+            ),
         };
 
         let body = axum::Json(json!({
@@ -89,16 +117,8 @@ impl From<DataKeyCryptoError> for SealboxError {
     }
 }
 
-impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, rusqlite::Connection>>>
-    for SealboxError
-{
-    fn from(err: std::sync::PoisonError<std::sync::MutexGuard<'_, rusqlite::Connection>>) -> Self {
-        SealboxError::DatabaseError(err.to_string())
-    }
-}
-
-impl From<rusqlite::Error> for SealboxError {
-    fn from(err: rusqlite::Error) -> Self {
+impl From<sqlx::Error> for SealboxError {
+    fn from(err: sqlx::Error) -> Self {
         SealboxError::DatabaseError(err.to_string())
     }
 }

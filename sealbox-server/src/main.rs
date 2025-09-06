@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     };
 
     // Build application routes (all routes are managed in api.rs)
-    let app = create_app(&config)?;
+    let app = create_app(&config).await?;
 
     // Listening address from configuration
     let addr = &config.listen_addr;

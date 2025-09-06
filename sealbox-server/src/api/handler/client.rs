@@ -56,13 +56,14 @@ pub(crate) async fn create(
     Path(_params): Path<ClientPathParams>,
     Json(payload): Json<CreateClientPayload>,
 ) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
-    
     let mut client_key = ClientKey::new_with_name(payload.public_key, payload.name)?;
     client_key.description = payload.description;
-    
-    state.client_key_repo.create_client_key(&conn, &client_key)?;
-    
+
+    state
+        .client_key_repo
+        .create_client_key(&state.pool, &client_key)
+        .await?;
+
     let response = ClientResponse {
         id: client_key.id,
         name: client_key.name,
@@ -71,7 +72,7 @@ pub(crate) async fn create(
         last_used_at: client_key.last_used_at,
         status: client_key.status,
     };
-    
+
     Ok(SealboxResponse::Json(json!(response)))
 }
 
@@ -81,9 +82,11 @@ pub(crate) async fn list(
     State(state): State<AppState>,
     Path(_params): Path<ClientPathParams>,
 ) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
-    let client_keys = state.client_key_repo.fetch_all_client_keys(&conn)?;
-    
+    let client_keys = state
+        .client_key_repo
+        .fetch_all_client_keys(&state.pool)
+        .await?;
+
     let clients: Vec<ClientResponse> = client_keys
         .into_iter()
         .map(|key| ClientResponse {
@@ -95,7 +98,7 @@ pub(crate) async fn list(
             status: key.status,
         })
         .collect();
-    
+
     Ok(SealboxResponse::Json(json!({
         "clients": clients
     })))
@@ -108,21 +111,24 @@ pub(crate) async fn update_status(
     Path(params): Path<ClientIdPathParams>,
     Json(payload): Json<UpdateClientStatusPayload>,
 ) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
     let client_id = params.client_id()?;
-    
+
     // Check if client exists
-    let client = state.client_key_repo.fetch_client_key(&conn, &client_id)?;
+    let client = state
+        .client_key_repo
+        .fetch_client_key(&state.pool, &client_id)
+        .await?;
     if client.is_none() {
         return Err(SealboxError::ClientKeyNotFound(client_id));
     }
-    
+
     // Update status
-    conn.execute(
-        "UPDATE client_keys SET status = ?1 WHERE id = ?2",
-        (&payload.status, &client_id),
-    )?;
-    
+    sqlx::query("UPDATE client_keys SET status = ?1 WHERE id = ?2")
+        .bind(&payload.status)
+        .bind(client_id)
+        .execute(&state.pool)
+        .await?;
+
     Ok(SealboxResponse::Json(json!({
         "client_id": client_id,
         "status": payload.status
@@ -136,18 +142,29 @@ mod tests {
         api::state::AppState,
         config::SealboxConfig,
         crypto::client_key::generate_key_pair,
-        repo::{SqliteClientKeyRepo, SqliteHealthRepo, SqliteSecretRepo, SqliteSecretClientKeyRepo, SecretClientKeyRepo},
+        repo::{
+            ClientKeyRepo, SecretClientKeyRepo, SecretRepo, SqliteClientKeyRepo, SqliteHealthRepo,
+            SqliteSecretClientKeyRepo, SqliteSecretRepo,
+        },
     };
     use std::sync::Arc;
 
-    fn setup_test_state() -> AppState {
-        let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
-        SqliteClientKeyRepo::init_table(&conn).expect("Should init client_keys table");
-        SqliteSecretRepo::init_table(&conn).expect("Should init secrets table");
-        crate::repo::SqliteSecretClientKeyRepo::init_table(&conn).expect("Should init secret_client_keys table");
+    async fn setup_test_state() -> AppState {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Should create in-memory DB");
+        SqliteClientKeyRepo::init_table(&pool)
+            .await
+            .expect("Should init client_keys table");
+        SqliteSecretRepo::init_table(&pool)
+            .await
+            .expect("Should init secrets table");
+        SqliteSecretClientKeyRepo::init_table(&pool)
+            .await
+            .expect("Should init secret_client_keys table");
 
         AppState {
-            conn_pool: Arc::new(std::sync::Mutex::new(conn)),
+            pool,
             client_key_repo: Arc::new(SqliteClientKeyRepo),
             secret_repo: Arc::new(SqliteSecretRepo),
             health_repo: Arc::new(SqliteHealthRepo),
@@ -158,7 +175,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_client() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let (_, public_key_pem) = generate_key_pair().expect("Should generate key pair");
 
         let payload = CreateClientPayload {
@@ -171,18 +188,18 @@ mod tests {
             version: Version::V1,
         };
 
-        let response = create(
-            State(state),
-            Path(params),
-            Json(payload),
-        )
-        .await
-        .expect("Should create client");
+        let response = create(State(state), Path(params), Json(payload))
+            .await
+            .expect("Should create client");
 
         if let SealboxResponse::Json(json_value) = response {
-            let client: ClientResponse = serde_json::from_value(json_value).expect("Should deserialize");
+            let client: ClientResponse =
+                serde_json::from_value(json_value).expect("Should deserialize");
             assert_eq!(client.name, Some("test-client".to_string()));
-            assert_eq!(client.description, Some("Test client description".to_string()));
+            assert_eq!(
+                client.description,
+                Some("Test client description".to_string())
+            );
             assert_eq!(client.status, ClientKeyStatus::Active);
         } else {
             panic!("Expected JSON response");
@@ -191,34 +208,34 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_clients() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let (_, public_key_pem) = generate_key_pair().expect("Should generate key pair");
 
         // Create a test client first
         let client_key = ClientKey::new_with_name(public_key_pem, Some("test-client".to_string()))
             .expect("Should create client key");
-        
-        let conn = state.conn_pool.lock().expect("Should lock connection");
-        state.client_key_repo.create_client_key(&conn, &client_key)
+
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client_key)
+            .await
             .expect("Should create client key in DB");
-        drop(conn);
 
         let params = ClientPathParams {
             version: Version::V1,
         };
 
-        let response = list(
-            State(state),
-            Path(params),
-        )
-        .await
-        .expect("Should list clients");
+        let response = list(State(state), Path(params))
+            .await
+            .expect("Should list clients");
 
         if let SealboxResponse::Json(json_value) = response {
             let clients_data: serde_json::Value = json_value;
-            let clients = clients_data["clients"].as_array().expect("Should have clients array");
+            let clients = clients_data["clients"]
+                .as_array()
+                .expect("Should have clients array");
             assert_eq!(clients.len(), 1);
-            
+
             let client = &clients[0];
             assert_eq!(client["name"], "test-client");
             assert_eq!(client["status"], "Active");

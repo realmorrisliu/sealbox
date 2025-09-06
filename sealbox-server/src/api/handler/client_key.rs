@@ -31,8 +31,10 @@ pub(crate) async fn list(
     State(state): State<AppState>,
     Path(_params): Path<ClientKeyPathParams>,
 ) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
-    let client_keys = state.client_key_repo.fetch_all_client_keys(&conn)?;
+    let client_keys = state
+        .client_key_repo
+        .fetch_all_client_keys(&state.pool)
+        .await?;
     Ok(SealboxResponse::Json(json!(client_keys)))
 }
 
@@ -46,20 +48,20 @@ pub(crate) async fn rotate(
     let old_client_key_id = payload.old_client_key_id;
     let old_private_key_pem = payload.old_private_key_pem;
 
-    let mut conn = state.conn_pool.lock()?;
-
     let new_public_key_pem = state
         .client_key_repo
-        .fetch_public_key(&conn, &new_client_key_id)?
+        .fetch_public_key(&state.pool, &new_client_key_id)
+        .await?
         .ok_or(SealboxError::ClientKeyNotFound(new_client_key_id))?;
 
     let secrets = state
         .secret_repo
-        .fetch_secrets_by_client_key(&conn, &old_client_key_id)?;
+        .fetch_secrets_by_client_key(&state.pool, &old_client_key_id)
+        .await?;
 
     let mut failed_secret_keys = Vec::new();
 
-    let tx = conn.transaction()?;
+    let mut tx = state.pool.begin().await?;
 
     for secret in secrets {
         let secret_key = secret.key.clone();
@@ -71,9 +73,17 @@ pub(crate) async fn rotate(
             &new_public_key_pem,
         ) {
             Ok(rotated_secret) => {
-                state
+                if let Err(err) = state
                     .secret_repo
-                    .update_secret_client_key(&tx, &rotated_secret)?;
+                    .update_secret_client_key_tx(&mut tx, &rotated_secret)
+                    .await
+                {
+                    failed_secret_keys.push(secret_key.clone());
+                    error!(
+                        "Failed to update secret client key for secret {}: {}",
+                        secret_key, err
+                    );
+                }
             }
             Err(err) => {
                 failed_secret_keys.push(secret_key.clone());
@@ -85,7 +95,7 @@ pub(crate) async fn rotate(
         }
     }
 
-    tx.commit()?;
+    tx.commit().await?;
 
     if !failed_secret_keys.is_empty() {
         return Ok(SealboxResponse::Json(json!({
@@ -99,6 +109,33 @@ pub(crate) async fn rotate(
     ))
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct ClientKeyCreateResponse {
+    id: Uuid,
+    public_key: String,
+    created_at: i64,
+    status: crate::repo::ClientKeyStatus,
+    description: Option<String>,
+    metadata: Option<String>,
+    name: Option<String>,
+    last_used_at: Option<i64>,
+}
+
+impl From<ClientKey> for ClientKeyCreateResponse {
+    fn from(client_key: ClientKey) -> Self {
+        Self {
+            id: client_key.id,
+            public_key: client_key.public_key, // Show actual public key in create response
+            created_at: client_key.created_at,
+            status: client_key.status,
+            description: client_key.description,
+            metadata: client_key.metadata,
+            name: client_key.name,
+            last_used_at: client_key.last_used_at,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub(crate) struct CreateClientKeyPayload {
     public_key: String,
@@ -110,12 +147,14 @@ pub(crate) async fn create(
     Path(_params): Path<ClientKeyPathParams>,
     Json(payload): Json<CreateClientKeyPayload>,
 ) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
     let client_key = ClientKey::new(payload.public_key)?;
     state
         .client_key_repo
-        .create_client_key(&conn, &client_key)?;
-    Ok(SealboxResponse::Json(json!(client_key)))
+        .create_client_key(&state.pool, &client_key)
+        .await?;
+
+    let response = ClientKeyCreateResponse::from(client_key);
+    Ok(SealboxResponse::Json(json!(response)))
 }
 
 #[cfg(test)]
@@ -125,19 +164,30 @@ mod tests {
         api::{Version, path::Path as SealboxPath, state::AppState},
         config::SealboxConfig,
         crypto::client_key::generate_key_pair,
-        repo::{SecretClientKeyRepo, SqliteClientKeyRepo, SqliteHealthRepo, SqliteSecretRepo},
+        repo::{
+            ClientKeyRepo, SecretClientKeyRepo, SecretRepo, SqliteClientKeyRepo, SqliteHealthRepo,
+            SqliteSecretRepo,
+        },
     };
     use axum::extract::State;
     use std::sync::Arc;
 
-    fn setup_test_state() -> AppState {
-        let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
-        crate::repo::SqliteClientKeyRepo::init_table(&conn).expect("Should init client_keys table");
-        crate::repo::SqliteSecretRepo::init_table(&conn).expect("Should init secrets table");
-        crate::repo::SqliteSecretClientKeyRepo::init_table(&conn).expect("Should init secret_client_keys table");
+    async fn setup_test_state() -> AppState {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Should create in-memory DB");
+        crate::repo::SqliteClientKeyRepo::init_table(&pool)
+            .await
+            .expect("Should init client_keys table");
+        crate::repo::SqliteSecretRepo::init_table(&pool)
+            .await
+            .expect("Should init secrets table");
+        crate::repo::SqliteSecretClientKeyRepo::init_table(&pool)
+            .await
+            .expect("Should init secret_client_keys table");
 
         AppState {
-            conn_pool: Arc::new(std::sync::Mutex::new(conn)),
+            pool,
             client_key_repo: Arc::new(SqliteClientKeyRepo),
             secret_repo: Arc::new(SqliteSecretRepo),
             health_repo: Arc::new(SqliteHealthRepo),
@@ -148,7 +198,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_client_key() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
 
         let path_params = ClientKeyPathParams {
@@ -168,9 +218,9 @@ mod tests {
         assert!(result.is_ok());
         match result.unwrap() {
             SealboxResponse::Json(json_value) => {
-                let client_key: ClientKey =
-                    serde_json::from_value(json_value).expect("Should deserialize ClientKey");
-                assert_eq!(client_key.public_key, public_pem);
+                let response: ClientKeyCreateResponse = serde_json::from_value(json_value)
+                    .expect("Should deserialize ClientKeyCreateResponse");
+                assert_eq!(response.public_key, public_pem);
             }
             _ => panic!("Expected JSON response"),
         }
@@ -180,7 +230,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_client_keys_empty() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let path_params = ClientKeyPathParams {
             version: Version::V1,
         };
@@ -200,7 +250,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_client_keys_with_data() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
 
         // First create a client key
@@ -238,7 +288,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rotate_client_key_not_found() {
-        let state = setup_test_state();
+        let state = setup_test_state().await;
         let (old_private_pem, _) = generate_key_pair().expect("Should generate old key pair");
         let old_client_key_id = uuid::Uuid::new_v4();
         let new_client_key_id = uuid::Uuid::new_v4();

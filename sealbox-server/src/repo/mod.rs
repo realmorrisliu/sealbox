@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use rusqlite::{ToSql, types::FromSql};
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::{
@@ -13,12 +13,13 @@ use crate::{
 };
 
 pub(crate) use self::sqlite::{
-    SqliteClientKeyRepo, SqliteHealthRepo, SqliteSecretRepo, SqliteSecretClientKeyRepo, create_db_connection,
+    SqliteClientKeyRepo, SqliteHealthRepo, SqliteSecretClientKeyRepo, SqliteSecretRepo,
+    create_db_pool,
 };
 
 mod sqlite;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct SecretInfo {
     pub key: String,             // Secret key identifier
     pub version: i32,            // Latest version number
@@ -27,7 +28,7 @@ pub struct SecretInfo {
     pub expires_at: Option<i64>, // Expiry timestamp (Unix time), optional for TTL
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Secret {
     pub key: String,                 // Secret key identifier
     pub version: i32,                // Version number, incremented on each insert
@@ -127,19 +128,20 @@ impl Secret {
     }
 }
 
+#[async_trait::async_trait]
 pub(crate) trait SecretRepo: Send + Sync {
     /// Get latest secret with atomic lazy cleanup
-    fn get_secret(&self, conn: &mut rusqlite::Connection, key: &str) -> Result<Secret>;
+    async fn get_secret(&self, pool: &SqlitePool, key: &str) -> Result<Secret>;
     /// Get specific version secret with atomic lazy cleanup
-    fn get_secret_by_version(
+    async fn get_secret_by_version(
         &self,
-        conn: &mut rusqlite::Connection,
+        pool: &SqlitePool,
         key: &str,
         version: i32,
     ) -> Result<Secret>;
-    fn create_new_version(
+    async fn create_new_version(
         &self,
-        conn: &mut rusqlite::Connection,
+        pool: &SqlitePool,
         key: &str,
         data: &str,
         client_key: ClientKey,
@@ -147,57 +149,71 @@ pub(crate) trait SecretRepo: Send + Sync {
     ) -> Result<Secret>;
 
     /// Create new version of secret with multiple client keys
-    fn create_new_version_multi_client(
+    async fn create_new_version_multi_client(
         &self,
-        conn: &mut rusqlite::Connection,
+        pool: &SqlitePool,
         key: &str,
         data: &str,
         client_key_ids: &[Uuid],
         ttl: Option<i64>,
     ) -> Result<Secret>;
-    fn delete_secret_by_version(
+    async fn delete_secret_by_version(
         &self,
-        conn: &rusqlite::Connection,
+        pool: &SqlitePool,
         key: &str,
         version: i32,
     ) -> Result<()>;
 
     /// Fetch all secrets using the given client_key_id.
-    fn fetch_secrets_by_client_key(
+    async fn fetch_secrets_by_client_key(
         &self,
-        conn: &rusqlite::Connection,
+        pool: &SqlitePool,
         client_key_id: &Uuid,
     ) -> Result<Vec<Secret>>;
-    /// Update the client_key_id, encrypted_data_key, and updated_at fields for a list of secrets in a single transaction.
-    fn update_secret_client_key(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()>;
+    /// Transaction version of update_secret_client_key
+    async fn update_secret_client_key_tx(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        secret: &Secret,
+    ) -> Result<()>;
     /// Batch delete all expired secrets and return the count of deleted records.
-    fn cleanup_expired_secrets(&self, conn: &rusqlite::Connection) -> Result<usize>;
+    async fn cleanup_expired_secrets(&self, pool: &SqlitePool) -> Result<usize>;
     /// List all secrets with basic information (key, latest version, timestamps)
-    fn list_secrets(&self, conn: &rusqlite::Connection) -> Result<Vec<SecretInfo>>;
+    async fn list_secrets(&self, pool: &SqlitePool) -> Result<Vec<SecretInfo>>;
+
+    /// Initialize the table - static method
+    async fn init_table(pool: &SqlitePool) -> Result<()>
+    where
+        Self: Sized;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "TEXT", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ClientKeyStatus {
     Active,
 }
-impl ToSql for ClientKeyStatus {
-    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput> {
+
+impl std::fmt::Display for ClientKeyStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ClientKeyStatus::Active => Ok(rusqlite::types::ToSqlOutput::from("Active")),
+            ClientKeyStatus::Active => write!(f, "Active"),
         }
     }
 }
-impl FromSql for ClientKeyStatus {
-    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
-        match value.as_str() {
-            Ok("Active") => Ok(ClientKeyStatus::Active),
-            _ => Err(rusqlite::types::FromSqlError::InvalidType),
+
+impl std::str::FromStr for ClientKeyStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Active" => Ok(ClientKeyStatus::Active),
+            _ => Err(format!("Invalid ClientKeyStatus: {s}")),
         }
     }
 }
 
 /// ClientKey struct, represents a row in the client_keys table
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
 pub struct ClientKey {
     pub id: Uuid,                    // Unique identifier (e.g., UUID)
     pub public_key: String,          // Public key (PEM format)
@@ -207,6 +223,25 @@ pub struct ClientKey {
     pub metadata: Option<String>,    // Optional metadata
     pub name: Option<String>,        // Optional client name (e.g., "morris-laptop")
     pub last_used_at: Option<i64>,   // Last used timestamp (Unix time)
+}
+
+impl Serialize for ClientKey {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ClientKey", 7)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("public_key", "[HIDDEN]")?; // Hide public key in API responses for security
+        state.serialize_field("created_at", &self.created_at)?;
+        state.serialize_field("status", &self.status)?;
+        state.serialize_field("description", &self.description)?;
+        state.serialize_field("metadata", &self.metadata)?;
+        state.serialize_field("name", &self.name)?;
+        state.serialize_field("last_used_at", &self.last_used_at)?;
+        state.end()
+    }
 }
 
 impl ClientKey {
@@ -235,37 +270,44 @@ impl ClientKey {
 }
 
 /// ClientKeyRepo trait for managing client_keys table
+#[async_trait::async_trait]
 pub(crate) trait ClientKeyRepo: Send + Sync {
-    fn create_client_key(&self, conn: &rusqlite::Connection, key: &ClientKey) -> Result<()>;
-    fn fetch_all_client_keys(&self, conn: &rusqlite::Connection) -> Result<Vec<ClientKey>>;
+    async fn create_client_key(&self, pool: &SqlitePool, key: &ClientKey) -> Result<()>;
+    async fn fetch_all_client_keys(&self, pool: &SqlitePool) -> Result<Vec<ClientKey>>;
 
     /// Fetch a specific client key by ID.
-    fn fetch_client_key(
+    async fn fetch_client_key(
         &self,
-        conn: &rusqlite::Connection,
+        pool: &SqlitePool,
         client_key_id: &Uuid,
     ) -> Result<Option<ClientKey>>;
 
     /// Fetch the PEM-encoded public key for a given client_key_id.
-    fn fetch_public_key(
+    async fn fetch_public_key(
         &self,
-        conn: &rusqlite::Connection,
+        pool: &SqlitePool,
         client_key_id: &Uuid,
     ) -> Result<Option<String>>;
 
     /// Fetch a valid client key.
-    fn get_valid_client_key(&self, conn: &rusqlite::Connection) -> Result<ClientKey>;
-    
+    async fn get_valid_client_key(&self, pool: &SqlitePool) -> Result<ClientKey>;
+
     /// Update last used timestamp for a client key
-    fn update_last_used(&self, conn: &rusqlite::Connection, client_key_id: &Uuid) -> Result<()>;
+    async fn update_last_used(&self, pool: &SqlitePool, client_key_id: &Uuid) -> Result<()>;
+
+    /// Initialize the table - static method
+    async fn init_table(pool: &SqlitePool) -> Result<()>
+    where
+        Self: Sized;
 }
 
+#[async_trait::async_trait]
 pub(crate) trait HealthRepo: Send + Sync {
-    fn check_health(&self, conn: &rusqlite::Connection) -> Result<bool>;
+    async fn check_health(&self, pool: &SqlitePool) -> Result<bool>;
 }
 
 /// Represents an association between a secret and a client key
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct SecretClientKeyAssociation {
     pub secret_key: String,
     pub secret_version: i32,
@@ -275,33 +317,36 @@ pub struct SecretClientKeyAssociation {
 }
 
 /// Repository for managing secret-client-key associations
+#[async_trait::async_trait]
 pub(crate) trait SecretClientKeyRepo: Send + Sync {
-    fn init_table(conn: &rusqlite::Connection) -> Result<()> where Self: Sized;
+    async fn init_table(pool: &SqlitePool) -> Result<()>
+    where
+        Self: Sized;
     #[allow(dead_code)] // Used only in tests
-    fn create_association(
+    async fn create_association(
         &self,
-        conn: &rusqlite::Connection,
+        pool: &SqlitePool,
         secret_key: &str,
         secret_version: i32,
         client_key_id: &Uuid,
         encrypted_data_key: &[u8],
     ) -> Result<()>;
-    fn get_associations_for_secret(
+    async fn get_associations_for_secret(
         &self,
-        conn: &rusqlite::Connection,
+        pool: &SqlitePool,
         secret_key: &str,
         secret_version: i32,
     ) -> Result<Vec<SecretClientKeyAssociation>>;
-    fn get_association(
+    async fn get_association(
         &self,
-        conn: &rusqlite::Connection,
+        pool: &SqlitePool,
         secret_key: &str,
         secret_version: i32,
         client_key_id: &Uuid,
     ) -> Result<Option<SecretClientKeyAssociation>>;
-    fn remove_association(
+    async fn remove_association(
         &self,
-        conn: &rusqlite::Connection,
+        pool: &SqlitePool,
         secret_key: &str,
         secret_version: i32,
         client_key_id: &Uuid,
@@ -324,16 +369,6 @@ mod tests {
         assert!(client_key.description.is_none());
         assert!(client_key.metadata.is_none());
         assert!(client_key.created_at > 0);
-    }
-
-    #[test]
-    fn test_client_key_status_serialization() {
-        // Test ToSql conversion
-        let _active_sql = ClientKeyStatus::Active
-            .to_sql()
-            .expect("Should convert to SQL");
-
-        // Test that conversion works without errors
     }
 
     #[test]
@@ -563,16 +598,24 @@ mod tests {
         // assert!(multi_secret.is_ok());
     }
 
-    #[test]
-    fn test_secret_client_keys_table_operations() {
-        let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
+    #[tokio::test]
+    async fn test_secret_client_keys_table_operations() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Should create in-memory DB");
 
         // Initialize tables
-        SqliteClientKeyRepo::init_table(&conn).expect("Should init client_keys table");
-        SqliteSecretRepo::init_table(&conn).expect("Should init secrets table");
+        SqliteClientKeyRepo::init_table(&pool)
+            .await
+            .expect("Should init client_keys table");
+        SqliteSecretRepo::init_table(&pool)
+            .await
+            .expect("Should init secrets table");
 
         // This should fail until we implement secret_client_keys table
-        SqliteSecretClientKeyRepo::init_table(&conn).expect("Should init secret_client_keys table");
+        SqliteSecretClientKeyRepo::init_table(&pool)
+            .await
+            .expect("Should init secret_client_keys table");
 
         // Create test client keys
         let client_key_repo = SqliteClientKeyRepo;
@@ -588,10 +631,12 @@ mod tests {
         .expect("Should create client key 2");
 
         client_key_repo
-            .create_client_key(&conn, &client_key1)
+            .create_client_key(&pool, &client_key1)
+            .await
             .expect("Should store client key 1");
         client_key_repo
-            .create_client_key(&conn, &client_key2)
+            .create_client_key(&pool, &client_key2)
+            .await
             .expect("Should store client key 2");
 
         // Test secret-client-key associations
@@ -604,27 +649,30 @@ mod tests {
         // This should fail until we implement the methods
         secret_client_key_repo
             .create_association(
-                &conn,
+                &pool,
                 secret_key,
                 secret_version,
                 &client_key1.id,
                 &data_key_1,
             )
+            .await
             .expect("Should create association 1");
 
         secret_client_key_repo
             .create_association(
-                &conn,
+                &pool,
                 secret_key,
                 secret_version,
                 &client_key2.id,
                 &data_key_2,
             )
+            .await
             .expect("Should create association 2");
 
         // Test querying associations
         let associations = secret_client_key_repo
-            .get_associations_for_secret(&conn, secret_key, secret_version)
+            .get_associations_for_secret(&pool, secret_key, secret_version)
+            .await
             .expect("Should get associations for secret");
 
         assert_eq!(associations.len(), 2);
@@ -641,7 +689,8 @@ mod tests {
 
         // Test getting specific association
         let association = secret_client_key_repo
-            .get_association(&conn, secret_key, secret_version, &client_key1.id)
+            .get_association(&pool, secret_key, secret_version, &client_key1.id)
+            .await
             .expect("Should get specific association")
             .expect("Association should exist");
 

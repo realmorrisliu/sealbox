@@ -1,19 +1,20 @@
-use std::sync::{Arc, Mutex};
+use sqlx::SqlitePool;
+use std::sync::Arc;
 use tracing::info;
 
 use crate::{
     config::SealboxConfig,
     error::Result,
     repo::{
-        ClientKeyRepo, HealthRepo, SecretRepo, SecretClientKeyRepo, SqliteClientKeyRepo, SqliteHealthRepo,
-        SqliteSecretRepo, SqliteSecretClientKeyRepo, create_db_connection,
+        ClientKeyRepo, HealthRepo, SecretClientKeyRepo, SecretRepo, SqliteClientKeyRepo,
+        SqliteHealthRepo, SqliteSecretClientKeyRepo, SqliteSecretRepo, create_db_pool,
     },
 };
 
 #[derive(Clone)]
 pub(crate) struct AppState {
     pub(crate) config: Arc<SealboxConfig>,
-    pub(crate) conn_pool: Arc<Mutex<rusqlite::Connection>>,
+    pub(crate) pool: SqlitePool,
     pub(crate) health_repo: Arc<dyn HealthRepo>,
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
     pub(crate) client_key_repo: Arc<dyn ClientKeyRepo>,
@@ -21,16 +22,16 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
-    pub fn new(config: &SealboxConfig) -> Result<Self> {
-        let conn = create_db_connection(&config.store_path)?;
+    pub async fn new(config: &SealboxConfig) -> Result<Self> {
+        let pool = create_db_pool(&config.store_path).await?;
 
-        SqliteSecretRepo::init_table(&conn)?;
-        SqliteClientKeyRepo::init_table(&conn)?;
-        SqliteSecretClientKeyRepo::init_table(&conn)?;
+        SqliteSecretRepo::init_table(&pool).await?;
+        SqliteClientKeyRepo::init_table(&pool).await?;
+        SqliteSecretClientKeyRepo::init_table(&pool).await?;
 
         let state = Self {
             config: Arc::new(config.clone()),
-            conn_pool: Arc::new(Mutex::new(conn)),
+            pool,
             health_repo: Arc::new(SqliteHealthRepo {}),
             secret_repo: Arc::new(SqliteSecretRepo {}),
             client_key_repo: Arc::new(SqliteClientKeyRepo {}),
@@ -38,16 +39,15 @@ impl AppState {
         };
 
         // Perform startup cleanup of expired secrets
-        state.startup_cleanup()?;
+        state.startup_cleanup().await?;
 
         Ok(state)
     }
 
     /// Clean up expired secrets during application startup
-    fn startup_cleanup(&self) -> Result<()> {
+    async fn startup_cleanup(&self) -> Result<()> {
         info!("Performing startup cleanup of expired secrets...");
-        let conn = self.conn_pool.lock()?;
-        let deleted_count = self.secret_repo.cleanup_expired_secrets(&conn)?;
+        let deleted_count = self.secret_repo.cleanup_expired_secrets(&self.pool).await?;
         if deleted_count > 0 {
             info!(
                 "Startup cleanup completed: removed {} expired secrets",
