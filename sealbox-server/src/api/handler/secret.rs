@@ -81,6 +81,11 @@ pub(crate) async fn get(
                     secret.version,
                     &client_id,
                 ) {
+                    // Update client's last used timestamp
+                    if let Err(err) = state.client_key_repo.update_last_used(&conn, &client_id) {
+                        tracing::warn!("Failed to update last_used_at for client {}: {}", client_id, err);
+                    }
+                    
                     // Return secret with client-specific encrypted data key
                     return Ok(SealboxResponse::Json(json!({
                         "key": secret.key,
@@ -98,6 +103,11 @@ pub(crate) async fn get(
     }
 
     // Fallback to single-client mode (backward compatibility)
+    // Update client's last used timestamp for single-client access
+    if let Err(err) = state.client_key_repo.update_last_used(&conn, &secret.client_key_id) {
+        tracing::warn!("Failed to update last_used_at for client {}: {}", secret.client_key_id, err);
+    }
+    
     Ok(SealboxResponse::Json(json!(secret)))
 }
 
@@ -417,6 +427,7 @@ mod tests {
             description: Some("Test client key".to_string()),
             metadata: None,
             name: Some("test-client".to_string()),
+            last_used_at: None,
         }
     }
 

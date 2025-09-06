@@ -22,6 +22,26 @@ impl SecretClientKeyRepo for SqliteSecretClientKeyRepo {
             )",
             (),
         )?;
+        
+        // Create indexes for performance optimization
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_secret_client_keys_client_key 
+             ON secret_client_keys(client_key_id, secret_key)",
+            (),
+        )?;
+        
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_secret_client_keys_secret_client 
+             ON secret_client_keys(secret_key, secret_version, client_key_id)",
+            (),
+        )?;
+        
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_secret_client_keys_created_at 
+             ON secret_client_keys(created_at)",
+            (),
+        )?;
+        
         Ok(())
     }
 

@@ -176,7 +176,7 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn list_secrets(&self, conn: &rusqlite::Connection) -> Result<Vec<SecretInfo>>;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ClientKeyStatus {
     Active,
 }
@@ -206,6 +206,7 @@ pub struct ClientKey {
     pub description: Option<String>, // Optional description
     pub metadata: Option<String>,    // Optional metadata
     pub name: Option<String>,        // Optional client name (e.g., "morris-laptop")
+    pub last_used_at: Option<i64>,   // Last used timestamp (Unix time)
 }
 
 impl ClientKey {
@@ -228,6 +229,7 @@ impl ClientKey {
             description,
             metadata,
             name,
+            last_used_at: None,
         })
     }
 }
@@ -253,6 +255,9 @@ pub(crate) trait ClientKeyRepo: Send + Sync {
 
     /// Fetch a valid client key.
     fn get_valid_client_key(&self, conn: &rusqlite::Connection) -> Result<ClientKey>;
+    
+    /// Update last used timestamp for a client key
+    fn update_last_used(&self, conn: &rusqlite::Connection, client_key_id: &Uuid) -> Result<()>;
 }
 
 pub(crate) trait HealthRepo: Send + Sync {

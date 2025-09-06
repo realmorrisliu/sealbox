@@ -224,7 +224,7 @@ impl SecretRepo for SqliteSecretRepo {
         // Fetch all client keys and validate they exist
         let mut client_keys = Vec::new();
         for client_key_id in client_key_ids {
-            let mut stmt = tx.prepare("SELECT id, public_key, created_at, status, description, metadata, name FROM client_keys WHERE id = ?1 LIMIT 1")?;
+            let mut stmt = tx.prepare("SELECT id, public_key, created_at, status, description, metadata, name, last_used_at FROM client_keys WHERE id = ?1 LIMIT 1")?;
             let client_key = stmt
                 .query_one([client_key_id], |row| {
                     Ok(crate::repo::ClientKey {
@@ -235,6 +235,7 @@ impl SecretRepo for SqliteSecretRepo {
                         description: row.get(4)?,
                         metadata: row.get(5)?,
                         name: row.get(6)?,
+                        last_used_at: row.get(7)?,
                     })
                 })
                 .optional()?;

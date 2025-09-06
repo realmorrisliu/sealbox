@@ -21,10 +21,31 @@ impl SqliteClientKeyRepo {
                 description TEXT,
                 version INTEGER,
                 metadata TEXT,
-                name TEXT
+                name TEXT,
+                last_used_at INTEGER
             )",
             (),
         )?;
+        
+        // Create indexes for performance optimization
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_client_keys_status 
+             ON client_keys(status)",
+            (),
+        )?;
+        
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_client_keys_created_at 
+             ON client_keys(created_at)",
+            (),
+        )?;
+        
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_client_keys_last_used_at 
+             ON client_keys(last_used_at)",
+            (),
+        )?;
+        
         Ok(())
     }
 }
@@ -39,8 +60,9 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
                 status,
                 description,
                 metadata,
-                name
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                name,
+                last_used_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             (
                 &key.id,
                 &key.public_key,
@@ -49,6 +71,7 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
                 &key.description,
                 &key.metadata,
                 &key.name,
+                &key.last_used_at,
             ),
         )?;
         Ok(())
@@ -59,7 +82,7 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
         conn: &rusqlite::Connection,
         client_key_id: &Uuid,
     ) -> Result<Option<ClientKey>> {
-        let mut stmt = conn.prepare("SELECT id, public_key, created_at, status, description, metadata, name FROM client_keys WHERE id = ?1 LIMIT 1")?;
+        let mut stmt = conn.prepare("SELECT id, public_key, created_at, status, description, metadata, name, last_used_at FROM client_keys WHERE id = ?1 LIMIT 1")?;
         let client_key = stmt
             .query_one([client_key_id], |row| {
                 Ok(ClientKey {
@@ -70,6 +93,7 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
                     description: row.get(4)?,
                     metadata: row.get(5)?,
                     name: row.get(6)?,
+                    last_used_at: row.get(7)?,
                 })
             })
             .optional()?;
@@ -89,7 +113,7 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
     }
 
     fn get_valid_client_key(&self, conn: &rusqlite::Connection) -> Result<ClientKey> {
-        let mut stmt = conn.prepare("SELECT id, public_key, created_at, status, description, metadata, name FROM client_keys WHERE status = ?1 LIMIT 1")?;
+        let mut stmt = conn.prepare("SELECT id, public_key, created_at, status, description, metadata, name, last_used_at FROM client_keys WHERE status = ?1 LIMIT 1")?;
         let client_key = stmt
             .query_one([ClientKeyStatus::Active], |row| {
                 Ok(ClientKey {
@@ -100,6 +124,7 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
                     description: row.get(4)?,
                     metadata: row.get(5)?,
                     name: row.get(6)?,
+                    last_used_at: row.get(7)?,
                 })
             })
             .optional()?;
@@ -113,7 +138,7 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
 
     fn fetch_all_client_keys(&self, conn: &rusqlite::Connection) -> Result<Vec<ClientKey>> {
         let mut stmt = conn.prepare(
-            "SELECT id, created_at, status, description, metadata, name FROM client_keys",
+            "SELECT id, created_at, status, description, metadata, name, last_used_at FROM client_keys",
         )?;
         let client_key_iter = stmt.query_map([], |row| {
             Ok(ClientKey {
@@ -124,6 +149,7 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
                 description: row.get(3)?,
                 metadata: row.get(4)?,
                 name: row.get(5)?,
+                last_used_at: row.get(6)?,
             })
         })?;
 
@@ -135,5 +161,14 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
             .collect();
 
         Ok(client_keys)
+    }
+    
+    fn update_last_used(&self, conn: &rusqlite::Connection, client_key_id: &Uuid) -> Result<()> {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        conn.execute(
+            "UPDATE client_keys SET last_used_at = ?1 WHERE id = ?2",
+            (now, client_key_id),
+        )?;
+        Ok(())
     }
 }
