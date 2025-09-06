@@ -315,44 +315,7 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(())
     }
 
-    async fn fetch_secrets_by_client_key(
-        &self,
-        pool: &SqlitePool,
-        client_key_id: &Uuid,
-    ) -> Result<Vec<Secret>> {
-        let secrets: Vec<Secret> = sqlx::query_as(
-            "SELECT key, version, encrypted_data, encrypted_data_key, client_key_id, created_at, updated_at, expires_at
-            FROM secrets WHERE client_key_id = ?1"
-        )
-        .bind(client_key_id)
-        .fetch_all(pool)
-        .await?;
-
-        Ok(secrets)
-    }
-
-    async fn update_secret_client_key_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-        secret: &Secret,
-    ) -> Result<()> {
-        sqlx::query(
-            "UPDATE secrets SET
-                encrypted_data_key = ?1,
-                client_key_id = ?2,
-                updated_at = ?3
-             WHERE key = ?4 AND version = ?5",
-        )
-        .bind(&secret.encrypted_data_key)
-        .bind(secret.client_key_id)
-        .bind(secret.updated_at)
-        .bind(&secret.key)
-        .bind(secret.version)
-        .execute(&mut **tx)
-        .await?;
-
-        Ok(())
-    }
+    // rotation-related helper methods removed
 
     async fn cleanup_expired_secrets(&self, pool: &SqlitePool) -> Result<usize> {
         info!("cleanup_expired_secrets");

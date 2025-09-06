@@ -5,16 +5,13 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::{
-    crypto::{
-        client_key::{PrivateClientKey, PublicClientKey},
-        data_key::DataKey,
-    },
-    error::{Result, SealboxError},
+    crypto::{client_key::PublicClientKey, data_key::DataKey},
+    error::Result,
 };
 
 pub(crate) use self::sqlite::{
-    SqliteClientKeyRepo, SqliteHealthRepo, SqliteSecretClientKeyRepo, SqliteSecretRepo,
-    create_db_pool,
+    SqliteClientKeyRepo, SqliteEnrollRepo, SqliteHealthRepo, SqliteSecretClientKeyRepo,
+    SqliteSecretRepo, create_db_pool,
 };
 
 mod sqlite;
@@ -93,39 +90,7 @@ impl Secret {
         })
     }
 
-    pub(crate) fn rotate_client_key(
-        self,
-        old_client_key_id: &Uuid,
-        old_private_key_pem: &str,
-        new_client_key_id: &Uuid,
-        new_public_key_pem: &str,
-    ) -> Result<Self> {
-        let mut secret = self.clone();
-
-        if secret.client_key_id == *new_client_key_id {
-            return Ok(secret);
-        }
-
-        if secret.client_key_id != *old_client_key_id {
-            return Err(SealboxError::ClientKeyMismatch(
-                secret.key,
-                old_client_key_id.to_string(),
-                secret.client_key_id.to_string(),
-            ));
-        }
-
-        let old_priv_key = PrivateClientKey::from_str(old_private_key_pem)?;
-        let new_pub_key = PublicClientKey::from_str(new_public_key_pem)?;
-
-        let data_key = old_priv_key.decrypt(&secret.encrypted_data_key)?;
-        let new_encrypted_data_key = new_pub_key.encrypt(&data_key)?;
-
-        secret.encrypted_data_key = new_encrypted_data_key;
-        secret.client_key_id = *new_client_key_id;
-        secret.updated_at = time::OffsetDateTime::now_utc().unix_timestamp();
-
-        Ok(secret)
-    }
+    // Note: client key rotation is handled on the client side.
 }
 
 #[async_trait::async_trait]
@@ -164,18 +129,7 @@ pub(crate) trait SecretRepo: Send + Sync {
         version: i32,
     ) -> Result<()>;
 
-    /// Fetch all secrets using the given client_key_id.
-    async fn fetch_secrets_by_client_key(
-        &self,
-        pool: &SqlitePool,
-        client_key_id: &Uuid,
-    ) -> Result<Vec<Secret>>;
-    /// Transaction version of update_secret_client_key
-    async fn update_secret_client_key_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-        secret: &Secret,
-    ) -> Result<()>;
+    // rotation-related repo methods removed (handled client-side)
     /// Batch delete all expired secrets and return the count of deleted records.
     async fn cleanup_expired_secrets(&self, pool: &SqlitePool) -> Result<usize>;
     /// List all secrets with basic information (key, latest version, timestamps)
@@ -282,12 +236,7 @@ pub(crate) trait ClientKeyRepo: Send + Sync {
         client_key_id: &Uuid,
     ) -> Result<Option<ClientKey>>;
 
-    /// Fetch the PEM-encoded public key for a given client_key_id.
-    async fn fetch_public_key(
-        &self,
-        pool: &SqlitePool,
-        client_key_id: &Uuid,
-    ) -> Result<Option<String>>;
+    // fetch_public_key removed
 
     /// Fetch a valid client key.
     async fn get_valid_client_key(&self, pool: &SqlitePool) -> Result<ClientKey>;
@@ -304,6 +253,33 @@ pub(crate) trait ClientKeyRepo: Send + Sync {
 #[async_trait::async_trait]
 pub(crate) trait HealthRepo: Send + Sync {
     async fn check_health(&self, pool: &SqlitePool) -> Result<bool>;
+}
+
+// Enrollment models
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Enrollment {
+    pub code: String,
+    pub status: String, // Pending | Approved | Expired
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub created_at: i64,
+    pub expires_at: i64,
+}
+
+#[async_trait::async_trait]
+pub(crate) trait EnrollRepo: Send + Sync {
+    async fn init_table(pool: &SqlitePool) -> Result<()>
+    where
+        Self: Sized;
+    async fn create(&self, pool: &SqlitePool, code: &str, expires_at: i64) -> Result<()>;
+    async fn get(&self, pool: &SqlitePool, code: &str) -> Result<Option<Enrollment>>;
+    async fn approve(
+        &self,
+        pool: &SqlitePool,
+        code: &str,
+        name: Option<String>,
+        description: Option<String>,
+    ) -> Result<()>;
 }
 
 /// Represents an association between a secret and a client key
@@ -420,121 +396,6 @@ mod tests {
         // Even with same data, encrypted results should be different due to random data keys
         assert_ne!(secret1.encrypted_data, secret2.encrypted_data);
         assert_ne!(secret1.encrypted_data_key, secret2.encrypted_data_key);
-    }
-
-    #[test]
-    fn test_secret_rotate_client_key() {
-        let (old_private_pem, old_public_pem) =
-            generate_key_pair().expect("Should generate old key pair");
-        let (_, new_public_pem) = generate_key_pair().expect("Should generate new key pair");
-
-        let old_client_key = ClientKey::new(old_public_pem).expect("Should create old client key");
-        let new_client_key = ClientKey::new(new_public_pem).expect("Should create new client key");
-
-        let original_secret =
-            Secret::new("test-key", "secret-data", old_client_key.clone(), 1, None)
-                .expect("Should create secret");
-
-        let original_created_at = original_secret.created_at;
-        let original_encrypted_data = original_secret.encrypted_data.clone();
-        let original_encrypted_data_key = original_secret.encrypted_data_key.clone();
-
-        let rotated_secret = original_secret
-            .rotate_client_key(
-                &old_client_key.id,
-                &old_private_pem,
-                &new_client_key.id,
-                &new_client_key.public_key,
-            )
-            .expect("Should rotate client key");
-
-        // Key rotation should update client key ID and encrypted data key
-        assert_eq!(rotated_secret.client_key_id, new_client_key.id);
-        assert_ne!(
-            rotated_secret.encrypted_data_key,
-            original_encrypted_data_key
-        );
-        assert_eq!(rotated_secret.encrypted_data, original_encrypted_data); // Data itself unchanged
-        assert!(rotated_secret.updated_at >= original_created_at);
-    }
-
-    #[test]
-    fn test_secret_rotate_client_key_same_key() {
-        let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
-        let client_key = ClientKey::new(public_pem).expect("Should create client key");
-
-        let original_secret = Secret::new("test-key", "secret-data", client_key.clone(), 1, None)
-            .expect("Should create secret");
-
-        // Rotating to the same key should return the secret unchanged
-        let rotated_secret = original_secret
-            .clone()
-            .rotate_client_key(
-                &client_key.id,
-                "dummy-private-key",
-                &client_key.id,
-                &client_key.public_key,
-            )
-            .expect("Should handle same key rotation");
-
-        assert_eq!(rotated_secret.client_key_id, original_secret.client_key_id);
-        assert_eq!(
-            rotated_secret.encrypted_data_key,
-            original_secret.encrypted_data_key
-        );
-    }
-
-    #[test]
-    fn test_secret_rotate_client_key_wrong_old_key() {
-        let (old_private_pem, old_public_pem) =
-            generate_key_pair().expect("Should generate old key pair");
-        let (_, new_public_pem) = generate_key_pair().expect("Should generate new key pair");
-        let (_, wrong_public_pem) = generate_key_pair().expect("Should generate wrong key pair");
-
-        let old_client_key = ClientKey::new(old_public_pem).expect("Should create old client key");
-        let new_client_key = ClientKey::new(new_public_pem).expect("Should create new client key");
-        let wrong_client_key =
-            ClientKey::new(wrong_public_pem).expect("Should create wrong client key");
-
-        let original_secret = Secret::new("test-key", "secret-data", old_client_key, 1, None)
-            .expect("Should create secret");
-
-        // Trying to rotate with wrong old key ID should fail
-        let result = original_secret.rotate_client_key(
-            &wrong_client_key.id, // Wrong old key ID
-            &old_private_pem,
-            &new_client_key.id,
-            &new_client_key.public_key,
-        );
-
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SealboxError::ClientKeyMismatch(_, _, _) => {} // Expected
-            _ => panic!("Expected ClientKeyMismatch error"),
-        }
-    }
-
-    #[test]
-    fn test_secret_rotate_client_key_invalid_private_key() {
-        let (_, old_public_pem) = generate_key_pair().expect("Should generate old key pair");
-        let (_, new_public_pem) = generate_key_pair().expect("Should generate new key pair");
-
-        let old_client_key = ClientKey::new(old_public_pem).expect("Should create old client key");
-        let new_client_key = ClientKey::new(new_public_pem).expect("Should create new client key");
-
-        let original_secret =
-            Secret::new("test-key", "secret-data", old_client_key.clone(), 1, None)
-                .expect("Should create secret");
-
-        // Invalid private key should cause rotation to fail
-        let result = original_secret.rotate_client_key(
-            &old_client_key.id,
-            "invalid-private-key",
-            &new_client_key.id,
-            &new_client_key.public_key,
-        );
-
-        assert!(result.is_err());
     }
 
     #[test]

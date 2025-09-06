@@ -103,19 +103,7 @@ impl ClientKeyRepo for SqliteClientKeyRepo {
         Ok(client_keys)
     }
 
-    async fn fetch_public_key(
-        &self,
-        pool: &SqlitePool,
-        client_key_id: &Uuid,
-    ) -> Result<Option<String>> {
-        let row: Option<(String,)> =
-            sqlx::query_as("SELECT public_key FROM client_keys WHERE id = ?1 LIMIT 1")
-                .bind(client_key_id)
-                .fetch_optional(pool)
-                .await?;
-
-        Ok(row.map(|(public_key,)| public_key))
-    }
+    // fetch_public_key removed (unused)
 
     async fn get_valid_client_key(&self, pool: &SqlitePool) -> Result<ClientKey> {
         let client_key: Option<ClientKey> = sqlx::query_as(

@@ -13,6 +13,62 @@ fn create_http_client() -> Client {
         .expect("Failed to create HTTP client")
 }
 
+#[derive(serde::Deserialize)]
+struct ClientListItem {
+    id: uuid::Uuid,
+    name: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct ClientsResponse {
+    clients: Vec<ClientListItem>,
+}
+
+async fn resolve_clients(config: &Config, list: &str) -> Result<Vec<uuid::Uuid>> {
+    let client = create_http_client();
+    let resp = client
+        .get(format!("{}/v1/clients", config.server.url))
+        .bearer_auth(&config.server.token)
+        .send()
+        .await
+        .context("Failed to request server for clients list")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Server returned error: {}", resp.status());
+    }
+    let body: ClientsResponse = resp
+        .json()
+        .await
+        .context("Failed to parse clients list response")?;
+
+    let items: Vec<&str> = list
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut ids: Vec<uuid::Uuid> = Vec::new();
+    for it in items {
+        // try parse as UUID
+        if let Ok(id) = uuid::Uuid::parse_str(it) {
+            ids.push(id);
+            continue;
+        }
+        // match by name (case-insensitive)
+        if let Some(found) = body
+            .clients
+            .iter()
+            .find(|c| c.name.as_deref().unwrap_or("").eq_ignore_ascii_case(it))
+        {
+            ids.push(found.id);
+        } else {
+            return Err(anyhow::anyhow!(
+                "Client not found by name: {}. Use 'sealbox client list' to view available clients.",
+                it
+            ));
+        }
+    }
+    Ok(ids)
+}
+
 // Format secrets as environment variables
 fn format_as_env_vars(
     secrets: &std::collections::HashMap<String, String>,
@@ -40,10 +96,15 @@ pub async fn handle_command(command: SecretCommands, config: &Config) -> Result<
     let output = OutputManager::new(config.output.format.clone());
 
     match command {
-        SecretCommands::Set { key, value, ttl } => {
-            set_secret(config, &output, key, value, ttl).await
-        }
+        SecretCommands::Set {
+            key,
+            value,
+            ttl,
+            clients,
+        } => set_secret(config, &output, key, value, ttl, clients).await,
         SecretCommands::Get { key, version } => get_secret(config, &output, key, version).await,
+        SecretCommands::Permissions { key } => secret_permissions(config, &output, key).await,
+        SecretCommands::Revoke { key, client } => secret_revoke(config, &output, key, client).await,
         SecretCommands::History { key } => get_secret_history(config, &output, key).await,
         SecretCommands::Import { file, format } => {
             import_secrets(config, &output, file, format).await
@@ -63,6 +124,7 @@ async fn set_secret(
     key: String,
     value: Option<String>,
     ttl: Option<i64>,
+    clients: Option<String>,
 ) -> Result<()> {
     config
         .validate()
@@ -84,10 +146,18 @@ async fn set_secret(
     // Send plaintext to server (server will handle encryption)
     output.print_info("Saving to server...");
 
-    let payload = json!({
+    let mut payload = json!({
         "secret": secret_value,
         "ttl": ttl
     });
+
+    if let Some(list) = clients {
+        let ids = resolve_clients(config, &list).await?;
+        if ids.is_empty() {
+            anyhow::bail!("No matching clients found for --clients");
+        }
+        payload["authorized_clients"] = json!(ids);
+    }
 
     let client = create_http_client();
     let response = client
@@ -141,12 +211,11 @@ async fn get_secret(
     output.print_info("Fetching secret from server...");
 
     let client = create_http_client();
-    let response = client
-        .get(&url)
-        .bearer_auth(&config.server.token)
-        .send()
-        .await
-        .context("Failed to request server")?;
+    let mut req = client.get(&url).bearer_auth(&config.server.token);
+    if let Some(id) = config.keys.client_id {
+        req = req.header("X-Client-ID", id.to_string());
+    }
+    let response = req.send().await.context("Failed to request server")?;
 
     let status = response.status();
     if !status.is_success() {
@@ -168,7 +237,13 @@ async fn get_secret(
 
     output.print_info("Decrypting secret...");
 
-    let decrypted_value = decrypt_secret_response(config, &secret_data)?;
+    let decrypted_value = decrypt_secret_response(config, &secret_data).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to decrypt secret: {}. Tips: ensure this device is registered and authorized for this secret, and that 'keys.client_id' matches this device. Use 'sealbox client status' and 'sealbox secret permissions {}' to check.",
+            e,
+            key
+        )
+    })?;
 
     // Display result
     let secret_version = secret_data
@@ -188,6 +263,67 @@ async fn get_secret_history(_config: &Config, output: &OutputManager, key: Strin
     output.print_info(&format!(
         "To get a specific version of the secret, use: sealbox secret get {key} --version <N>"
     ));
+    Ok(())
+}
+
+async fn secret_permissions(config: &Config, output: &OutputManager, key: String) -> Result<()> {
+    config
+        .validate()
+        .context("Configuration validation failed")?;
+    let client = create_http_client();
+    let resp = client
+        .get(format!(
+            "{}/v1/secrets/{}/permissions",
+            config.server.url, key
+        ))
+        .bearer_auth(&config.server.token)
+        .send()
+        .await
+        .context("Failed to request server")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Server error: {}", resp.status());
+    }
+    let body: serde_json::Value = resp.json().await.context("Invalid response")?;
+    output.print_value(&body)?;
+    Ok(())
+}
+
+async fn secret_revoke(
+    config: &Config,
+    output: &OutputManager,
+    key: String,
+    client_ref: String,
+) -> Result<()> {
+    config
+        .validate()
+        .context("Configuration validation failed")?;
+    // resolve client id
+    let id = if let Ok(uuid) = uuid::Uuid::parse_str(&client_ref) {
+        uuid
+    } else {
+        let ids = resolve_clients(config, &client_ref).await?;
+        if ids.len() != 1 {
+            anyhow::bail!(
+                "Client name matched {} entries; please use a UUID",
+                ids.len()
+            );
+        }
+        ids[0]
+    };
+    let client = create_http_client();
+    let resp = client
+        .delete(format!(
+            "{}/v1/secrets/{}/permissions/{}",
+            config.server.url, key, id
+        ))
+        .bearer_auth(&config.server.token)
+        .send()
+        .await
+        .context("Failed to request server")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Server error: {}", resp.status());
+    }
+    output.print_success(&format!("Revoked access for client {id} on '{key}'"));
     Ok(())
 }
 
@@ -480,12 +616,13 @@ fn decrypt_secret_response(config: &Config, secret_data: &Value) -> Result<Strin
 // Helper function to fetch and decrypt a single secret
 async fn get_secret_value(config: &Config, key: &str) -> Result<String> {
     let client = create_http_client();
-    let response = client
+    let mut req = client
         .get(format!("{}/v1/secrets/{}", config.server.url, key))
-        .bearer_auth(&config.server.token)
-        .send()
-        .await
-        .context("Failed to request server")?;
+        .bearer_auth(&config.server.token);
+    if let Some(id) = config.keys.client_id {
+        req = req.header("X-Client-ID", id.to_string());
+    }
+    let response = req.send().await.context("Failed to request server")?;
 
     if !response.status().is_success() {
         anyhow::bail!("Failed to fetch secret: HTTP {}", response.status());
@@ -576,6 +713,7 @@ mod tests {
             &output,
             "test-key".to_string(),
             Some("".to_string()),
+            None,
             None,
         )
         .await;

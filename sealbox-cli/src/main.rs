@@ -2,7 +2,7 @@ mod commands;
 mod config;
 mod output;
 
-use crate::commands::{config_commands, key_commands, secret_commands};
+use crate::commands::{client_commands, config_commands, key_commands, secret_commands};
 use crate::config::{Config, OutputFormat};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -74,6 +74,23 @@ enum Commands {
         #[command(subcommand)]
         command: SecretCommands,
     },
+    /// One-step setup: generate keys (if missing) and register client
+    Up {
+        /// Optional client name
+        #[arg(long)]
+        name: Option<String>,
+        /// Optional description
+        #[arg(long)]
+        description: Option<String>,
+        /// Use enrollment code flow (print code and wait for approval)
+        #[arg(long)]
+        enroll: bool,
+    },
+    /// Manage clients (devices)
+    Client {
+        #[command(subcommand)]
+        command: ClientCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -128,12 +145,7 @@ enum KeyCommands {
     Register,
     /// Rotate client key
     Rotate {
-        /// New client key ID
-        #[arg(long)]
-        new_key_id: String,
-        /// Old client key ID
-        #[arg(long)]
-        old_key_id: String,
+        // Client-side rotation; no arguments needed
     },
     /// Check key status
     Status,
@@ -150,6 +162,22 @@ enum SecretCommands {
         /// Time to live in seconds
         #[arg(long)]
         ttl: Option<i64>,
+        /// Authorized client ids or names, comma-separated (multi-client)
+        #[arg(long)]
+        clients: Option<String>,
+    },
+    /// View secret access permissions
+    Permissions {
+        /// Secret key name
+        key: String,
+    },
+    /// Revoke a client's permission to access a secret
+    Revoke {
+        /// Secret key name
+        key: String,
+        /// Client id or name
+        #[arg(long)]
+        client: String,
     },
     /// Get secret
     Get {
@@ -218,5 +246,43 @@ async fn main() -> Result<()> {
         Commands::Config { command } => config_commands::handle_command(command, &mut config).await,
         Commands::Key { command } => key_commands::handle_command(command, &config).await,
         Commands::Secret { command } => secret_commands::handle_command(command, &config).await,
+        Commands::Up {
+            name,
+            description,
+            enroll,
+        } => client_commands::up(&mut config, name, description, enroll).await,
+        Commands::Client { command } => client_commands::handle_command(command, &mut config).await,
     }
+}
+
+#[derive(Subcommand)]
+enum ClientCommands {
+    /// Register this device as a client
+    Register {
+        /// Optional client name
+        #[arg(long)]
+        name: Option<String>,
+        /// Optional description
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// List clients
+    List,
+    /// Disable a client
+    Disable {
+        /// Client ID (UUID)
+        client_id: String,
+    },
+    /// Rename/update a client
+    Rename {
+        /// Client ID (UUID)
+        client_id: String,
+        /// New name
+        name: String,
+        /// New description (optional)
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Show current client status
+    Status,
 }

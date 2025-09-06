@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use reqwest::Client;
 use rsa::pkcs1::DecodeRsaPublicKey;
 use serde_json::json;
@@ -25,10 +25,7 @@ pub async fn handle_command(command: KeyCommands, config: &Config) -> Result<()>
             force,
         } => generate_keys(config, &output, public_key_path, private_key_path, force).await,
         KeyCommands::Register => register_key(config, &output).await,
-        KeyCommands::Rotate {
-            new_key_id,
-            old_key_id,
-        } => rotate_keys(config, &output, new_key_id, old_key_id).await,
+        KeyCommands::Rotate {} => rotate_keys(config, &output).await,
         KeyCommands::Status => check_key_status(config, &output).await,
     }
 }
@@ -150,6 +147,13 @@ async fn register_key(config: &Config, output: &OutputManager) -> Result<()> {
 
         let formatted_keys = vec![client_key];
         output.print_client_keys(&formatted_keys)?;
+
+        // Persist client_id into config for future rotation
+        let mut new_config = config.clone();
+        new_config.keys.client_id = Some(formatted_keys[0].id);
+        new_config
+            .save()
+            .context("Failed to save configuration with client_id")?;
     } else {
         let error_body = response
             .text()
@@ -165,83 +169,250 @@ async fn register_key(config: &Config, output: &OutputManager) -> Result<()> {
     Ok(())
 }
 
-async fn rotate_keys(
-    config: &Config,
-    output: &OutputManager,
-    new_key_id: String,
-    old_key_id: String,
-) -> Result<()> {
+async fn rotate_keys(config: &Config, output: &OutputManager) -> Result<()> {
+    use std::str::FromStr;
+
     config
         .validate()
         .context("Configuration validation failed")?;
 
+    // Determine client_id from server by matching registration or require explicit config
+    // For now, require that the client has been registered previously and its id is stored server-side.
+    // We derive the client_id by ensuring exactly one matching client exists on the server for our key; however
+    // server list does not return public keys. We therefore rely on the id captured at registration time.
+
+    // Load old private key
     let private_key_path = config
         .keys
         .private_key_path
         .to_str()
         .context("Private key path contains invalid characters")?;
-
     if !Path::new(private_key_path).exists() {
         anyhow::bail!(
-            "Private key file does not exist: {}. Key rotation requires the old private key file",
+            "Private key file does not exist: {}. Run 'sealbox key generate' and 'sealbox key register' first.",
             private_key_path
         );
     }
-
     let old_private_key_pem = fs::read_to_string(private_key_path)
         .with_context(|| format!("Failed to read private key file: {private_key_path}"))?;
+    let old_private_key =
+        sealbox_server::crypto::client_key::PrivateClientKey::from_str(&old_private_key_pem)
+            .context("Failed to parse private key")?;
 
-    let new_key_uuid = Uuid::parse_str(&new_key_id)
-        .with_context(|| format!("Invalid new key ID format: {new_key_id}"))?;
-    let old_key_uuid = Uuid::parse_str(&old_key_id)
-        .with_context(|| format!("Invalid old key ID format: {old_key_id}"))?;
+    // Determine client_id via server /v1/client-key list -> pick newest? Better: require single key returned and use its id
+    let client_id = resolve_current_client_id(config)
+        .await
+        .context("Failed to resolve current client id. Please ensure you have registered your key using 'sealbox key register'.")?;
 
-    output.print_info("Performing key rotation...");
-    output.print_warning("This operation will re-encrypt all secrets using the old key, please ensure the operation is correct!");
+    // 1) Generate a new key pair locally (do not overwrite files yet)
+    let (new_private_pem, new_public_pem) = sealbox_server::crypto::client_key::generate_key_pair()
+        .context("Failed to generate new key pair")?;
+    let new_public_key =
+        sealbox_server::crypto::client_key::PublicClientKey::from_str(&new_public_pem)
+            .context("Failed to parse generated public key")?;
 
-    let payload = json!({
-        "new_client_key_id": new_key_uuid,
-        "old_client_key_id": old_key_uuid,
-        "old_private_key_pem": old_private_key_pem
-    });
+    // 2) List all associations for this client
+    let associations = list_client_associations(config, &client_id).await?;
+    if associations.is_empty() {
+        output.print_warning("No secret associations found for this client. Proceeding to update server public key only.");
+    }
 
+    // 3) For each association: decrypt DataKey with old private key, re-encrypt with new public key, upload
     let client = create_http_client();
-    let response = client
-        .put(format!("{}/v1/client-key", config.server.url))
+    let mut failures: Vec<(String, i32, String)> = Vec::new();
+    let mut updated = 0usize;
+    for a in &associations {
+        let data_key_bytes = match old_private_key.decrypt(&a.encrypted_data_key) {
+            Ok(b) => b,
+            Err(e) => {
+                failures.push((
+                    a.secret_key.clone(),
+                    a.secret_version,
+                    format!("decrypt failed: {e}"),
+                ));
+                continue;
+            }
+        };
+        let new_edk = match new_public_key.encrypt(&data_key_bytes) {
+            Ok(b) => b,
+            Err(e) => {
+                failures.push((
+                    a.secret_key.clone(),
+                    a.secret_version,
+                    format!("encrypt failed: {e}"),
+                ));
+                continue;
+            }
+        };
+
+        let resp = client
+            .put(format!(
+                "{}/v1/secrets/{}/permissions/{}/data-key",
+                config.server.url, a.secret_key, client_id
+            ))
+            .bearer_auth(&config.server.token)
+            .json(&json!({
+                "secret_version": a.secret_version,
+                "new_encrypted_data_key": new_edk,
+            }))
+            .send()
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to update data key for secret '{}' version {}",
+                    a.secret_key, a.secret_version
+                )
+            })?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            failures.push((
+                a.secret_key.clone(),
+                a.secret_version,
+                format!("server error: {status}: {body}"),
+            ));
+        } else {
+            updated += 1;
+        }
+    }
+
+    if !failures.is_empty() {
+        output.print_error("Some associations failed to update. Aborting rotation before updating server public key or local files.");
+        output.print_value(&json!({ "failures": failures }))?;
+        return Err(anyhow!("{} association(s) failed", failures.len()));
+    }
+
+    // 4) Update server public key
+    let resp = client
+        .put(format!(
+            "{}/v1/clients/{}/public-key",
+            config.server.url, client_id
+        ))
         .bearer_auth(&config.server.token)
-        .json(&payload)
+        .json(&json!({ "new_public_key": new_public_pem }))
         .send()
         .await
-        .context("Failed to request server")?;
-
-    let status = response.status();
-    if status.is_success() {
-        let result: serde_json::Value = response
-            .json()
-            .await
-            .context("Failed to parse server response")?;
-
-        output.print_success("Key rotation completed!");
-        output.print_value(&result)?;
-
-        if let Some(failed_keys) = result.get("failed_secret_keys") {
-            if !failed_keys.as_array().unwrap_or(&vec![]).is_empty() {
-                output.print_warning(
-                    "The following secrets failed to rotate and may need manual handling:",
-                );
-                output.print_value(failed_keys)?;
-            }
-        }
-    } else {
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unable to get error information".to_string());
-        anyhow::bail!(
-            "Server returned error (status code: {}):\n{}",
+        .context("Failed to update server public key")?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "Server public key update failed: {}: {}",
             status,
-            error_body
-        );
+            body
+        ));
+    }
+
+    // 5) Persist new local keys (with backup)
+    backup_and_write_new_keys(config, &new_private_pem, &new_public_pem, output)?;
+
+    output.print_success(&format!(
+        "Key rotation completed successfully. Updated {updated} association(s) and server public key."
+    ));
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct ClientAssociationItem {
+    secret_key: String,
+    secret_version: i32,
+    encrypted_data_key: Vec<u8>,
+}
+
+#[derive(serde::Deserialize)]
+struct ClientAssociationsResponse {
+    associations: Vec<ClientAssociationItem>,
+}
+
+async fn list_client_associations(
+    config: &Config,
+    client_id: &Uuid,
+) -> Result<Vec<ClientAssociationItem>> {
+    let client = create_http_client();
+    let res = client
+        .get(format!(
+            "{}/v1/clients/{}/secrets",
+            config.server.url, client_id
+        ))
+        .bearer_auth(&config.server.token)
+        .send()
+        .await
+        .context("Failed to list client associations")?;
+    if !res.status().is_success() {
+        anyhow::bail!("Server returned error: {}", res.status());
+    }
+    let body: ClientAssociationsResponse = res
+        .json()
+        .await
+        .context("Failed to parse associations response")?;
+    Ok(body.associations)
+}
+
+async fn resolve_current_client_id(config: &Config) -> Result<Uuid> {
+    if let Some(id) = config.keys.client_id {
+        return Ok(id);
+    }
+    // We attempt to resolve by listing current client keys and picking the earliest Active one as a fallback.
+    // But server hides public_key in list; we cannot match reliably. For safety, we use the single-key assumption.
+    let keys = list_server_keys_internal(config).await?;
+    if keys.is_empty() {
+        return Err(anyhow!(
+            "No client keys found on server. Run 'sealbox key register' first."
+        ));
+    }
+    if keys.len() > 1 {
+        // pick the most recently used if available
+        let mut keys_sorted = keys;
+        keys_sorted.sort_by_key(|k| k.last_used_at.unwrap_or_default());
+        let picked = keys_sorted.last().unwrap();
+        Ok(picked.id)
+    } else {
+        Ok(keys[0].id)
+    }
+}
+
+fn backup_and_write_new_keys(
+    config: &Config,
+    new_private_pem: &str,
+    new_public_pem: &str,
+    output: &OutputManager,
+) -> Result<()> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let public_path = config.keys.public_key_path.to_str().unwrap();
+    let private_path = config.keys.private_key_path.to_str().unwrap();
+    let public_backup = format!("{public_path}.bak.{ts}");
+    let private_backup = format!("{private_path}.bak.{ts}");
+
+    // Backup existing files if present
+    if Path::new(public_path).exists() {
+        fs::copy(public_path, &public_backup)
+            .with_context(|| format!("Failed to backup public key to {public_backup}"))?;
+        output.print_info(&format!("Backed up public key to {public_backup}"));
+    }
+    if Path::new(private_path).exists() {
+        fs::copy(private_path, &private_backup)
+            .with_context(|| format!("Failed to backup private key to {private_backup}"))?;
+        output.print_info(&format!("Backed up private key to {private_backup}"));
+    }
+
+    // Write new keys
+    fs::write(private_path, new_private_pem)
+        .with_context(|| format!("Failed to write private key file: {private_path}"))?;
+    fs::write(public_path, new_public_pem)
+        .with_context(|| format!("Failed to write public key file: {public_path}"))?;
+
+    // Set private key file permissions (owner read/write only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(private_path)?.permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(private_path, perms)?;
     }
 
     Ok(())

@@ -135,6 +135,115 @@ pub(crate) async fn update_status(
     })))
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct RenameClientPayload {
+    name: String,
+    description: Option<String>,
+}
+
+/// Rename/update client basic info
+/// PUT /v1/clients/{client_id}/name
+pub(crate) async fn rename(
+    State(state): State<AppState>,
+    Path(params): Path<ClientIdPathParams>,
+    Json(payload): Json<RenameClientPayload>,
+) -> Result<SealboxResponse> {
+    let client_id = params.client_id()?;
+
+    // Ensure client exists
+    let exists = state
+        .client_key_repo
+        .fetch_client_key(&state.pool, &client_id)
+        .await?;
+    if exists.is_none() {
+        return Err(SealboxError::ClientKeyNotFound(client_id));
+    }
+
+    sqlx::query(
+        "UPDATE client_keys SET name = ?1, description = COALESCE(?2, description) WHERE id = ?3",
+    )
+    .bind(&payload.name)
+    .bind(&payload.description)
+    .bind(client_id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(SealboxResponse::Json(json!({
+        "client_id": client_id,
+        "name": payload.name,
+        "description": payload.description,
+    })))
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct UpdatePublicKeyPayload {
+    new_public_key: String,
+}
+
+/// Update client's public key (client-side rotation flow: call after replacing all associations)
+/// PUT /v1/clients/{client_id}/public-key
+pub(crate) async fn update_public_key(
+    State(state): State<AppState>,
+    Path(params): Path<ClientIdPathParams>,
+    Json(payload): Json<UpdatePublicKeyPayload>,
+) -> Result<SealboxResponse> {
+    let client_id = params.client_id()?;
+
+    // Ensure client exists
+    let exists = state
+        .client_key_repo
+        .fetch_client_key(&state.pool, &client_id)
+        .await?;
+    if exists.is_none() {
+        return Err(SealboxError::ClientKeyNotFound(client_id));
+    }
+
+    sqlx::query("UPDATE client_keys SET public_key = ?1 WHERE id = ?2")
+        .bind(&payload.new_public_key)
+        .bind(client_id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(SealboxResponse::Json(json!({
+        "client_id": client_id,
+        "updated": true
+    })))
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub(crate) struct ClientSecretAssociationItem {
+    secret_key: String,
+    secret_version: i32,
+    encrypted_data_key: Vec<u8>,
+}
+
+/// List all secret associations for a client (used by client-side rotation)
+/// GET /v1/clients/{client_id}/secrets
+pub(crate) async fn list_client_secrets(
+    State(state): State<AppState>,
+    Path(params): Path<ClientIdPathParams>,
+) -> Result<SealboxResponse> {
+    let client_id = params.client_id()?;
+
+    // Ensure client exists
+    let exists = state
+        .client_key_repo
+        .fetch_client_key(&state.pool, &client_id)
+        .await?;
+    if exists.is_none() {
+        return Err(SealboxError::ClientKeyNotFound(client_id));
+    }
+
+    let rows: Vec<ClientSecretAssociationItem> = sqlx::query_as(
+        "SELECT secret_key, secret_version, encrypted_data_key
+         FROM secret_client_keys WHERE client_key_id = ?1 ORDER BY secret_key, secret_version",
+    )
+    .bind(client_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(SealboxResponse::Json(json!({ "associations": rows })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,6 +279,7 @@ mod tests {
             health_repo: Arc::new(SqliteHealthRepo),
             config: Arc::new(SealboxConfig::default()),
             secret_client_key_repo: Arc::new(SqliteSecretClientKeyRepo),
+            enroll_repo: Arc::new(crate::repo::SqliteEnrollRepo),
         }
     }
 
@@ -243,4 +353,8 @@ mod tests {
             panic!("Expected JSON response");
         }
     }
+
+    // Note: client-side rotation flow is covered via secret handler tests to avoid cross-module private fields.
+
+    // Note: server-side rotate_key endpoint is kept, but its e2e test is omitted here.
 }

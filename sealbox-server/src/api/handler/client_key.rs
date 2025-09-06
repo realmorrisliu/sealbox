@@ -1,12 +1,12 @@
 use axum::extract::{Json, State};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::error;
+// use tracing::error;
 use uuid::Uuid;
 
 use crate::{
     api::{SealboxResponse, Version, path::Path, state::AppState},
-    error::{Result, SealboxError},
+    error::Result,
     repo::ClientKey,
 };
 
@@ -19,13 +19,6 @@ impl ClientKeyPathParams {
     // version() method removed since we simplified to single version API
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub(crate) struct RotateClientKeyPayload {
-    new_client_key_id: Uuid,
-    old_client_key_id: Uuid,
-    old_private_key_pem: String,
-}
-
 // GET /{version}/client-key
 pub(crate) async fn list(
     State(state): State<AppState>,
@@ -36,77 +29,6 @@ pub(crate) async fn list(
         .fetch_all_client_keys(&state.pool)
         .await?;
     Ok(SealboxResponse::Json(json!(client_keys)))
-}
-
-// PUT /{version}/client-key
-pub(crate) async fn rotate(
-    State(state): State<AppState>,
-    Path(_params): Path<ClientKeyPathParams>,
-    Json(payload): Json<RotateClientKeyPayload>,
-) -> Result<SealboxResponse> {
-    let new_client_key_id = payload.new_client_key_id;
-    let old_client_key_id = payload.old_client_key_id;
-    let old_private_key_pem = payload.old_private_key_pem;
-
-    let new_public_key_pem = state
-        .client_key_repo
-        .fetch_public_key(&state.pool, &new_client_key_id)
-        .await?
-        .ok_or(SealboxError::ClientKeyNotFound(new_client_key_id))?;
-
-    let secrets = state
-        .secret_repo
-        .fetch_secrets_by_client_key(&state.pool, &old_client_key_id)
-        .await?;
-
-    let mut failed_secret_keys = Vec::new();
-
-    let mut tx = state.pool.begin().await?;
-
-    for secret in secrets {
-        let secret_key = secret.key.clone();
-
-        match secret.rotate_client_key(
-            &old_client_key_id,
-            &old_private_key_pem,
-            &new_client_key_id,
-            &new_public_key_pem,
-        ) {
-            Ok(rotated_secret) => {
-                if let Err(err) = state
-                    .secret_repo
-                    .update_secret_client_key_tx(&mut tx, &rotated_secret)
-                    .await
-                {
-                    failed_secret_keys.push(secret_key.clone());
-                    error!(
-                        "Failed to update secret client key for secret {}: {}",
-                        secret_key, err
-                    );
-                }
-            }
-            Err(err) => {
-                failed_secret_keys.push(secret_key.clone());
-                error!(
-                    "Failed to rotate client key for secret {}: {}",
-                    secret_key, err
-                );
-            }
-        }
-    }
-
-    tx.commit().await?;
-
-    if !failed_secret_keys.is_empty() {
-        return Ok(SealboxResponse::Json(json!({
-          "client_key": new_client_key_id,
-          "failed_secret_keys": failed_secret_keys
-        })));
-    }
-
-    Ok(SealboxResponse::Json(
-        json!({ "client_key": new_client_key_id }),
-    ))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -193,6 +115,7 @@ mod tests {
             health_repo: Arc::new(SqliteHealthRepo),
             config: Arc::new(SealboxConfig::default()),
             secret_client_key_repo: Arc::new(crate::repo::SqliteSecretClientKeyRepo),
+            enroll_repo: Arc::new(crate::repo::SqliteEnrollRepo),
         }
     }
 
@@ -286,30 +209,7 @@ mod tests {
 
     // Note: Version validation test removed since we simplified to single version API
 
-    #[tokio::test]
-    async fn test_rotate_client_key_not_found() {
-        let state = setup_test_state().await;
-        let (old_private_pem, _) = generate_key_pair().expect("Should generate old key pair");
-        let old_client_key_id = uuid::Uuid::new_v4();
-        let new_client_key_id = uuid::Uuid::new_v4();
-
-        let path_params = ClientKeyPathParams {
-            version: Version::V1,
-        };
-        let payload = RotateClientKeyPayload {
-            old_client_key_id,
-            new_client_key_id,
-            old_private_key_pem: old_private_pem,
-        };
-
-        let result = rotate(State(state), SealboxPath(path_params), Json(payload)).await;
-
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SealboxError::ClientKeyNotFound(_) => {} // Expected
-            _ => panic!("Expected ClientKeyNotFound error"),
-        }
-    }
+    // Server-side rotation endpoint removed in favor of client-side rotation flow.
 
     // Note: Version validation test removed since we simplified to single version API
 }

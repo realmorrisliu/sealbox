@@ -1,4 +1,5 @@
 pub(crate) mod client_key;
+pub(crate) mod enroll;
 pub(crate) mod health;
 pub(crate) mod secret;
 pub(crate) mod secret_client_key;
@@ -8,8 +9,8 @@ use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use crate::error::Result;
 
 pub(crate) use self::{
-    client_key::SqliteClientKeyRepo, health::SqliteHealthRepo, secret::SqliteSecretRepo,
-    secret_client_key::SqliteSecretClientKeyRepo,
+    client_key::SqliteClientKeyRepo, enroll::SqliteEnrollRepo, health::SqliteHealthRepo,
+    secret::SqliteSecretRepo, secret_client_key::SqliteSecretClientKeyRepo,
 };
 
 pub(crate) async fn create_db_pool(db_path: &str) -> Result<SqlitePool> {

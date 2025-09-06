@@ -403,6 +403,74 @@ pub(crate) async fn revoke_permission(
     Ok(SealboxResponse::NoContent)
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct UpdatePermissionDataKeyPayload {
+    secret_version: i32,
+    new_encrypted_data_key: Vec<u8>,
+}
+
+/// Update a client's encrypted data key for a secret version (client-side rotation flow)
+/// PUT /{version}/secrets/{secret_key}/permissions/{client_id}/data-key
+pub(crate) async fn update_permission_data_key(
+    State(state): State<AppState>,
+    Path(params): Path<RevokePermissionPathParams>,
+    Json(payload): Json<UpdatePermissionDataKeyPayload>,
+) -> Result<SealboxResponse> {
+    let client_id = Uuid::parse_str(&params.client_id())
+        .map_err(|_| SealboxError::InvalidInput("Invalid client ID format".to_string()))?;
+
+    // Ensure association exists
+    let association = state
+        .secret_client_key_repo
+        .get_association(
+            &state.pool,
+            &params.secret_key(),
+            payload.secret_version,
+            &client_id,
+        )
+        .await?;
+    if association.is_none() {
+        return Err(SealboxError::ClientKeyNotFound(client_id));
+    }
+
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let mut tx = state.pool.begin().await?;
+
+    // Update secret_client_keys
+    sqlx::query(
+        "UPDATE secret_client_keys SET encrypted_data_key = ?1, created_at = ?2
+         WHERE secret_key = ?3 AND secret_version = ?4 AND client_key_id = ?5",
+    )
+    .bind(&payload.new_encrypted_data_key)
+    .bind(now)
+    .bind(params.secret_key())
+    .bind(payload.secret_version)
+    .bind(client_id)
+    .execute(&mut *tx)
+    .await?;
+
+    // If this client is the primary of the secret version, update secrets table as well
+    let updated = sqlx::query(
+        "UPDATE secrets SET encrypted_data_key = ?1, updated_at = ?2
+         WHERE key = ?3 AND version = ?4 AND client_key_id = ?5",
+    )
+    .bind(&payload.new_encrypted_data_key)
+    .bind(now)
+    .bind(params.secret_key())
+    .bind(payload.secret_version)
+    .bind(client_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if updated.rows_affected() > 0 {
+        // primary record updated
+    }
+
+    tx.commit().await?;
+
+    Ok(SealboxResponse::NoContent)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,6 +511,7 @@ mod tests {
             secret_repo: Arc::new(SqliteSecretRepo {}),
             client_key_repo: Arc::new(SqliteClientKeyRepo {}),
             secret_client_key_repo: Arc::new(SqliteSecretClientKeyRepo {}),
+            enroll_repo: Arc::new(crate::repo::SqliteEnrollRepo {}),
         }
     }
 
@@ -857,5 +926,80 @@ mod tests {
             .expect("Should create client key 1");
 
         // Multi-client validation should be implemented to check for non-existent client keys
+    }
+
+    #[tokio::test]
+    async fn test_client_side_update_permission_data_key() {
+        use crate::crypto::client_key::{PrivateClientKey, PublicClientKey, generate_key_pair};
+        use std::str::FromStr;
+
+        let state = setup_test_state().await;
+        let (old_priv_pem, old_pub_pem) = generate_key_pair().expect("gen pair");
+
+        // Register client
+        let client = crate::repo::ClientKey::new_with_name(old_pub_pem.clone(), Some("c-1".into()))
+            .expect("create client");
+        state
+            .client_key_repo
+            .create_client_key(&state.pool, &client)
+            .await
+            .expect("store client");
+
+        // Create secret authorized to this client
+        let secret_path_params = SecretPathParams {
+            version: Version::V1,
+            secret_key: "upd-datakey".to_string(),
+        };
+        let payload = SaveSecretPayload {
+            secret: "abc".into(),
+            authorized_clients: Some(vec![client.id]),
+            ttl: None,
+        };
+        save(
+            State(state.clone()),
+            SealboxPath(secret_path_params.clone()),
+            Json(payload),
+        )
+        .await
+        .expect("save");
+
+        // Fetch association
+        let assoc = state
+            .secret_client_key_repo
+            .get_association(&state.pool, "upd-datakey", 1, &client.id)
+            .await
+            .expect("get assoc")
+            .expect("exists");
+
+        // Client-side re-encrypt
+        let old_priv = PrivateClientKey::from_str(&old_priv_pem).unwrap();
+        let data_key_bytes = old_priv.decrypt(&assoc.encrypted_data_key).unwrap();
+        let (_new_priv_pem, new_pub_pem) = generate_key_pair().expect("gen new pair");
+        let new_pub = PublicClientKey::from_str(&new_pub_pem).unwrap();
+        let new_enc_data_key = new_pub.encrypt(&data_key_bytes).unwrap();
+
+        // Update association on server
+        let params = RevokePermissionPathParams {
+            version: Version::V1,
+            secret_key: "upd-datakey".into(),
+            client_id: client.id.to_string(),
+        };
+        let body = UpdatePermissionDataKeyPayload {
+            secret_version: 1,
+            new_encrypted_data_key: new_enc_data_key.clone(),
+        };
+        let res = update_permission_data_key(State(state.clone()), SealboxPath(params), Json(body))
+            .await
+            .expect("update ok");
+        matches!(res, SealboxResponse::NoContent);
+
+        // Verify association updated
+        let assoc2 = state
+            .secret_client_key_repo
+            .get_association(&state.pool, "upd-datakey", 1, &client.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(assoc2.encrypted_data_key, new_enc_data_key);
     }
 }

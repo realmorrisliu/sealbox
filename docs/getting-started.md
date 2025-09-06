@@ -112,6 +112,27 @@ Now you can securely store secrets:
 ./target/release/sealbox-cli secret list
 ```
 
+## Quick Start: Bring this device online
+
+Option A — simple (direct register):
+
+```bash
+sealbox-cli up --name "my-laptop" --description "Dev laptop"
+```
+
+Option B — enrollment code flow (tailscale-like approval):
+
+```bash
+sealbox-cli up --enroll --name "my-laptop"
+# CLI prints a code and verify URL. Approve via Web UI or:
+curl -X PUT -H "Authorization: Bearer $SEALBOX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"my-laptop"}' \
+  "$SEALBOX_URL/v1/enroll/<CODE>/approve"
+```
+
+After registration, the CLI stores your `client_id` in config. All reads automatically include `X-Client-ID`.
+
 ## Understanding the Security Model
 
 Sealbox uses **server-side envelope encryption** with **client-side decryption**:
@@ -123,6 +144,11 @@ Sealbox uses **server-side envelope encryption** with **client-side decryption**
    - Your RSA public key encrypts the AES key
 4. **Server stores encrypted data** - Cannot decrypt without your private key
 5. **Only you can decrypt** secrets when retrieving them using your private key
+
+Multi-client notes:
+- Each device (client) has its own key pair and `client_id`
+- For multi-client secrets, the same DataKey is re-encrypted per authorized client’s public key
+- CLI sends `X-Client-ID` so the server returns the correct encrypted DataKey for this device
 
 **Key Point**: While secrets are sent as plaintext to the server, only you can decrypt the stored encrypted data.
 
@@ -160,6 +186,25 @@ Sealbox supports automatic expiration of secrets using TTL:
 - [Configuration](configuration.md) - Advanced configuration options
 - [Security Guide](security.md) - Security best practices
 - [API Reference](api-reference.md) - REST API documentation
+
+## Multi-client Basics
+
+Create a secret for multiple devices:
+
+```bash
+sealbox-cli client list
+sealbox-cli secret set prod-db-password "super-secret" --clients my-laptop,ci-server
+
+# On each device, get the secret (X-Client-ID auto-included)
+sealbox-cli secret get prod-db-password
+```
+
+Inspect and revoke permissions:
+
+```bash
+sealbox-cli secret permissions prod-db-password
+sealbox-cli secret revoke prod-db-password --client ci-server
+```
 
 ## Troubleshooting
 

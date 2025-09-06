@@ -559,11 +559,72 @@ CREATE TABLE access_audit (
 
 #### Enhanced Key Rotation
 
-**Client Key Rotation**:
-1. Generate new client key pair
-2. Re-encrypt all DataKeys with new public key
-3. Update secret_client_keys table
-4. Atomic operation ensuring consistency
+Sealbox adopts a client-side rotation flow to avoid sending private keys to the server.
+
+**Client-Side Rotation Steps**:
+1. Generate new key pair locally (private key never leaves the client)
+2. List all associations for the client
+
+```http
+GET /v1/clients/{client_id}/secrets
+Authorization: Bearer <token>
+
+Response:
+{
+  "associations": [
+    { "secret_key": "prod-db-password", "secret_version": 1, "encrypted_data_key": "..." },
+    { "secret_key": "api-key", "secret_version": 3, "encrypted_data_key": "..." }
+  ]
+}
+```
+
+3. For each association, decrypt the DataKey locally using the old private key, then re-encrypt it with the new public key, and upload:
+
+```http
+PUT /v1/secrets/{secret_key}/permissions/{client_id}/data-key
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{
+  "secret_version": 1,
+  "new_encrypted_data_key": "...base64..."
+}
+
+Response: 204 No Content
+```
+
+4. After all associations are updated, update the client’s public key on the server for future writes:
+
+```http
+PUT /v1/clients/{client_id}/public-key
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{
+  "new_public_key": "-----BEGIN RSA PUBLIC KEY-----\n...\n-----END RSA PUBLIC KEY-----"
+}
+
+Response:
+{ "client_id": "...", "updated": true }
+```
+
+This process maintains availability (rolling rotation) and ensures the server never handles private keys.
+
+### Enrollment (Device Approval) Flow
+
+To provide a Tailscale-like onboarding experience, Sealbox supports an enrollment code flow:
+
+1. CLI requests an enrollment code
+2. User approves the device in a Web UI (or API)
+3. CLI detects approval and registers the client
+
+APIs:
+- `POST /v1/enroll` → `{"code","verify_url","expires_at"}`
+- `GET /v1/enroll/{code}` → `{"status": "Pending|Approved|Expired"}`
+- `PUT /v1/enroll/{code}/approve` → Approve with optional `name` and `description`
+
+CLI:
+- `sealbox up --enroll` prints the code + verify URL and polls until approved, then performs `client register` automatically.
 
 ## Summary and Next Steps
 
@@ -616,93 +677,39 @@ CREATE TABLE access_audit (
 
 This multi-client architecture proposal has undergone thorough security analysis and practical considerations. It addresses the limitations of the existing architecture while laying the foundation for future expansion. Through phased implementation, new features can be gradually introduced while ensuring stability.
 
-## Implementation Status (2025-08-24)
+## Implementation Status (2025-09)
 
-### ✅ Completed Features
+### ✅ Completed (current repository)
 
-**Phase 1: Infrastructure Setup (Completed)**
-- ✅ Database migrations and new table structures
-- ✅ Core API development (Client management, Multi-client secret creation)
-- ✅ CLI basic functionality (Client operations, Multi-client secret commands)
-- ✅ Backward compatibility maintained
+**Server & CLI**
+- Database structures for multi-client (`clients`, `secret_client_keys`)
+- Core APIs: client management, multi-client secret creation, permissions (view/revoke)
+- CLI: `up` (supports `--enroll`), `client` commands, `secret set --clients`, `secret permissions/revoke`, client-side `key rotate`
+- Enrollment code flow (preview): `POST/GET/PUT approve` endpoints + CLI polling
 
-**Phase 2: Complete Feature Implementation (Completed)**
-- ✅ Permission management APIs (view, revoke permissions)
-- ✅ Complete CLI functionality (permissions, revocation commands)  
-- ✅ Security enhancements (client authentication, access validation)
-- ✅ Comprehensive testing (77 test cases covering multi-client scenarios)
-
-**Phase 3: Web UI and Optimization (Completed)**
-- ✅ Web UI development (client management, permission visualization)
-- ✅ Multi-client secret creation interface
-- ✅ Permission management UI with revocation capabilities
-- ✅ Complete internationalization (English, Chinese, Japanese, German)
-- ✅ TypeScript type safety and modern React architecture
-
-### 🚀 Complete Usage Examples
+### 🚀 Usage Examples (aligned with current CLI)
 
 #### Basic Multi-Client Secret Management
 
 ```bash
-# 1. Generate and register client keys for different environments
-# Development laptop
-sealbox-cli key generate --force
-sealbox-cli key register
+# 1) Bring devices online
+sealbox-cli up --name "dev-laptop"           # on your laptop
+sealbox-cli up --name "ci-runner" --enroll   # on CI host (enrollment approval)
+sealbox-cli up --name "prod-server"          # on prod server
 
-# Get client ID for development laptop  
-DEV_CLIENT_ID=$(sealbox-cli key list --output json | jq -r '.client_keys[0].id')
-
-# Production server (on production machine)
-sealbox-cli key generate --force  
-sealbox-cli key register
-PROD_CLIENT_ID=$(sealbox-cli key list --output json | jq -r '.client_keys[0].id')
-
-# CI/CD pipeline (on CI machine)
-sealbox-cli key generate --force
-sealbox-cli key register  
-CI_CLIENT_ID=$(sealbox-cli key list --output json | jq -r '.client_keys[0].id')
-
-# 2. Create multi-client secrets
-# Database password accessible by all environments
-sealbox-cli secret set-multi-client database-password \
-    --clients "$DEV_CLIENT_ID,$PROD_CLIENT_ID,$CI_CLIENT_ID" \
-    --ttl 86400
-
-# API key only for production and CI
-sealbox-cli secret set-multi-client api-key \
-    --clients "$PROD_CLIENT_ID,$CI_CLIENT_ID" \
-    --ttl 3600
-
-# Development-only secret
-sealbox-cli secret set dev-debug-token "debug-12345" --ttl 7200
+# 2) Create a multi-client secret (authorize by names)
+sealbox-cli secret set database-password "super-secret" \
+  --clients dev-laptop,ci-runner,prod-server --ttl 86400
 ```
 
 #### Permission Management
 
-```bash  
+```bash
 # View permissions for a secret
 sealbox-cli secret permissions database-password
 
-# Sample output:
-# {
-#   "key": "database-password",
-#   "authorized_clients": [
-#     {
-#       "client_id": "550e8400-e29b-41d4-a716-446655440000",
-#       "authorized_at": 1692889200
-#     },
-#     {
-#       "client_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8", 
-#       "authorized_at": 1692889200
-#     }
-#   ]
-# }
-
-# Revoke access for specific client
-sealbox-cli secret revoke database-password --client "$DEV_CLIENT_ID"
-
-# Verify revocation
-sealbox-cli secret permissions database-password
+# Revoke a client
+sealbox-cli secret revoke database-password --client ci-runner
 ```
 
 #### Team Collaboration Workflow
@@ -766,11 +773,11 @@ The Web UI now provides complete multi-client support:
 
 ### 🌐 Internationalization
 
-Complete multi-language support for all new features:
-- **English** (default)
-- **中文** (Chinese Simplified) 
-- **日本語** (Japanese)
-- **Deutsch** (German)
+Multi-language support (planned) for all new features:
+- English (default)
+- Chinese (Simplified)
+- Japanese
+- German
 
 All UI text, error messages, and help text fully translated.
 

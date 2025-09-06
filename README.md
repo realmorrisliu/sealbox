@@ -231,18 +231,33 @@ DELETE /v1/secrets/:key?version=1
 - **Startup Cleanup**: Server removes expired secrets on startup
 - **Manual Cleanup**: Use admin endpoint to batch-remove expired secrets
 
-### Key Management
+### Client Management (by client)
 ```bash
-# Register public key
-POST /v1/client-key
+# Register client (device)
+POST /v1/clients
 Content-Type: application/json
-{ "public_key": "-----BEGIN PUBLIC KEY-----..." }
+{ "name": "my-laptop", "public_key": "-----BEGIN RSA PUBLIC KEY-----..." }
 
-# List public keys
-GET /v1/client-key
+# List clients
+GET /v1/clients
 
-# Rotate keys
-PUT /v1/client-key
+# Update status
+PUT /v1/clients/{client_id}/status
+
+# Rename/update description
+PUT /v1/clients/{client_id}/name
+```
+
+### Secret Permissions
+```bash
+# View permissions
+GET /v1/secrets/{key}/permissions
+
+# Revoke client permission
+DELETE /v1/secrets/{key}/permissions/{client_id}
+
+# Update client's encrypted DataKey (client-side rotation)
+PUT /v1/secrets/{key}/permissions/{client_id}/data-key
 ```
 
 ### Health Check Endpoints

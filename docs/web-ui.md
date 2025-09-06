@@ -196,13 +196,18 @@ pnpm run preview
 
 ## API Integration
 
-The Web UI integrates with all sealbox-server APIs:
+The Web UI integrates with sealbox-server APIs:
 
-- `GET /v1/secrets` - List secrets
-- `GET /v1/secrets/:key` - Get secret details
-- `DELETE /v1/secrets/:key` - Delete secret
-- `GET /v1/client-key` - List client keys
-- `POST /v1/client-key` - Register client key
+- `GET /v1/secrets` - List secrets (metadata)
+- `GET /v1/secrets/{key}` - Get secret details (include `X-Client-ID` when applicable)
+- `DELETE /v1/secrets/{key}?version=N` - Delete specific version
+- `GET /v1/clients` - List registered clients (devices)
+- `POST /v1/clients` - Register a client
+- `PUT /v1/clients/{client_id}/status` - Enable/disable client
+- `PUT /v1/clients/{client_id}/name` - Rename/update client description
+- `GET /v1/secrets/{key}/permissions` - View secret permissions
+- `DELETE /v1/secrets/{key}/permissions/{client_id}` - Revoke permission
+- `PUT /v1/secrets/{key}/permissions/{client_id}/data-key` - Update client’s encrypted DataKey (client-side rotation support)
 
 ### Error Handling
 

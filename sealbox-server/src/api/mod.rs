@@ -28,6 +28,7 @@ use crate::{
 };
 
 mod auth;
+mod enroll;
 mod handler;
 mod path;
 mod state;
@@ -96,10 +97,12 @@ pub async fn create_app(config: &SealboxConfig) -> Result<Router> {
             axum::routing::delete(secret::revoke_permission),
         )
         .route(
+            "/{version}/secrets/{secret_key}/permissions/{client_id}/data-key",
+            axum::routing::put(secret::update_permission_data_key),
+        )
+        .route(
             "/{version}/client-key",
-            get(client_key::list)
-                .put(client_key::rotate)
-                .post(client_key::create),
+            get(client_key::list).post(client_key::create),
         )
         .route("/{version}/clients", get(client::list).post(client::create))
         .route(
@@ -107,8 +110,30 @@ pub async fn create_app(config: &SealboxConfig) -> Result<Router> {
             axum::routing::put(client::update_status),
         )
         .route(
+            "/{version}/clients/{client_id}/name",
+            axum::routing::put(client::rename),
+        )
+        .route(
+            "/{version}/clients/{client_id}/public-key",
+            axum::routing::put(client::update_public_key),
+        )
+        .route(
+            "/{version}/clients/{client_id}/secrets",
+            get(client::list_client_secrets),
+        )
+        .route(
             "/{version}/admin/cleanup-expired",
             axum::routing::delete(admin::cleanup_expired),
+        )
+        // Enrollment code flow
+        .route(
+            "/{version}/enroll",
+            axum::routing::post(enroll::begin_enrollment),
+        )
+        .route("/{version}/enroll/{code}", get(enroll::check_enrollment))
+        .route(
+            "/{version}/enroll/{code}/approve",
+            axum::routing::put(enroll::approve_enrollment),
         )
         .route_layer(from_fn_with_state(state.clone(), static_auth))
         .with_state(state)

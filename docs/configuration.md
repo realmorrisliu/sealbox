@@ -94,9 +94,6 @@ public_key_path = "~/.config/sealbox/public_key.pem"
 
 [output]
 format = "table"  # table, json, yaml
-
-[cli]
-timeout = 30  # seconds
 ```
 
 ### Configuration Initialization
@@ -141,11 +138,6 @@ sealbox-cli config init --force
 |--------|-------------|---------|--------|
 | `format` | Default output format | `table` | `table`, `json`, `yaml` |
 
-#### `[cli]` Section
-
-| Option | Description | Default | Example |
-|--------|-------------|---------|---------|
-| `timeout` | HTTP request timeout (seconds) | `30` | `60` |
 
 ### Environment Variable Overrides
 
@@ -155,7 +147,7 @@ CLI configuration can be overridden with environment variables:
 |---------------------|---------------|---------|
 | `SEALBOX_URL` | `server.url` | `http://localhost:8080` |
 | `SEALBOX_TOKEN` | `server.token` | `your-auth-token` |
-| `SEALBOX_OUTPUT` | `output.format` | `json` |
+| `SEALBOX_OUTPUT_FORMAT` | `output.format` | `json` |
 | `SEALBOX_PRIVATE_KEY` | `keys.private_key_path` | `/path/to/private.pem` |
 | `SEALBOX_PUBLIC_KEY` | `keys.public_key_path` | `/path/to/public.pem` |
 
@@ -267,6 +259,29 @@ netstat -ln | grep 8080
 # Check environment variables
 env | grep -E "(STORE_PATH|AUTH_TOKEN|LISTEN_ADDR)"
 ```
+
+### Enrollment Flow (Development Preview)
+
+APIs for enrollment code flow used by `sealbox up --enroll`:
+
+```bash
+# Begin enrollment (returns { code, verify_url, expires_at })
+curl -X POST -H "Authorization: Bearer $SEALBOX_TOKEN" \
+  "$SEALBOX_URL/v1/enroll"
+
+# Poll status
+curl -H "Authorization: Bearer $SEALBOX_TOKEN" \
+  "$SEALBOX_URL/v1/enroll/<CODE>"
+
+# Approve device
+curl -X PUT -H "Authorization: Bearer $SEALBOX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"my-laptop","description":"Dev laptop"}' \
+  "$SEALBOX_URL/v1/enroll/<CODE>/approve"
+```
+
+Notes:
+- In development, global token protects these endpoints. In production, consider SSO/Device Code Flow.
 
 ### CLI Issues
 

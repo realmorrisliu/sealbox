@@ -6,8 +6,9 @@ use crate::{
     config::SealboxConfig,
     error::Result,
     repo::{
-        ClientKeyRepo, HealthRepo, SecretClientKeyRepo, SecretRepo, SqliteClientKeyRepo,
-        SqliteHealthRepo, SqliteSecretClientKeyRepo, SqliteSecretRepo, create_db_pool,
+        ClientKeyRepo, EnrollRepo, HealthRepo, SecretClientKeyRepo, SecretRepo,
+        SqliteClientKeyRepo, SqliteHealthRepo, SqliteSecretClientKeyRepo, SqliteSecretRepo,
+        create_db_pool,
     },
 };
 
@@ -19,6 +20,7 @@ pub(crate) struct AppState {
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
     pub(crate) client_key_repo: Arc<dyn ClientKeyRepo>,
     pub(crate) secret_client_key_repo: Arc<dyn SecretClientKeyRepo>,
+    pub(crate) enroll_repo: Arc<dyn crate::repo::EnrollRepo>,
 }
 
 impl AppState {
@@ -28,6 +30,7 @@ impl AppState {
         SqliteSecretRepo::init_table(&pool).await?;
         SqliteClientKeyRepo::init_table(&pool).await?;
         SqliteSecretClientKeyRepo::init_table(&pool).await?;
+        crate::repo::SqliteEnrollRepo::init_table(&pool).await?;
 
         let state = Self {
             config: Arc::new(config.clone()),
@@ -36,6 +39,7 @@ impl AppState {
             secret_repo: Arc::new(SqliteSecretRepo {}),
             client_key_repo: Arc::new(SqliteClientKeyRepo {}),
             secret_client_key_repo: Arc::new(SqliteSecretClientKeyRepo {}),
+            enroll_repo: Arc::new(crate::repo::SqliteEnrollRepo {}),
         };
 
         // Perform startup cleanup of expired secrets

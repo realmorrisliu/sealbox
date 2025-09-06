@@ -6,7 +6,10 @@ Complete reference for the Sealbox command-line interface.
 
 All commands support these global options:
 
-- `--config <path>` - Path to configuration file (default: `~/.config/sealbox/config.toml`)
+- `--url <url>` - Server URL (overrides config)
+- `--token <token>` - Authentication token (overrides config)
+- `--public-key <path>` - Public key file path (overrides config)
+- `--private-key <path>` - Private key file path (overrides config)
 - `--output <format>` - Output format: `table`, `json`, `yaml` (default: `table`)
 - `--help` - Show help information
 - `--version` - Show version information
@@ -67,12 +70,13 @@ sealbox-cli key generate [OPTIONS]
 ```
 
 **Options:**
-- `--key-size <bits>` - RSA key size (default: 2048)
+- `--public-key-path <path>` - Public key file output path (overrides config)
+- `--private-key-path <path>` - Private key file output path (overrides config)
 - `--force` - Overwrite existing keys
 
 **Example:**
 ```bash
-sealbox-cli key generate --key-size 4096
+sealbox-cli key generate --public-key-path ~/.config/sealbox/public.pem --private-key-path ~/.config/sealbox/private.pem
 ```
 
 ### `key register`
@@ -92,18 +96,6 @@ sealbox-cli key register [OPTIONS]
 sealbox-cli key register --url http://localhost:8080 --token my-token
 ```
 
-### `key list`
-
-List all registered public keys on the server.
-
-```bash
-sealbox-cli key list [OPTIONS]
-```
-
-**Options:**
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
-
 ### `key status`
 
 Show the status of your local keys and server registration.
@@ -114,15 +106,57 @@ sealbox-cli key status
 
 ### `key rotate`
 
-Rotate to a new key pair (advanced operation).
+Rotate to a new key pair using client-side rotation (private key stays local).
 
 ```bash
 sealbox-cli key rotate [OPTIONS]
 ```
 
+Behavior:
+- Generates a new key pair locally
+- Lists all secret associations for the current client
+- For each association, decrypts the DataKey locally and re-encrypts it with the new public key
+- Uploads the new encrypted DataKey per association
+- Updates the client’s public key on the server
+
+Server APIs used by this command:
+- `GET /v1/clients/{client_id}/secrets`
+- `PUT /v1/secrets/{key}/permissions/{client_id}/data-key`
+- `PUT /v1/clients/{client_id}/public-key`
+
 **Options:**
 - `--url <url>` - Server URL (overrides config)
 - `--token <token>` - Authentication token (overrides config)
+
+### `up`
+
+One-step setup: generate keys (if missing) and register this device as a client.
+
+```bash
+sealbox-cli up [--name <name>] [--description <desc>] [--enroll]
+```
+
+Behavior:
+- If keys don’t exist: generate RSA key pair locally
+- If not registered: register client and store `client_id` in config
+- `--enroll`: start enrollment code flow (prints code + verify URL; waits for approval)
+
+### `client` commands
+
+```bash
+sealbox-cli client register [--name <name>] [--description <desc>]
+sealbox-cli client list
+sealbox-cli client disable <client-id>
+sealbox-cli client rename <client-id> <name> [--description <desc>]
+sealbox-cli client status
+```
+
+Behavior:
+- `register`: call `/v1/clients` and persist `keys.client_id` on success
+- `list`: show id/name/status/created_at/last_used_at
+- `disable`: set status=Disabled
+- `rename`: update name/description
+- `status`: show current client_id, key paths, associations count
 
 ## Secret Management Commands
 
@@ -131,7 +165,7 @@ sealbox-cli key rotate [OPTIONS]
 Store a secret with the given key.
 
 ```bash
-sealbox-cli secret set <key> <value> [OPTIONS]
+sealbox-cli secret set <key> <value> [--ttl <seconds>] [--clients <id-or-name>[,<id-or-name>...]]
 ```
 
 **Arguments:**
@@ -142,6 +176,7 @@ sealbox-cli secret set <key> <value> [OPTIONS]
 - `--ttl <seconds>` - Time-to-live in seconds (expires after creation time)
 - `--url <url>` - Server URL (overrides config)
 - `--token <token>` - Authentication token (overrides config)
+- `--clients <...>` - Multi-client authorization; accepts UUIDs or client names
 
 **TTL Behavior:**
 - Expired secrets are automatically deleted when accessed (lazy cleanup)
@@ -186,6 +221,9 @@ sealbox-cli secret get <key> [OPTIONS]
 - If the secret has expired, it will be automatically deleted and you'll get a "Secret not found" error
 - This is the lazy cleanup mechanism in action
 
+Notes:
+- CLI automatically sends `X-Client-ID` (from config) so multi-client secrets return the correct DataKey for this device
+
 **Examples:**
 ```bash
 # Get latest version
@@ -198,53 +236,34 @@ sealbox-cli secret get db_password --version 2
 sealbox-cli secret get expired_token
 ```
 
-### `secret list`
+### `secret permissions`
 
-List all your secrets (metadata only, no values).
-
-```bash
-sealbox-cli secret list [OPTIONS]
-```
-
-**Options:**
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
-
-### `secret delete`
-
-Delete a secret or specific version.
+View secret access permissions.
 
 ```bash
-sealbox-cli secret delete <key> [OPTIONS]
+sealbox-cli secret permissions <key>
 ```
 
-**Arguments:**
-- `<key>` - Secret identifier
+### `secret revoke`
 
-**Options:**
-- `--version <version>` - Specific version to delete (default: all versions)
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
+Revoke a client’s permission on a secret.
 
-**Examples:**
 ```bash
-# Delete all versions
-sealbox-cli secret delete old_password
-
-# Delete specific version
-sealbox-cli secret delete old_password --version 1
+sealbox-cli secret revoke <key> --client <id-or-name>
 ```
+
+The `<id-or-name>` can be a client UUID or a client name; names are resolved via `client list`.
 
 ### `secret import`
 
 Import secrets from a file.
 
 ```bash
-sealbox-cli secret import [OPTIONS]
+sealbox-cli secret import <file> [--format json]
 ```
 
 **Options:**
-- `--file <path>` - JSON file containing secrets
+- `<file>` - JSON file containing secrets (positional)
 - `--format <format>` - Input format: `json` (default)
 - `--url <url>` - Server URL (overrides config)
 - `--token <token>` - Authentication token (overrides config)
@@ -269,12 +288,14 @@ sealbox-cli secret import --file secrets.json
 Export secrets to a file (requires local decryption).
 
 ```bash
-sealbox-cli secret export [OPTIONS]
+sealbox-cli secret export [<file|->] [--keys <glob>] [--format env|json|yaml|shell] [--prefix <NAME>]
 ```
 
 **Options:**
-- `--file <path>` - Output file path
-- `--format <format>` - Output format: `json` (default)
+- `<file>` - Output file path or `-` for stdout (default: `-`)
+- `--keys <glob>` - Filter keys by glob pattern (e.g., `db_*`)
+- `--format <format>` - Output: `env` (default), `shell`, `json`, `yaml`
+- `--prefix <NAME>` - Prefix for env var names (env/shell formats)
 - `--url <url>` - Server URL (overrides config)
 - `--token <token>` - Authentication token (overrides config)
 
@@ -374,8 +395,9 @@ CLI commands can be configured using environment variables:
 
 - `SEALBOX_URL` - Server URL
 - `SEALBOX_TOKEN` - Authentication token
-- `SEALBOX_CONFIG` - Configuration file path
-- `SEALBOX_OUTPUT` - Default output format
+- `SEALBOX_OUTPUT_FORMAT` - Default output format (`table`, `json`, `yaml`)
+- `SEALBOX_PRIVATE_KEY` - Private key file path
+- `SEALBOX_PUBLIC_KEY` - Public key file path
 
 ## Exit Codes
 
@@ -384,3 +406,20 @@ CLI commands can be configured using environment variables:
 - `2` - Authentication error
 - `3` - Network/connection error
 - `4` - File/configuration error
+### `secret permissions`
+
+View secret access permissions.
+
+```bash
+sealbox-cli secret permissions <key>
+```
+
+### `secret revoke`
+
+Revoke a client’s permission on a secret.
+
+```bash
+sealbox-cli secret revoke <key> --client <id-or-name>
+```
+
+The `<id-or-name>` can be a client UUID or a client name; names are resolved via `client list`.

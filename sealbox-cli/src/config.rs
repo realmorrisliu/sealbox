@@ -23,6 +23,7 @@ pub struct ServerConfig {
 pub struct KeyConfig {
     pub public_key_path: PathBuf,
     pub private_key_path: PathBuf,
+    pub client_id: Option<uuid::Uuid>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -51,6 +52,7 @@ impl Default for Config {
             keys: KeyConfig {
                 public_key_path: config_dir.join("public_key.pem"),
                 private_key_path: config_dir.join("private_key.pem"),
+                client_id: None,
             },
             output: OutputConfig {
                 format: OutputFormat::Table,
@@ -214,6 +216,7 @@ mod tests {
             keys: KeyConfig {
                 public_key_path: PathBuf::from("~/test/public.pem"),
                 private_key_path: PathBuf::from("~/test/private.pem"),
+                client_id: None,
             },
             output: OutputConfig {
                 format: OutputFormat::Json,
