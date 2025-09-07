@@ -34,7 +34,7 @@ export function Navigation() {
             <div className="leading-tight">
               <div className="font-semibold">Sealbox</div>
               <div className="text-xs text-muted-foreground">
-                Self-hosted secrets hub
+                {t("nav.subtitle")}
               </div>
             </div>
           </div>
@@ -44,7 +44,7 @@ export function Navigation() {
               to="/docs"
               className="text-sm text-foreground/80 hover:text-primary px-4 py-2.5"
             >
-              Docs
+              {t("nav.docs")}
             </Link>
             <a
               href="https://github.com/"
@@ -52,7 +52,7 @@ export function Navigation() {
               rel="noreferrer"
               className="text-sm text-foreground/80 hover:text-primary px-4 py-2.5"
             >
-              Support
+              {t("nav.support")}
             </a>
             <UserMenu onLogout={logout} label={t("nav.signOut")} />
           </div>
@@ -101,11 +101,12 @@ function UserMenu({
 }
 
 function MainTabs() {
+  const { t } = useTranslation();
   const router = useRouterState();
   const links = [
-    { to: "/", label: "Secrets" },
-    { to: "/clients", label: "Clients" },
-    { to: "/settings", label: "Settings" },
+    { to: "/", label: t("nav.secrets") },
+    { to: "/clients", label: t("nav.clients") },
+    { to: "/settings", label: t("nav.settings") },
   ];
 
   const activePath = router.location.pathname;

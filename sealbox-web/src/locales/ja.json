@@ -1,6 +1,14 @@
 {
   "nav": {
-    "signOut": "サインアウト"
+    "signOut": "サインアウト",
+    "subtitle": "セルフホスト型シークレットハブ",
+    "docs": "ドキュメント",
+    "support": "サポート",
+    "secrets": "シークレット",
+    "clients": "クライアント", 
+    "settings": "設定",
+    "appearance": "外観",
+    "language": "言語"
   },
   "login": {
     "title": "Sealbox",
@@ -104,6 +112,7 @@
       "description": "このシークレットのクライアントアクセス権限を管理",
       "noPermissions": "クライアント権限が見つかりません",
       "authorizedClients": "{{count}} 個の認可クライアント",
+      "authorizedClients_other": "{{count}} 個の認可クライアント",
       "clients": "クライアント",
       "authorizedAt": "認可時刻",
       "revoke": "取り消し",
@@ -121,7 +130,6 @@
     "keyId": "キーID",
     "status": "ステータス",
     "createdAt": "作成日時",
-    "description": "説明",
     "actions": "操作",
     "active": "アクティブ",
     "retired": "退役済み",
@@ -129,21 +137,12 @@
     "noKeysFound": "マスターキーが見つかりません",
     "noKeysFoundDescription": "最初のRSAキーペアを登録してシークレットの暗号化を開始しましょう",
     "registerFirstKey": "最初のキーを登録",
-    "noDescription": "説明なし",
     "viewKey": "キー詳細を表示",
     "cliRequired": {
       "title": "キー操作にはCLIを使用",
       "registerDescription": "キーの生成と登録: sealbox-cli key generate && sealbox-cli key register",
       "rotateDescription": "マスターキーのローテーション: sealbox-cli key rotate"
-    },
-    "cliGuide": {
-      "title": "CLIによるマスターキー操作",
-      "generateKeys": "RSAキーペアの生成:",
-      "registerKey": "公開キーの登録:",
-      "rotateKey": "マスターキーのローテーション:"
-    },
-    "securityNote": "RSAキーペアのセキュリティ",
-    "securityNoteDescription": "マスターキーは2048ビットRSA暗号化を使用します。秘密鍵は安全に保管し、絶対に共有しないでください。"
+    }
   },
   "common": {
     "loading": "読み込み中...",
@@ -153,6 +152,7 @@
     "errorDescription": "データの読み込みに失敗しました。もう一度お試しください。",
     "refresh": "更新",
     "cancel": "キャンセル",
+    "success": "成功",
     "tryAgain": "再試行",
     "reloadPage": "ページを再読み込み",
     "expired": "期限切れ",
@@ -183,5 +183,70 @@
     "light": "ライト",
     "dark": "ダーク",
     "system": "システム"
+  },
+  "pages": {
+    "secrets": {
+      "title": "シークレット",
+      "subtitle": "シークレットとクライアントアクセスを管理する"
+    },
+    "clients": {
+      "title": "クライアント",
+      "subtitle": "sealboxサーバーに接続されたデバイスを管理する",
+      "searchPlaceholder": "クライアントを検索...",
+      "addClient": "クライアント追加",
+      "emptyTitle": "最初のクライアントをオンラインにしましょう",
+      "emptyDescription": "デバイスでCLIを実行して登録を開始し、コードを取得してください。そしてここでコードを承認してください。",
+      "emptyInstructions": "CLIはABCD-EFGHのようなコードと検証URLを出力します。",
+      "enrollmentCode": "登録コード",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "namePlaceholder": "例：dev-laptop",
+      "ownerPlaceholder": "所有者または用途",
+      "approveEnrollment": "登録を承認",
+      "enrollmentSuccess": "登録が承認されました。CLIが完了すると、クライアントが表示されます。"
+    },
+    "settings": {
+      "title": "設定", 
+      "subtitle": "接続状況とCLIヘルプ",
+      "server": "サーバー",
+      "notConnected": "接続されていません",
+      "status": "ステータス："
+    }
+  },
+  "components": {
+    "addClient": {
+      "title": "クライアント追加",
+      "instructions": "デバイスで実行: <code>sealbox-cli up --enroll</code> してここにコードを貼り付けてください。",
+      "enrollmentCode": "登録コード",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "name": "名前",
+      "namePlaceholder": "例：laptop",
+      "description": "説明", 
+      "descriptionPlaceholder": "所有者または用途",
+      "cancel": "キャンセル",
+      "approveAdd": "承認して追加"
+    },
+    "errorState": {
+      "retryDefault": "再試行"
+    },
+    "onboarding": {
+      "getStarted": "2つのステップで開始",
+      "step1": "マシンで実行: <code>sealbox-cli up --enroll</code>",
+      "step2": "ここでコードを承認し、最初のシークレットを作成してください",
+      "enrollmentCode": "登録コード",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "name": "名前",
+      "namePlaceholder": "例：laptop",
+      "description": "説明",
+      "descriptionPlaceholder": "所有者または用途", 
+      "approve": "承認"
+    },
+    "stats": {
+      "secrets": "シークレット",
+      "clients": "クライアント"
+    },
+    "errorMessages": {
+      "failedToLoad": "読み込み失敗",
+      "retry": "再試行"
+    }
   }
 }

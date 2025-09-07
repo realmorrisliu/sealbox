@@ -1,6 +1,14 @@
 {
   "nav": {
-    "signOut": "Abmelden"
+    "signOut": "Abmelden",
+    "subtitle": "Selbst gehosteter Geheimnisse-Hub",
+    "docs": "Dokumentation",
+    "support": "Support",
+    "secrets": "Geheimnisse",
+    "clients": "Clients", 
+    "settings": "Einstellungen",
+    "appearance": "Erscheinungsbild",
+    "language": "Sprache"
   },
   "login": {
     "title": "Sealbox",
@@ -104,6 +112,7 @@
       "description": "Client-Zugriffsberechtigungen für dieses Geheimnis verwalten",
       "noPermissions": "Keine Client-Berechtigungen gefunden",
       "authorizedClients": "{{count}} autorisierte Clients",
+      "authorizedClients_other": "{{count}} autorisierte Clients",
       "clients": "Clients",
       "authorizedAt": "Autorisiert am",
       "revoke": "Widerrufen",
@@ -121,7 +130,6 @@
     "keyId": "Schlüssel-ID",
     "status": "Status",
     "createdAt": "Erstellt am",
-    "description": "Beschreibung",
     "actions": "Aktionen",
     "active": "Aktiv",
     "retired": "Pensioniert",
@@ -129,21 +137,12 @@
     "noKeysFound": "Keine Client-Schlüssel gefunden",
     "noKeysFoundDescription": "Registrieren Sie Ihr erstes RSA-Schlüsselpaar, um mit der Verschlüsselung von Geheimnissen zu beginnen",
     "registerFirstKey": "Ersten Schlüssel registrieren",
-    "noDescription": "Keine Beschreibung",
     "viewKey": "Schlüssel-Details anzeigen",
     "cliRequired": {
       "title": "CLI für Schlüsseloperationen verwenden",
       "registerDescription": "Schlüssel generieren und registrieren mit: sealbox-cli key generate && sealbox-cli key register",
       "rotateDescription": "Client-Schlüssel rotieren mit: sealbox-cli key rotate"
-    },
-    "cliGuide": {
-      "title": "Client-Schlüssel-Operationen über CLI",
-      "generateKeys": "RSA-Schlüsselpaar generieren:",
-      "registerKey": "Öffentlichen Schlüssel registrieren:",
-      "rotateKey": "Client-Schlüssel rotieren:"
-    },
-    "securityNote": "RSA-Schlüsselpaar-Sicherheit",
-    "securityNoteDescription": "Client-Schlüssel verwenden 2048-Bit RSA-Verschlüsselung. Ihr privater Schlüssel sollte sicher aufbewahrt und niemals geteilt werden."
+    }
   },
   "common": {
     "loading": "Laden...",
@@ -153,6 +152,7 @@
     "errorDescription": "Daten konnten nicht geladen werden. Bitte versuchen Sie es erneut.",
     "refresh": "Aktualisieren",
     "cancel": "Abbrechen",
+    "success": "Erfolgreich",
     "tryAgain": "Erneut versuchen",
     "reloadPage": "Seite neu laden",
     "expired": "Abgelaufen",
@@ -186,5 +186,70 @@
     "light": "Hell",
     "dark": "Dunkel",
     "system": "System"
+  },
+  "pages": {
+    "secrets": {
+      "title": "Geheimnisse",
+      "subtitle": "Geheimnisse und Client-Zugriff verwalten"
+    },
+    "clients": {
+      "title": "Clients",
+      "subtitle": "Mit Ihrem Sealbox-Server verbundene Geräte verwalten",
+      "searchPlaceholder": "Clients suchen...",
+      "addClient": "Client hinzufügen",
+      "emptyTitle": "Bringen Sie Ihren ersten Client online",
+      "emptyDescription": "Führen Sie auf dem Gerät die CLI aus, um die Registrierung zu starten und einen Code zu erhalten. Genehmigen Sie dann den Code hier.",
+      "emptyInstructions": "Die CLI gibt einen Code wie ABCD-EFGH und eine Verifizierungs-URL aus.",
+      "enrollmentCode": "Registrierungscode",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "namePlaceholder": "z.B. dev-laptop",
+      "ownerPlaceholder": "Besitzer oder Zweck",
+      "approveEnrollment": "Registrierung genehmigen",
+      "enrollmentSuccess": "Registrierung genehmigt. Der Client wird angezeigt, sobald die CLI abgeschlossen ist."
+    },
+    "settings": {
+      "title": "Einstellungen", 
+      "subtitle": "Verbindung und CLI-Hilfe",
+      "server": "Server",
+      "notConnected": "Nicht verbunden",
+      "status": "Status:"
+    }
+  },
+  "components": {
+    "addClient": {
+      "title": "Client hinzufügen",
+      "instructions": "Auf dem Gerät ausführen: <code>sealbox-cli up --enroll</code> und den Code hier einfügen.",
+      "enrollmentCode": "Registrierungscode",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "name": "Name",
+      "namePlaceholder": "z.B. laptop",
+      "description": "Beschreibung", 
+      "descriptionPlaceholder": "Besitzer oder Zweck",
+      "cancel": "Abbrechen",
+      "approveAdd": "Genehmigen & Hinzufügen"
+    },
+    "errorState": {
+      "retryDefault": "Wiederholen"
+    },
+    "onboarding": {
+      "getStarted": "In zwei Schritten starten",
+      "step1": "Auf Ihrem Rechner ausführen: <code>sealbox-cli up --enroll</code>",
+      "step2": "Den Code hier genehmigen und dann Ihr erstes Geheimnis erstellen",
+      "enrollmentCode": "Registrierungscode",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "name": "Name",
+      "namePlaceholder": "z.B. laptop",
+      "description": "Beschreibung",
+      "descriptionPlaceholder": "Besitzer oder Zweck", 
+      "approve": "Genehmigen"
+    },
+    "stats": {
+      "secrets": "Geheimnisse",
+      "clients": "Clients"
+    },
+    "errorMessages": {
+      "failedToLoad": "Laden fehlgeschlagen",
+      "retry": "Wiederholen"
+    }
   }
 }

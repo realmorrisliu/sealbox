@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +21,7 @@ export function AddClientDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const approve = useApproveEnrollment();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -29,7 +31,7 @@ export function AddClientDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add client</DialogTitle>
+          <DialogTitle>{t("components.addClient.title")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="text-xs text-muted-foreground">
@@ -41,38 +43,38 @@ export function AddClientDialog({
           </div>
           <div>
             <Label htmlFor="enroll-code" className="text-xs">
-              Enrollment code
+              {t("components.addClient.enrollmentCode")}
             </Label>
             <Input
               id="enroll-code"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="ABCD-EFGH"
+              placeholder={t("components.addClient.enrollmentCodePlaceholder")}
               className="h-8"
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label htmlFor="client-name" className="text-xs">
-                Name
+                {t("components.addClient.name")}
               </Label>
               <Input
                 id="client-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., laptop"
+                placeholder={t("components.addClient.namePlaceholder")}
                 className="h-8"
               />
             </div>
             <div>
               <Label htmlFor="client-desc" className="text-xs">
-                Description
+                {t("components.addClient.description")}
               </Label>
               <Input
                 id="client-desc"
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
-                placeholder="Owner or purpose"
+                placeholder={t("components.addClient.descriptionPlaceholder")}
                 className="h-8"
               />
             </div>
@@ -84,7 +86,7 @@ export function AddClientDialog({
             onClick={() => onOpenChange(false)}
             size="sm"
           >
-            Cancel
+            {t("components.addClient.cancel")}
           </Button>
           <Button
             size="sm"
@@ -99,7 +101,7 @@ export function AddClientDialog({
             }}
             disabled={approve.isPending || !code.trim()}
           >
-            Approve & Add
+            {t("components.addClient.approveAdd")}
           </Button>
         </DialogFooter>
       </DialogContent>

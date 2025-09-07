@@ -1,6 +1,7 @@
 "use client";
 
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { PageContainer } from "@/components/layout/page-container";
 import { PageLayout } from "@/components/layout/page-layout";
 import { ContentCard } from "@/components/common/content-card";
@@ -23,6 +24,7 @@ function SettingsPage() {
 }
 
 function Content() {
+  const { t } = useTranslation();
   const status = useServerStatus();
   const { serverUrl } = useAuthStore();
 
@@ -33,12 +35,12 @@ function Content() {
   };
 
   return (
-    <PageLayout title="Settings" subtitle="Connection and CLI help">
+    <PageLayout title={t("pages.settings.title")} subtitle={t("pages.settings.subtitle")}>
       <div className="grid gap-4 grid-cols-2">
         <ContentCard className="space-y-3">
-          <div className="text-sm font-medium">Server</div>
+          <div className="text-sm font-medium">{t("pages.settings.server")}</div>
           <div className="text-sm text-muted-foreground flex items-center gap-2">
-            <span className="truncate">{serverUrl || "Not connected"}</span>
+            <span className="truncate">{serverUrl || t("pages.settings.notConnected")}</span>
             {serverUrl && (
               <Button
                 variant="ghost"

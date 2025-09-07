@@ -57,11 +57,11 @@ function SecretManagement() {
 
   return (
     <PageLayout
-      title="Secrets"
-      subtitle="Manage secrets and client access."
+      title={t("pages.secrets.title")}
+      subtitle={t("pages.secrets.subtitle")}
       stats={{
         count: filteredSecrets.length,
-        label: "secrets",
+        label: t("components.stats.secrets"),
         filtered: !!searchTerm,
       }}
       searchProps={{
@@ -85,7 +85,7 @@ function SecretManagement() {
         loadingSkeleton={<SecretsListSkeleton />}
         emptyState={
           <EmptyState
-            title="Get started in two steps"
+            title={t("components.onboarding.getStarted")}
             centered={false}
             withContainer={true}
           >
@@ -93,47 +93,47 @@ function SecretManagement() {
               <div className="space-y-2">
                 <ol className="text-sm text-muted-foreground list-decimal list-inside space-y-1">
                   <li>
-                    On your machine run:{" "}
+                    {t("components.onboarding.step1")}{" "}
                     <code className="bg-muted px-1 py-0.5 rounded">
                       sealbox-cli up --enroll
                     </code>
                   </li>
-                  <li>Approve the code here, then create your first secret</li>
+                  <li>{t("components.onboarding.step2")}</li>
                 </ol>
               </div>
               <div className="space-y-2">
                 <Label className="text-xs" htmlFor="code">
-                  Enrollment code
+                  {t("components.onboarding.enrollmentCode")}
                 </Label>
                 <Input
                   id="code"
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="ABCD-EFGH"
+                  placeholder={t("components.onboarding.enrollmentCodePlaceholder")}
                   className="h-8"
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <Label className="text-xs" htmlFor="name">
-                      Name
+                      {t("components.onboarding.name")}
                     </Label>
                     <Input
                       id="name"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="e.g., laptop"
+                      placeholder={t("components.onboarding.namePlaceholder")}
                       className="h-8"
                     />
                   </div>
                   <div>
                     <Label className="text-xs" htmlFor="desc">
-                      Description
+                      {t("components.onboarding.description")}
                     </Label>
                     <Input
                       id="desc"
                       value={desc}
                       onChange={(e) => setDesc(e.target.value)}
-                      placeholder="Owner or purpose"
+                      placeholder={t("components.onboarding.descriptionPlaceholder")}
                       className="h-8"
                     />
                   </div>
@@ -152,7 +152,7 @@ function SecretManagement() {
                     }}
                     disabled={approveEnrollment.isPending || !code.trim()}
                   >
-                    Approve
+                    {t("components.onboarding.approve")}
                   </Button>
                   <CreateSecretDialog>
                     <Button variant="outline" size="sm">
@@ -165,10 +165,10 @@ function SecretManagement() {
           </EmptyState>
         }
         errorProps={{
-          title: "Failed to load secrets",
+          title: t("components.errorMessages.failedToLoad") + " secrets",
           description: error?.message,
           onRetry: () => window.location.reload(),
-          retryLabel: "Retry",
+          retryLabel: t("components.errorMessages.retry"),
         }}
       >
         <SecretTable

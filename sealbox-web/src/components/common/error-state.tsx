@@ -1,6 +1,7 @@
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface ErrorStateProps {
   title: string;
@@ -17,8 +18,10 @@ export function ErrorState({
   title,
   description,
   onRetry,
-  retryLabel = "Retry",
+  retryLabel,
 }: ErrorStateProps) {
+  const { t } = useTranslation();
+  const defaultRetryLabel = retryLabel || t("components.errorState.retryDefault");
   return (
     <div className="space-y-4">
       <Alert variant="destructive">
@@ -28,7 +31,7 @@ export function ErrorState({
           {description && <p className="text-sm mt-1">{description}</p>}
         </div>
       </Alert>
-      {onRetry && <Button onClick={onRetry}>{retryLabel}</Button>}
+      {onRetry && <Button onClick={onRetry}>{defaultRetryLabel}</Button>}
     </div>
   );
 }

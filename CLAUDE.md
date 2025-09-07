@@ -317,6 +317,27 @@ The CLI uses TOML configuration files with environment variable overrides:
     - Web UI: Permission viewer and management interface (basic creation dialog exists)
     - Comprehensive client-side tooling and documentation
 
+### Recent Improvements (2025-09-07)
+
+- ✅ **I18n Translation File Optimization** - Complete internationalization cleanup and synchronization
+  - **Translation file cleanup**: Removed 17 redundant translation keys across all 4 language files
+    - Eliminated unused keys: `keys.description`, `keys.cliGuide`, `keys.securityNote`, etc.
+    - Removed fictional UI elements that don't exist in actual implementation
+  - **Hardcoded text elimination**: Fixed login form validation messages to use i18n translations
+    - Replaced Zod schema hardcoded English messages with `t("login.errors.invalidUrl")` calls
+    - Added missing validation translation keys to all language files
+  - **Complete structure synchronization**: Updated Japanese and German translation files to match full English/Chinese structure
+    - Added missing `nav` section keys (subtitle, docs, support, clients, settings, appearance, language)
+    - Added complete `pages` structure (secrets, clients, settings page translations)
+    - Added complete `components` structure (addClient, onboarding, stats, errorMessages)
+    - Added missing plural forms for `secrets.permissions.authorizedClients_other`
+  - **Translation completeness**: All 4 language files now have identical key structures
+    - 🇺🇸 English (en.json) - Reference implementation
+    - 🇨🇳 中文 (zh.json) - Complete Chinese translations
+    - 🇯🇵 日本語 (ja.json) - Fully updated Japanese translations  
+    - 🇩🇪 Deutsch (de.json) - Fully updated German translations
+  - **Quality improvements**: Zero missing translations, no hardcoded UI text, consistent key naming across languages
+
 ### Recent Improvements (2025-08-24)
 
 - ✅ **Code Optimization and Cleanup** - Simplified architecture and removed over-engineering

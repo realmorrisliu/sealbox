@@ -31,10 +31,10 @@ function LoginPage() {
   const { defaultServerUrl, setDefaultServerUrl } = useConfigStore();
   const { t } = useTranslation();
 
-  // Use static English messages for validation schema to avoid hydration issues
+  // Use translated messages for validation schema
   const loginSchema = z.object({
-    serverUrl: z.string().url("Please enter a valid server URL"),
-    token: z.string().min(1, "Please enter authentication token"),
+    serverUrl: z.string().url(t("login.errors.invalidUrl")),
+    token: z.string().min(1, t("login.errors.tokenRequired")),
   });
 
   const {

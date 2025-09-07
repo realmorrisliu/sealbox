@@ -19,11 +19,11 @@ const languages = [
  * 语言选择器子菜单
  */
 export function LanguageSelector() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger className="cursor-pointer">Language</DropdownMenuSubTrigger>
+      <DropdownMenuSubTrigger className="cursor-pointer">{t("nav.language")}</DropdownMenuSubTrigger>
       <DropdownMenuSubContent className="w-fit">
         <DropdownMenuRadioGroup
           value={i18n.language}

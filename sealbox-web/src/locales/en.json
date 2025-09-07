@@ -1,6 +1,14 @@
 {
   "nav": {
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "subtitle": "Self-hosted secrets hub",
+    "docs": "Docs",
+    "support": "Support",
+    "secrets": "Secrets",
+    "clients": "Clients", 
+    "settings": "Settings",
+    "appearance": "Appearance",
+    "language": "Language"
   },
   "login": {
     "title": "Sealbox",
@@ -122,7 +130,6 @@
     "keyId": "Key ID",
     "status": "Status",
     "createdAt": "Created At",
-    "description": "Description",
     "actions": "Actions",
     "active": "Active",
     "retired": "Retired",
@@ -130,21 +137,12 @@
     "noKeysFound": "No client keys found",
     "noKeysFoundDescription": "Register your first RSA key pair to start encrypting secrets",
     "registerFirstKey": "Register First Key",
-    "noDescription": "No description",
     "viewKey": "View Key Details",
     "cliRequired": {
       "title": "Use CLI for Key Operations",
       "registerDescription": "Generate and register keys using: sealbox-cli key generate && sealbox-cli key register",
       "rotateDescription": "Rotate client keys using: sealbox-cli key rotate"
-    },
-    "cliGuide": {
-      "title": "Client Key Operations via CLI",
-      "generateKeys": "Generate RSA Key Pair:",
-      "registerKey": "Register Public Key:",
-      "rotateKey": "Rotate Client Key:"
-    },
-    "securityNote": "RSA Key Pair Security",
-    "securityNoteDescription": "Client keys use 2048-bit RSA encryption. Your private key should be kept secure and never shared."
+    }
   },
   "common": {
     "loading": "Loading...",
@@ -154,6 +152,7 @@
     "errorDescription": "Failed to load data. Please try again.",
     "refresh": "Refresh",
     "cancel": "Cancel",
+    "success": "Success",
     "tryAgain": "Try Again",
     "reloadPage": "Reload Page",
     "expired": "Expired",
@@ -187,5 +186,70 @@
     "light": "Light",
     "dark": "Dark",
     "system": "System"
+  },
+  "pages": {
+    "secrets": {
+      "title": "Secrets",
+      "subtitle": "Manage secrets and client access."
+    },
+    "clients": {
+      "title": "Clients",
+      "subtitle": "Manage devices connected to your sealbox server.",
+      "searchPlaceholder": "Search clients...",
+      "addClient": "Add client",
+      "emptyTitle": "Get your first client online",
+      "emptyDescription": "On the device, run the CLI to begin enrollment and get a code. Then approve the code here.",
+      "emptyInstructions": "The CLI prints a code like ABCD-EFGH and a verify URL.",
+      "enrollmentCode": "Enrollment Code",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "namePlaceholder": "e.g., dev-laptop",
+      "ownerPlaceholder": "Owner or purpose",
+      "approveEnrollment": "Approve Enrollment",
+      "enrollmentSuccess": "Enrollment approved. The client will appear once CLI completes."
+    },
+    "settings": {
+      "title": "Settings", 
+      "subtitle": "Connection and CLI help",
+      "server": "Server",
+      "notConnected": "Not connected",
+      "status": "Status:"
+    }
+  },
+  "components": {
+    "addClient": {
+      "title": "Add client",
+      "instructions": "On the device, run: <code>sealbox-cli up --enroll</code> and paste the code here.",
+      "enrollmentCode": "Enrollment code",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "name": "Name",
+      "namePlaceholder": "e.g., laptop",
+      "description": "Description", 
+      "descriptionPlaceholder": "Owner or purpose",
+      "cancel": "Cancel",
+      "approveAdd": "Approve & Add"
+    },
+    "errorState": {
+      "retryDefault": "Retry"
+    },
+    "onboarding": {
+      "getStarted": "Get started in two steps",
+      "step1": "On your machine run: <code>sealbox-cli up --enroll</code>",
+      "step2": "Approve the code here, then create your first secret",
+      "enrollmentCode": "Enrollment code",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "name": "Name",
+      "namePlaceholder": "e.g., laptop",
+      "description": "Description",
+      "descriptionPlaceholder": "Owner or purpose", 
+      "approve": "Approve"
+    },
+    "stats": {
+      "secrets": "secrets",
+      "clients": "clients"
+    },
+    "errorMessages": {
+      "failedToLoad": "Failed to load",
+      "retry": "Retry"
+    }
   }
 }

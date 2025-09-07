@@ -1,6 +1,14 @@
 {
   "nav": {
-    "signOut": "退出登录"
+    "signOut": "退出登录",
+    "subtitle": "自托管密钥中心",
+    "docs": "文档",
+    "support": "支持",
+    "secrets": "密钥",
+    "clients": "客户端", 
+    "settings": "设置",
+    "appearance": "外观",
+    "language": "语言"
   },
   "login": {
     "title": "Sealbox",
@@ -121,7 +129,6 @@
     "keyId": "密钥ID",
     "status": "状态",
     "createdAt": "创建时间",
-    "description": "描述",
     "actions": "操作",
     "active": "活跃",
     "retired": "已退役",
@@ -129,21 +136,12 @@
     "noKeysFound": "未找到主密钥",
     "noKeysFoundDescription": "注册您的第一个RSA密钥对以开始加密密钥",
     "registerFirstKey": "注册第一个密钥",
-    "noDescription": "无描述",
     "viewKey": "查看密钥详情",
     "cliRequired": {
       "title": "使用CLI进行密钥操作",
       "registerDescription": "使用以下命令生成并注册密钥: sealbox-cli key generate && sealbox-cli key register",
       "rotateDescription": "使用以下命令轮换主密钥: sealbox-cli key rotate"
-    },
-    "cliGuide": {
-      "title": "通过CLI管理主密钥",
-      "generateKeys": "生成RSA密钥对:",
-      "registerKey": "注册公钥:",
-      "rotateKey": "轮换主密钥:"
-    },
-    "securityNote": "RSA密钥对安全性",
-    "securityNoteDescription": "主密钥使用2048位RSA加密。您的私钥应始终保持安全，绝不共享。"
+    }
   },
   "common": {
     "loading": "加载中...",
@@ -153,6 +151,7 @@
     "errorDescription": "数据加载失败，请重试。",
     "refresh": "刷新",
     "cancel": "取消",
+    "success": "成功",
     "tryAgain": "重试",
     "reloadPage": "重新加载页面",
     "expired": "已过期",
@@ -183,5 +182,70 @@
     "light": "浅色",
     "dark": "深色",
     "system": "系统"
+  },
+  "pages": {
+    "secrets": {
+      "title": "密钥",
+      "subtitle": "管理密钥和客户端访问权限。"
+    },
+    "clients": {
+      "title": "客户端",
+      "subtitle": "管理连接到您密钥服务器的设备。",
+      "searchPlaceholder": "搜索客户端...",
+      "addClient": "添加客户端",
+      "emptyTitle": "让您的第一个客户端上线",
+      "emptyDescription": "在设备上运行 CLI 开始注册并获取代码。然后在此处批准代码。",
+      "emptyInstructions": "CLI 将打印类似 ABCD-EFGH 的代码和验证 URL。",
+      "enrollmentCode": "注册代码",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "namePlaceholder": "例如：dev-laptop",
+      "ownerPlaceholder": "所有者或用途",
+      "approveEnrollment": "批准注册",
+      "enrollmentSuccess": "注册已批准。CLI 完成后客户端将显示。"
+    },
+    "settings": {
+      "title": "设置", 
+      "subtitle": "连接状态和 CLI 帮助",
+      "server": "服务器",
+      "notConnected": "未连接",
+      "status": "状态："
+    }
+  },
+  "components": {
+    "addClient": {
+      "title": "添加客户端",
+      "instructions": "在设备上运行：<code>sealbox-cli up --enroll</code> 然后在此粘贴代码。",
+      "enrollmentCode": "注册代码",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "name": "名称",
+      "namePlaceholder": "例如：laptop",
+      "description": "描述", 
+      "descriptionPlaceholder": "所有者或用途",
+      "cancel": "取消",
+      "approveAdd": "批准并添加"
+    },
+    "errorState": {
+      "retryDefault": "重试"
+    },
+    "onboarding": {
+      "getStarted": "两步即可开始",
+      "step1": "在您的机器上运行：<code>sealbox-cli up --enroll</code>",
+      "step2": "在此处批准代码，然后创建您的第一个密钥",
+      "enrollmentCode": "注册代码",
+      "enrollmentCodePlaceholder": "ABCD-EFGH",
+      "name": "名称",
+      "namePlaceholder": "例如：laptop",
+      "description": "描述",
+      "descriptionPlaceholder": "所有者或用途", 
+      "approve": "批准"
+    },
+    "stats": {
+      "secrets": "密钥",
+      "clients": "客户端"
+    },
+    "errorMessages": {
+      "failedToLoad": "加载失败",
+      "retry": "重试"
+    }
   }
 }
