@@ -9,7 +9,11 @@ type Props = {
 };
 
 // Renders the SVG file and inverts it in dark mode to maintain contrast.
-export function AdaptiveLogo({ size = 28, className, title = "Sealbox" }: Props) {
+export function AdaptiveLogo({
+  size = 28,
+  className,
+  title = "Sealbox",
+}: Props) {
   return (
     <img
       src={sealboxLogo}
@@ -20,4 +24,3 @@ export function AdaptiveLogo({ size = 28, className, title = "Sealbox" }: Props)
     />
   );
 }
-

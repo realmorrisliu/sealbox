@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-
 :root {
   /* shadcn/ui neutral palette */
   --background: hsl(0 0% 100%);
@@ -45,7 +44,6 @@
   --sidebar-border: hsl(240 5.9% 90%);
   --sidebar-ring: hsl(240 4.9% 83.9%);
 }
-
 
 @theme inline {
   --color-background: var(--background);

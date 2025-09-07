@@ -132,7 +132,7 @@ export function SecretTable({
                     title={t("secrets.permissions.clients")}
                   >
                     <Shield className="h-3 w-3 mr-1" />
-                    <span className="hidden md:inline">
+                    <span className="inline">
                       {t("secrets.permissions.clients")}
                     </span>
                   </Button>

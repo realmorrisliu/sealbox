@@ -40,9 +40,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AuthGuard } from "@/components/auth/auth-guard";
-import { MainLayout } from "@/components/layout/main-layout";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageContainer } from "@/components/layout/page-container";
+import { PageLayout } from "@/components/layout/page-layout";
+import { DataSection } from "@/components/common/data-section";
+import { EmptyState } from "@/components/common/empty-state";
+import { ContentCard } from "@/components/common/content-card";
 import { ClientKeyListSkeleton } from "@/components/common/loading-skeletons";
 import {
   useClientKeys,
@@ -65,11 +67,9 @@ export const Route = createFileRoute("/clients")({
 
 function KeysPage() {
   return (
-    <AuthGuard>
-      <MainLayout>
-        <ClientKeysPage />
-      </MainLayout>
-    </AuthGuard>
+    <PageContainer>
+      <ClientKeysPage />
+    </PageContainer>
   );
 }
 
@@ -166,25 +166,6 @@ function ClientKeysPage() {
     });
   };
 
-  if (isLoading) {
-    return <ClientKeyListSkeleton />;
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-4">
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <div>
-            <p className="font-medium">{t("common.loadingFailed")}</p>
-            <p className="text-sm">{error.message}</p>
-          </div>
-        </Alert>
-        <Button onClick={() => refetch()}>{t("common.retry")}</Button>
-      </div>
-    );
-  }
-
   const clientKeys = clientKeysData?.client_keys || [];
   const rows = clientKeys.filter((c: any) => {
     const q = query.trim().toLowerCase();
@@ -197,48 +178,40 @@ function ClientKeysPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Clients"
-        subtitle="Manage devices connected to your sealbox server."
-        meta={
-          <Badge variant="secondary" className="text-xs">
-            {rows.length} clients
-          </Badge>
-        }
-        actions={
-          <div className="flex items-center gap-3">
-            <div className="hidden md:block">
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search clients..."
-                className="h-10 w-64"
-              />
-            </div>
-            <Button onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" /> Add client
-            </Button>
-          </div>
-        }
-      />
-
-      {/* Content section */}
-      <div className="rounded-xl border bg-background">
-        {clientKeys.length === 0 ? (
-          <div className="p-6 grid gap-6 md:grid-cols-2">
-            {/* Onboarding instructions */}
-            <div className="space-y-3">
-              <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center">
-                <Key className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <h2 className="text-xl font-semibold">
-                Get your first client online
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                On the device, run the CLI to begin enrollment and get a code.
-                Then approve the code here.
-              </p>
+    <PageLayout
+      title="Clients"
+      subtitle="Manage devices connected to your sealbox server."
+      stats={{
+        count: rows.length,
+        label: "clients",
+        filtered: !!query,
+      }}
+      searchProps={{
+        value: query,
+        onChange: setQuery,
+        placeholder: "Search clients...",
+        size: "md",
+      }}
+      actions={
+        <Button onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" /> Add client
+        </Button>
+      }
+    >
+      <DataSection
+        loading={isLoading}
+        error={error}
+        empty={clientKeys.length === 0}
+        loadingSkeleton={<ClientKeyListSkeleton />}
+        emptyState={
+          <EmptyState
+            icon={<Key className="h-5 w-5" />}
+            title="Get your first client online"
+            description="On the device, run the CLI to begin enrollment and get a code. Then approve the code here."
+            centered={false}
+            withContainer={true}
+          >
+            <div className="grid grid-cols-2 gap-6 items-start">
               <div className="space-y-2">
                 <code className="bg-muted px-2 py-1 rounded text-xs font-mono">
                   sealbox-cli up --enroll
@@ -247,87 +220,96 @@ function ClientKeysPage() {
                   The CLI prints a code like ABCD-EFGH and a verify URL.
                 </p>
               </div>
-            </div>
-            {/* Approve enrollment form */}
-            <div className="space-y-3">
-              <div>
-                <Label htmlFor="enrollCode" className="text-xs">
-                  Enrollment Code
-                </Label>
-                <Input
-                  id="enrollCode"
-                  value={enrollCode}
-                  onChange={(e) => setEnrollCode(e.target.value.toUpperCase())}
-                  placeholder="ABCD-EFGH"
-                  className="h-8"
-                />
-              </div>
-              <div>
-                <Label htmlFor="enrollName" className="text-xs">
-                  Name (optional)
-                </Label>
-                <Input
-                  id="enrollName"
-                  value={enrollName}
-                  onChange={(e) => setEnrollName(e.target.value)}
-                  placeholder="e.g., dev-laptop"
-                  className="h-8"
-                />
-              </div>
-              <div>
-                <Label htmlFor="enrollDesc" className="text-xs">
-                  Description (optional)
-                </Label>
-                <Input
-                  id="enrollDesc"
-                  value={enrollDesc}
-                  onChange={(e) => setEnrollDesc(e.target.value)}
-                  placeholder="Owner or purpose"
-                  className="h-8"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={async () => {
-                    if (!enrollCode.trim()) return;
-                    try {
-                      await approveEnrollment.mutateAsync({
-                        code: enrollCode.trim(),
-                        name: enrollName || undefined,
-                        description: enrollDesc || undefined,
-                      });
-                      toast.success(t("common.success") || "Approved", {
-                        description:
-                          "Enrollment approved. The client will appear once CLI completes.",
-                      });
-                    } catch (e: any) {
-                      toast.error(t("common.error") || "Error", {
-                        description: e?.message || "Approval failed",
-                      });
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="enrollCode" className="text-xs">
+                    Enrollment Code
+                  </Label>
+                  <Input
+                    id="enrollCode"
+                    value={enrollCode}
+                    onChange={(e) =>
+                      setEnrollCode(e.target.value.toUpperCase())
                     }
-                  }}
-                  disabled={approveEnrollment.isPending || !enrollCode.trim()}
-                  className="border-border"
-                >
-                  {approveEnrollment.isPending && (
-                    <RotateCw className="h-4 w-4 mr-2 animate-spin" />
-                  )}
-                  Approve Enrollment
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setEnrollCode("");
-                    setEnrollName("");
-                    setEnrollDesc("");
-                  }}
-                >
-                  Clear
-                </Button>
+                    placeholder="ABCD-EFGH"
+                    className="h-8"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="enrollName" className="text-xs">
+                    Name (optional)
+                  </Label>
+                  <Input
+                    id="enrollName"
+                    value={enrollName}
+                    onChange={(e) => setEnrollName(e.target.value)}
+                    placeholder="e.g., dev-laptop"
+                    className="h-8"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="enrollDesc" className="text-xs">
+                    Description (optional)
+                  </Label>
+                  <Input
+                    id="enrollDesc"
+                    value={enrollDesc}
+                    onChange={(e) => setEnrollDesc(e.target.value)}
+                    placeholder="Owner or purpose"
+                    className="h-8"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={async () => {
+                      if (!enrollCode.trim()) return;
+                      try {
+                        await approveEnrollment.mutateAsync({
+                          code: enrollCode.trim(),
+                          name: enrollName || undefined,
+                          description: enrollDesc || undefined,
+                        });
+                        toast.success(t("common.success") || "Approved", {
+                          description:
+                            "Enrollment approved. The client will appear once CLI completes.",
+                        });
+                      } catch (e: any) {
+                        toast.error(t("common.error") || "Error", {
+                          description: e?.message || "Approval failed",
+                        });
+                      }
+                    }}
+                    disabled={approveEnrollment.isPending || !enrollCode.trim()}
+                    className="border-border"
+                  >
+                    {approveEnrollment.isPending && (
+                      <RotateCw className="h-4 w-4 mr-2 animate-spin" />
+                    )}
+                    Approve Enrollment
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setEnrollCode("");
+                      setEnrollName("");
+                      setEnrollDesc("");
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
+          </EmptyState>
+        }
+        errorProps={{
+          title: t("common.loadingFailed"),
+          description: error?.message,
+          onRetry: () => refetch(),
+          retryLabel: t("common.retry"),
+        }}
+      >
+        <ContentCard>
           <div className="p-1 overflow-x-auto">
             <Table>
               <TableHeader>
@@ -338,10 +320,10 @@ function ClientKeysPage() {
                   <TableHead className="font-medium text-foreground">
                     Status
                   </TableHead>
-                  <TableHead className="font-medium text-foreground hidden lg:table-cell">
+                  <TableHead className="font-medium text-foreground table-cell">
                     Created
                   </TableHead>
-                  <TableHead className="font-medium text-foreground hidden xl:table-cell">
+                  <TableHead className="font-medium text-foreground table-cell">
                     Last seen
                   </TableHead>
                   <TableHead className="font-medium text-foreground text-right">
@@ -388,10 +370,10 @@ function ClientKeysPage() {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">
+                    <TableCell className="text-sm text-muted-foreground table-cell">
                       {formatTimestamp(key.created_at)}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground hidden xl:table-cell">
+                    <TableCell className="text-sm text-muted-foreground table-cell">
                       {key.last_used_at ? (
                         <span className="whitespace-nowrap">
                           {formatDistanceToNowStrict(
@@ -425,8 +407,8 @@ function ClientKeysPage() {
               </TableBody>
             </Table>
           </div>
-        )}
-      </div>
+        </ContentCard>
+      </DataSection>
 
       <AddClientDialog open={addOpen} onOpenChange={setAddOpen} />
 
@@ -491,35 +473,7 @@ function ClientKeysPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* CLI Usage Guide */}
-      <Alert className="border-border hidden">
-        <Shield className="h-4 w-4" />
-        <div className="text-sm">
-          <p className="font-medium">{t("keys.cliGuide.title")}</p>
-          <div className="text-muted-foreground text-xs mt-2 space-y-2">
-            <div>
-              <p className="font-medium">{t("keys.cliGuide.generateKeys")}</p>
-              <code className="bg-muted px-2 py-1 rounded font-mono">
-                sealbox-cli key generate
-              </code>
-            </div>
-            <div>
-              <p className="font-medium">{t("keys.cliGuide.registerKey")}</p>
-              <code className="bg-muted px-2 py-1 rounded font-mono">
-                sealbox-cli key register
-              </code>
-            </div>
-            <div>
-              <p className="font-medium">{t("keys.cliGuide.rotateKey")}</p>
-              <code className="bg-muted px-2 py-1 rounded font-mono">
-                sealbox-cli key rotate
-              </code>
-            </div>
-          </div>
-        </div>
-      </Alert>
-    </div>
+    </PageLayout>
   );
 }
 

@@ -16,44 +16,15 @@ export function SecretsListSkeleton() {
 
       {/* Content card skeleton */}
       <Card className="bg-card border border-border">
-        {/* Mobile view skeleton */}
-        <div className="block md:hidden space-y-4 p-6">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div
-              key={i}
-              className="bg-card border border-border rounded-md p-4 space-y-4"
-            >
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-5 w-32" />
-                <Skeleton className="h-6 w-12" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-4 w-32" />
-                </div>
-                <div className="flex justify-between items-center">
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-6 w-20" />
-                </div>
-              </div>
-              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-border">
-                <Skeleton className="h-8 w-16" />
-                <Skeleton className="h-8 w-16" />
-              </div>
-            </div>
-          ))}
-        </div>
-
         {/* Desktop table skeleton */}
-        <div className="hidden md:block overflow-x-auto">
+        <div className="block overflow-x-auto">
           <div className="p-6">
             {/* Table header skeleton */}
             <div className="flex items-center space-x-4 pb-4 border-b border-border">
               <Skeleton className="h-5 w-24" />
               <Skeleton className="h-5 w-16" />
-              <Skeleton className="h-5 w-20 hidden lg:block" />
-              <Skeleton className="h-5 w-20 hidden xl:block" />
+              <Skeleton className="h-5 w-20 block" />
+              <Skeleton className="h-5 w-20 block" />
               <Skeleton className="h-5 w-20" />
               <div className="flex-1" />
               <Skeleton className="h-5 w-16" />
@@ -67,8 +38,8 @@ export function SecretsListSkeleton() {
               >
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-6 w-12" />
-                <Skeleton className="h-4 w-32 hidden lg:block" />
-                <Skeleton className="h-4 w-32 hidden xl:block" />
+                <Skeleton className="h-4 w-32 block" />
+                <Skeleton className="h-4 w-32 block" />
                 <Skeleton className="h-6 w-20" />
                 <div className="flex-1" />
                 <div className="flex items-center space-x-2">
@@ -159,40 +130,15 @@ export function ClientKeyListSkeleton() {
 
       {/* Content card skeleton */}
       <Card className="bg-card border border-border">
-        {/* Mobile view skeleton */}
-        <div className="block md:hidden space-y-4 p-6">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <div
-              key={i}
-              className="bg-card border border-border rounded-md p-4 space-y-4"
-            >
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-5 w-28" />
-                <Skeleton className="h-6 w-16" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-4 w-32" />
-                </div>
-                <div className="flex justify-between items-start">
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-4 w-24" />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
         {/* Desktop table skeleton */}
-        <div className="hidden md:block overflow-x-auto">
+        <div className="block overflow-x-auto">
           <div className="p-6">
             {/* Table header skeleton */}
             <div className="flex items-center space-x-4 pb-4 border-b border-border">
               <Skeleton className="h-5 w-20" />
               <Skeleton className="h-5 w-16" />
-              <Skeleton className="h-5 w-20 hidden lg:block" />
-              <Skeleton className="h-5 w-24 hidden xl:block" />
+              <Skeleton className="h-5 w-20 block" />
+              <Skeleton className="h-5 w-24 block" />
               <div className="flex-1" />
               <Skeleton className="h-5 w-16" />
             </div>
@@ -205,8 +151,8 @@ export function ClientKeyListSkeleton() {
               >
                 <Skeleton className="h-4 w-36" />
                 <Skeleton className="h-6 w-16" />
-                <Skeleton className="h-4 w-32 hidden lg:block" />
-                <Skeleton className="h-4 w-40 hidden xl:block" />
+                <Skeleton className="h-4 w-32 block" />
+                <Skeleton className="h-4 w-40 block" />
                 <div className="flex-1" />
                 <div className="flex items-center justify-end">
                   <Skeleton className="h-8 w-8" />
