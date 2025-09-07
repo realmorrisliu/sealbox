@@ -10,9 +10,9 @@ interface AppShellProps {
 // generous whitespace, and a centered content container.
 export function AppShell({ children }: AppShellProps) {
   return (
-    <div className="min-h-screen w-full bg-muted/40">
+    <div className="min-h-screen w-full bg-white">
       <Navigation />
-      <main className="container mx-auto max-w-screen-2xl px-8 md:px-10 lg:px-12 py-8 md:py-10 lg:py-12">
+      <main className="container mx-auto max-w-screen-2xl px-10 md:px-12 lg:px-16 py-10 md:py-12 lg:py-16 bg-white">
         {children}
       </main>
     </div>

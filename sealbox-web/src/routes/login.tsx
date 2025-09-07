@@ -95,7 +95,7 @@ function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-8">
         {/* Header */}
         <div className="flex items-start justify-between mb-6">

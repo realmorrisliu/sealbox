@@ -16,7 +16,7 @@ export function AdaptiveLogo({ size = 28, className, title = "Sealbox" }: Props)
       alt={title}
       width={size}
       height={size}
-      className={cn("select-none filter dark:invert", className)}
+      className={cn("select-none filter", className)}
     />
   );
 }

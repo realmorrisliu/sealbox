@@ -32,10 +32,10 @@ export function Navigation() {
   const { logout } = useAuthStore();
 
   return (
-    <nav className="sticky top-0 z-50 w-full bg-muted/40 backdrop-blur">
+    <nav className="sticky top-0 z-50 w-full bg-muted/95 backdrop-blur">
       {/* Top bar */}
-      <div className="border-b bg-background/80">
-        <div className="container mx-auto max-w-screen-2xl h-16 px-8 md:px-10 lg:px-12 flex items-center justify-between">
+      <div className="border-b border-border">
+        <div className="container mx-auto max-w-screen-2xl h-20 px-10 md:px-12 lg:px-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <AdaptiveLogo size={28} />
             <div className="leading-tight">
@@ -46,10 +46,10 @@ export function Navigation() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Link
               to="/docs"
-              className="text-sm text-foreground/80 hover:text-primary px-3 py-2"
+              className="text-sm text-foreground/80 hover:text-primary px-4 py-2.5"
             >
               Docs
             </Link>
@@ -57,7 +57,7 @@ export function Navigation() {
               href="https://github.com/"
               target="_blank"
               rel="noreferrer"
-              className="text-sm text-foreground/80 hover:text-primary px-3 py-2"
+              className="text-sm text-foreground/80 hover:text-primary px-4 py-2.5"
             >
               Support
             </a>
@@ -67,8 +67,8 @@ export function Navigation() {
       </div>
 
       {/* Sub navigation */}
-      <div className="border-b bg-background/80">
-        <div className="container mx-auto max-w-screen-2xl px-8 md:px-10 lg:px-12">
+      <div className="border-b border-border">
+        <div className="container mx-auto max-w-screen-2xl px-10 md:px-12 lg:px-16">
           <MainTabs />
         </div>
       </div>
@@ -167,7 +167,7 @@ function MainTabs() {
 
   const activePath = router.location.pathname;
   return (
-    <div className="flex items-center gap-2 h-12">
+    <div className="flex items-center gap-3 h-14">
       {links.map((l) => {
         const active =
           activePath === l.to || (l.to !== "/" && activePath.startsWith(l.to));
@@ -176,10 +176,10 @@ function MainTabs() {
             key={l.to}
             to={l.to}
             className={cn(
-              "rounded-md px-3 py-2 text-sm transition-colors",
+              "rounded-md px-4 py-2.5 text-sm transition-all duration-200",
               active
-                ? "bg-muted text-foreground"
-                : "text-foreground/70 hover:text-primary",
+                ? "bg-background text-foreground shadow-sm border"
+                : "text-foreground/70 hover:text-primary hover:bg-background/50",
             )}
           >
             {l.label}
@@ -189,4 +189,3 @@ function MainTabs() {
     </div>
   );
 }
-import { SealboxMark } from "@/components/brand/sealbox-logo";
