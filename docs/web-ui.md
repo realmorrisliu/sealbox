@@ -1,69 +1,76 @@
-# Sealbox Web UI - Visual Secret Management
+# Sealbox Web UI — Admin Console
 
-Sealbox Web UI is a modern React-based web interface **optimized for visual secret management and administration**. It complements the CLI by providing intuitive tools for oversight, bulk operations, and team collaboration.
+The Sealbox Web UI is the management console for administrators and operators. It provides visual oversight, approvals, and permission controls for multi‑client secrets. It does not decrypt or consume secrets; that is the responsibility of sealbox‑cli running on client devices. Think of it like Tailscale’s admin console: approve devices, manage access, audit activity — while clients perform the actual secure operations.
 
-## Features - Management-Focused Design
+## Role Separation (Server · CLI · Web)
 
-### 🎯 Core Philosophy: Visual Administration
-Web UI focuses on **management tasks** that benefit from visual oversight, while CLI handles automation and consumption.
+- Server (`sealbox-server`): API + storage control plane. Stores encrypted data and authorization relationships. Never sees plaintext or DataKeys.
+- CLI (`sealbox-cli`): Runs on devices. Generates/rotates keys, enrolls/registers as clients, encrypts/decrypts locally, and consumes secrets.
+- Web (`sealbox-web`): Admin UI. Approves enrollments, manages clients, defines permissions at secret creation time, monitors status, and audits activity. Never handles plaintext.
 
-- 📊 **Secret Overview Dashboard** - Visual statistics, search, and filtering for all secrets
-- 🗂️ **Batch Operations** - Multi-select create/delete operations for efficiency
-- ⏰ **TTL Management** - Real-time countdown timers and expiration warnings
-- 👥 **Team Collaboration** - Multi-language interface for diverse teams
-- 📋 **Visual Secret Lifecycle** - Create, view, update, delete with visual confirmation
+Key properties aligned with the multi-client architecture:
+- One secret = one DataKey; the DataKey is encrypted per authorized client.
+- Permissions are set at creation time; you can revoke later, but cannot add new clients to past versions’ DataKeys on the server side.
+- Client isolation: each client has an independent key pair and identity.
 
-### 🔧 Technical Features
-- 🔐 **Secure Authentication** - Bearer Token authentication with session persistence
-- 📱 **Responsive Design** - Works seamlessly on desktop and mobile devices
-- 🌐 **CORS Support** - Development-friendly cross-origin request handling
-- 🎨 **Modern Industrial UI** - 2025 design following Linear/Superhuman principles with strict 8pt grid system
-- 🌍 **Internationalization** - Support for English, Chinese, Japanese, and German
-- 🚀 **Production Ready** - Optimized builds and proper error handling
+## Primary Capabilities (Management Focus)
 
-## Technology Stack
+- Secrets overview: list, filter, and monitor TTL/status across all secrets.
+- Multi‑client secret creation: select authorized clients when creating a secret; Web never handles plaintext beyond metadata entry from the browser input field.
+- Permission visibility and revocation: view which clients are authorized for a secret; revoke client access per secret and visualize impact.
+- Client/device management: list clients (devices), rename/update description, toggle status (Active/Disabled/Retired), and see last used time.
+- Enrollment approvals: approve pending `sealbox-cli up --enroll` requests with a verification code; optionally set client name/description.
+- Auditing and activity: view operational history (create, revoke, cleanup), high‑level usage indicators, and health checks.
+- Admin maintenance: trigger expired‑secret cleanup; manage defaults (e.g., TTL hints), and show CLI guidance for key tasks.
 
-- **Frontend Framework**: React 19 + TanStack Start
-- **Routing**: TanStack Router (file-based)
-- **State Management**: Zustand with persistence
-- **Data Fetching**: TanStack Query with caching
-- **Forms**: React Hook Form + Zod validation
-- **Styling**: TailwindCSS + shadcn/ui
-- **Build Tool**: Vite
-- **Language**: TypeScript
-- **Internationalization**: react-i18next + i18next-browser-languagedetector
+Non‑goals:
+- No plaintext viewing/decryption in the browser.
+- No client‑side crypto operations in the Web UI.
+- No secret consumption/output; that lives in CLI.
 
-## Web UI vs CLI: Complementary Tools
+## Navigation & Pages
 
-### 🌐 Web UI: Visual Management & Administration
-**Best for:**
-- Daily secret management with visual oversight
-- Creating and organizing secrets with forms and validations
-- Monitoring secret status and TTL across your entire inventory
-- Team collaboration with multi-language support
-- Batch operations (multi-select create/delete)
-- Understanding secret usage patterns through statistics
+- Dashboard: high‑level stats, expiring soon, recent activity, server health.
+- Secrets: searchable table/card views; create secret (with multi‑client authorization), delete version; decrypt hints that redirect users to CLI usage.
+- Permissions: per‑secret permissions drawer and a matrix view (Secrets × Clients) for audits and bulk revokes.
+- Clients: list/rename/describe/toggle status; view each client’s associations (read‑only) and last used time.
+- Enrollments: see pending codes, approve with optional name/description, verify expiry timers.
+- Audit: operation log (create/revoke/cleanup, status changes) with filters and time range.
+- Settings: server URL/token management (local to browser), defaults and UI preferences, CLI integration instructions.
 
-### 🖥️ CLI: Automation & Secret Consumption  
-**Best for:**
-- CI/CD pipelines and automated deployments
-- Exporting secrets as environment variables
-- Scripting and programmatic access
-- One-time key generation and setup
-- Bulk import from configuration files
+## Core Workflows
 
-**Example Workflows:**
-```bash
-# CLI: Export secrets for production deployment
-sealbox-cli secret export --format shell --prefix PROD > prod.env
-source prod.env
+- Onboard a new device (Tailscale‑style):
+  - Device runs `sealbox-cli up --enroll` to get a short code + verify URL.
+  - Admin opens Web → Enrollments, locates the code, and approves with a name/description.
+  - CLI finishes enrollment and registers the client key.
 
-# Web UI: Create new secrets with TTL using visual forms
-# Web UI: Monitor which secrets are expiring soon
-# Web UI: Bulk delete old development secrets
-```
+- Create a multi‑client secret:
+  - Web → Secrets → Create → enter key/value and TTL; select authorized clients.
+  - Web submits once; server stores a single `encrypted_data` and multiple `encrypted_data_key` records.
+  - Later, revoke client(s) on the permissions panel if needed.
 
-This separation ensures you have the **right tool for each task** - visual interface for human oversight, CLI for automation.
+- Revoke a client’s access:
+  - From a secret’s permissions panel or the matrix view, remove a client.
+  - Server deletes the corresponding `encrypted_data_key` association; others remain valid.
+
+- Rotate a client key (client‑side):
+  - From Clients page, open CLI instructions to run `sealbox-cli key rotate`.
+  - CLI re‑encrypts each DataKey and updates the client public key; Web reflects the change in associations.
+
+## Current Implementation Snapshot (sealbox-web)
+
+- Implemented:
+  - Secrets list with TTL/status indicators and delete actions.
+  - Create Secret dialog with multi‑client selection for authorized clients.
+  - Clients list (Keys page) with status badges and CLI guidance for register/rotate.
+  - Auth with token + server URL; internationalization in multiple languages.
+
+- Next up to match the architecture doc:
+  - Enrollments page for approval flow (`POST/GET/PUT /v1/enroll`).
+  - Migrate client management API usage from legacy `/v1/client-key` to `/v1/clients` family.
+  - Permission panels and the matrix view, plus revoke actions.
+  - Audit log surface and simple health/status panel on Dashboard.
 
 ## Quick Start
 
@@ -139,37 +146,41 @@ sealbox-web/
 
 ## Features in Detail
 
-### Authentication System
+### Authentication & Security
 
-- **Token-based**: Uses Bearer token authentication
-- **Persistent**: Login state persists across browser sessions
-- **Secure**: Tokens stored in localStorage with proper validation
-- **Connection Testing**: Validates server connectivity during login
+- Token‑based Bearer auth; server URL + token stored locally in the browser.
+- Connection test on login; automatic logout on auth failures.
+- Web never decrypts secrets; plaintext never leaves clients.
 
-### Secret Management
+### Secrets Management (Metadata)
 
-- **List View**: Displays all secrets with metadata
-- **TTL Status**: Visual indicators for expiration status:
-  - 🟢 Normal: More than 24 hours until expiration
-  - 🟡 Warning: Less than 24 hours until expiration
-  - 🔴 Critical: Less than 1 hour until expiration
-- **Real-time Updates**: Automatic refresh and status updates
-- **Deletion**: Secure deletion with confirmation dialogs
+- List secrets with version, timestamps, and TTL indicators:
+  - 🟢 >24h remaining, 🟡 <24h, 🔴 <1h.
+- Create secret with optional TTL and multi‑client authorization.
+- Delete a specific version with confirmation; expired items show countdown.
+- Decrypt hints link users to CLI commands for retrieval/consumption.
 
-### User Interface
+### Clients (Devices)
 
-- **2025 Modern Industrial Design**: Following Linear/Superhuman style principles
-  - **8pt Grid System**: Strict spacing hierarchy (64px→32px→16px→8px)
-  - **Function-First Colors**: Minimal gradient usage, strong grayscale hierarchy
-  - **3-Layer Architecture**: Clear page information structure (Header→Content→Footer)
-  - **Visual Restraint**: Clean typography with Inter font and optimized tracking
-  - **Consistent Interactions**: 150ms transition duration standard
-- **Responsive**: Adapts to different screen sizes with mobile-first approach
-- **Multi-language**: Support for 4 languages with smart switching
-- **Language Persistence**: Remembers user's language preference
-- **Localized Dates**: Date formatting according to user's language
-- **Accessible**: WCAG compliant components
-- **Fast**: Optimized loading and caching
+- List all clients with id/name/status/created/last used.
+- Rename/update description; toggle status (Active/Disabled/Retired).
+- Show associations count for rotation planning (via CLI flow).
+
+### Enrollments
+
+- View pending enrollment codes and expiry timers.
+- Approve with optional name/description; failed/expired codes clearly indicated.
+
+### Permissions
+
+- Per‑secret pane: list authorized clients and revoke individually.
+- Matrix view (Secrets × Clients) for audits and multi‑select revoke.
+
+### Admin & Audit
+
+- Trigger expired‑secret cleanup and view results.
+- Simple operational activity feed (create/revoke/cleanup, status changes).
+- Server health/readiness checks with response time.
 
 ## Configuration
 
@@ -196,18 +207,29 @@ pnpm run preview
 
 ## API Integration
 
-The Web UI integrates with sealbox-server APIs:
+Primary endpoints used by the Web UI:
 
-- `GET /v1/secrets` - List secrets (metadata)
-- `GET /v1/secrets/{key}` - Get secret details (include `X-Client-ID` when applicable)
-- `DELETE /v1/secrets/{key}?version=N` - Delete specific version
-- `GET /v1/clients` - List registered clients (devices)
-- `POST /v1/clients` - Register a client
-- `PUT /v1/clients/{client_id}/status` - Enable/disable client
-- `PUT /v1/clients/{client_id}/name` - Rename/update client description
-- `GET /v1/secrets/{key}/permissions` - View secret permissions
-- `DELETE /v1/secrets/{key}/permissions/{client_id}` - Revoke permission
-- `PUT /v1/secrets/{key}/permissions/{client_id}/data-key` - Update client’s encrypted DataKey (client-side rotation support)
+- Secrets
+  - `GET /v1/secrets` — List secrets (metadata).
+  - `GET /v1/secrets/{key}?version=N` — Secret details (metadata, no decryption in Web).
+  - `PUT /v1/secrets/{key}` — Create secret with payload `{ secret, ttl?, authorized_clients?[] }`.
+  - `DELETE /v1/secrets/{key}?version=N` — Delete a specific version.
+  - `GET /v1/secrets/{key}/permissions` — View secret permissions.
+  - `DELETE /v1/secrets/{key}/permissions/{client_id}` — Revoke permission.
+
+- Clients
+  - `GET /v1/clients` — List registered clients (devices).
+  - `PUT /v1/clients/{client_id}/status` — Enable/disable/retire client.
+  - `PUT /v1/clients/{client_id}/name` — Rename/update description.
+  - `GET /v1/clients/{client_id}/secrets` — List associations (for rotation planning; surfaced read‑only in Web).
+
+- Enrollment
+  - `POST /v1/enroll` — Begin enrollment (CLI‑initiated; code + verify URL).
+  - `GET /v1/enroll/{code}` — Check status (CLI‑polled).
+  - `PUT /v1/enroll/{code}/approve` — Approve in Web (name/description optional).
+
+- Admin
+  - `DELETE /v1/admin/cleanup-expired` — Trigger cleanup and display summary.
 
 ### Error Handling
 
@@ -282,29 +304,12 @@ Enable React Query Devtools for debugging:
 - Inspect network requests and cache state
 - Monitor authentication status
 
-## Future Enhancements - Management Focus
+## Future Enhancements (Admin‑first)
 
-### ✅ Completed Features
-- [x] **i18n Support** - Multi-language interface with language switching
-- [x] **Industrial UI Design** - 2025 modern design system with Linear/Superhuman principles
-- [x] **Secret Overview Dashboard** - Visual statistics and TTL monitoring
-- [x] **Authentication System** - Token-based auth with persistence
+- Permission templates and policy presets for common client groups.
+- Bulk actions from the matrix view (multi‑revoke, status updates).
+- Improved audit filtering and export.
+- Team/RBAC for shared administration.
+- CLI command generator for guided remediation (rotate/revoke/cleanup).
 
-### 🚧 Planned Management Features
-- [ ] **Enhanced Secret Creation** - Rich forms with validation and preview
-- [ ] **Advanced Batch Operations** - Multi-select with bulk actions toolbar
-- [ ] **Secret Categories & Tags** - Organization and filtering system
-- [ ] **Usage Analytics** - Access patterns and secret lifecycle insights
-- [ ] **Team Management** - User roles and collaboration features
-- [ ] **Audit Trail** - Visual history of secret changes and access
-- [ ] **Advanced Search** - Full-text search across secret metadata
-- [ ] **Export Wizard** - Guided export with format preview
-- [ ] **Permission Templates** - Reusable permission sets for new secrets
-- [ ] **Dashboard Customization** - Personalized views and widgets
-
-### 🔗 CLI Integration Features
-- [ ] **CLI Command Generator** - Visual tool to generate CLI commands
-- [ ] **Key Status Monitoring** - Visual display of CLI-generated key pairs
-- [ ] **Import Status Tracking** - Monitor CLI bulk import progress
-
-These enhancements focus on **visual management capabilities** that complement CLI's automation strengths.
+These focus on visual administration that complements CLI automation.

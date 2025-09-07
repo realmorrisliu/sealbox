@@ -26,7 +26,7 @@ export const resources = {
 
 // Supported languages
 export const supportedLanguages = ["en", "zh", "ja", "de"] as const;
-export type SupportedLanguage = typeof supportedLanguages[number];
+export type SupportedLanguage = (typeof supportedLanguages)[number];
 
 // Get initial language for SSR-safe initialization
 export const getInitialLanguage = (): SupportedLanguage => {
@@ -78,7 +78,7 @@ i18n
     // SSR specific options
     initImmediate: !isSSR, // Initialize immediately on client side
     cleanCode: true, // Clean up language codes
-    
+
     // Preload languages for better SSR performance
     preload: supportedLanguages,
   });
@@ -90,10 +90,15 @@ if (typeof window !== "undefined") {
     const stored = localStorage.getItem("sealbox-language");
     console.log("Debug: localStorage language:", stored);
     console.log("Debug: i18n.language before:", i18n.language);
-    
+
     if (stored && supportedLanguages.includes(stored as SupportedLanguage)) {
       if (stored !== i18n.language) {
-        console.log("Debug: Changing language from", i18n.language, "to", stored);
+        console.log(
+          "Debug: Changing language from",
+          i18n.language,
+          "to",
+          stored,
+        );
         i18n.changeLanguage(stored);
       }
     }
@@ -106,14 +111,14 @@ if (typeof window !== "undefined") {
     // DOM already loaded
     setTimeout(checkAndSetLanguage, 0);
   }
-  
+
   // Also listen for i18n events to debug
-  i18n.on('initialized', () => {
+  i18n.on("initialized", () => {
     console.log("Debug: i18n initialized with language:", i18n.language);
     checkAndSetLanguage();
   });
-  
-  i18n.on('languageChanged', (lng) => {
+
+  i18n.on("languageChanged", (lng) => {
     console.log("Debug: Language changed to:", lng);
   });
 }

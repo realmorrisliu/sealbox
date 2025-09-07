@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { LanguageSelector } from "@/components/i18n/language-selector";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { AdaptiveLogo } from "@/components/brand/adaptive-logo";
 import { useAuthStore } from "@/stores/auth";
 import { useConfigStore } from "@/stores/config";
 import { createApiClient } from "@/lib/api";
@@ -85,7 +86,9 @@ function LoginPage() {
         setError("serverUrl", { message: t("login.errors.connectionFailed") });
       } else {
         setError("serverUrl", {
-          message: t("login.errors.connectionError", { message: error.message }),
+          message: t("login.errors.connectionError", {
+            message: error.message,
+          }),
         });
       }
     }
@@ -98,7 +101,7 @@ function LoginPage() {
         <div className="flex items-start justify-between mb-6">
           <div className="flex-1">
             <div className="flex items-center space-x-3 mb-2">
-              <div className="text-lg">🦭</div>
+              <AdaptiveLogo size={28} />
               <div className="flex items-center space-x-2">
                 <h1 className="text-xl font-bold text-foreground">
                   {t("login.title")}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Loader2, Users, X } from "lucide-react";
+import { Plus, Loader2, Users, X, ExternalLink } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { useCreateSecret, useClientKeys } from "@/hooks/use-api";
@@ -35,7 +36,6 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
     value: "",
     ttl: "",
   });
-  const [isMultiClient, setIsMultiClient] = useState(false);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const createSecretMutation = useCreateSecret();
   const { data: clientKeysData } = useClientKeys();
@@ -48,8 +48,8 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
       return;
     }
 
-    // Validate multi-client mode
-    if (isMultiClient && selectedClients.length === 0) {
+    // Ensure at least one client selected
+    if (selectedClients.length === 0) {
       toast.error(t("secrets.dialog.multiClient.noClientsSelected"), {
         description: t("secrets.dialog.multiClient.selectAtLeastOne"),
       });
@@ -60,8 +60,8 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
       const requestData: CreateSecretRequest = {
         secret: newSecret.value,
         ...(newSecret.ttl && { ttl: parseInt(newSecret.ttl, 10) }),
-        ...(isMultiClient && selectedClients.length > 0 && { 
-          authorized_clients: selectedClients 
+        ...(selectedClients.length > 0 && {
+          authorized_clients: selectedClients,
         }),
       };
 
@@ -70,7 +70,7 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
         data: requestData,
       });
 
-      const successMessage = isMultiClient 
+      const successMessage = isMultiClient
         ? t("secrets.dialog.multiClient.secretCreated", {
             name: newSecret.name,
             count: selectedClients.length,
@@ -85,7 +85,6 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
 
       setNewSecret({ name: "", value: "", ttl: "" });
       setSelectedClients([]);
-      setIsMultiClient(false);
       setOpen(false);
     } catch (error: any) {
       toast.error(t("common.error"), {
@@ -97,24 +96,42 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
   const handleCancel = () => {
     setNewSecret({ name: "", value: "", ttl: "" });
     setSelectedClients([]);
-    setIsMultiClient(false);
     setOpen(false);
   };
 
   const handleClientToggle = (clientId: string, checked: boolean) => {
     if (checked) {
-      setSelectedClients(prev => [...prev, clientId]);
+      setSelectedClients((prev) => [...prev, clientId]);
     } else {
-      setSelectedClients(prev => prev.filter(id => id !== clientId));
+      setSelectedClients((prev) => prev.filter((id) => id !== clientId));
     }
   };
 
   const removeSelectedClient = (clientId: string) => {
-    setSelectedClients(prev => prev.filter(id => id !== clientId));
+    setSelectedClients((prev) => prev.filter((id) => id !== clientId));
   };
 
   const clientKeys = clientKeysData?.client_keys || [];
-  const activeClientKeys = clientKeys.filter(key => key.status === "Active");
+  const activeClientKeys = clientKeys.filter((key) => key.status === "Active");
+
+  // When enabling multi-client mode, preselect recently online clients to reduce friction
+  useEffect(() => {
+    if (selectedClients.length > 0) return;
+    const now = Math.floor(Date.now() / 1000);
+    const recent = activeClientKeys
+      .filter(
+        (k: any) =>
+          typeof k.last_used_at === "number" &&
+          now - k.last_used_at! < 24 * 3600,
+      )
+      .map((k: any) => k.id);
+    if (recent.length > 0) {
+      setSelectedClients(recent);
+    } else if (activeClientKeys.length > 0) {
+      // Fallback to first active client
+      setSelectedClients([activeClientKeys[0].id]);
+    }
+  }, [activeClientKeys.length]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -174,84 +191,76 @@ export function CreateSecretDialog({ children }: CreateSecretDialogProps) {
               />
             </div>
 
-            {/* Multi-client mode toggle */}
+            {/* Clients selection */}
             <div className="border-t pt-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="multiClient"
-                  checked={isMultiClient}
-                  onCheckedChange={(checked) => setIsMultiClient(checked === true)}
-                />
-                <Label htmlFor="multiClient" className="text-sm cursor-pointer">
-                  <Users className="h-4 w-4 inline mr-1" />
-                  {t("secrets.dialog.multiClient.enableMode")}
-                </Label>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t("secrets.dialog.multiClient.description")}
-              </p>
-            </div>
+              <Label className="text-xs">
+                {t("secrets.dialog.multiClient.selectClients")}
+              </Label>
 
-            {/* Client selection */}
-            {isMultiClient && (
-              <div>
-                <Label className="text-xs">
-                  {t("secrets.dialog.multiClient.selectClients")}
-                </Label>
-                
-                {/* Selected clients badges */}
-                {selectedClients.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2 mb-3">
-                    {selectedClients.map((clientId) => {
-                      const client = clientKeys.find(k => k.id === clientId);
-                      return (
-                        <Badge key={clientId} variant="secondary" className="text-xs">
-                          {client?.id.substring(0, 8) || clientId.substring(0, 8)}...
-                          <button
-                            onClick={() => removeSelectedClient(clientId)}
-                            className="ml-1 hover:text-destructive"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Available clients */}
-                <div className="space-y-2 max-h-32 overflow-y-auto border rounded p-2">
-                  {activeClientKeys.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-2">
-                      {t("secrets.dialog.multiClient.noActiveClients")}
-                    </p>
-                  ) : (
-                    activeClientKeys.map((client) => (
-                      <div key={client.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={client.id}
-                          checked={selectedClients.includes(client.id)}
-                          onCheckedChange={(checked) =>
-                            handleClientToggle(client.id, checked === true)
-                          }
-                        />
-                        <Label 
-                          htmlFor={client.id} 
-                          className="text-xs font-mono cursor-pointer flex-1"
+              {/* Selected clients badges */}
+              {selectedClients.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2 mb-3">
+                  {selectedClients.map((clientId) => {
+                    const client = clientKeys.find((k) => k.id === clientId);
+                    return (
+                      <Badge
+                        key={clientId}
+                        variant="secondary"
+                        className="text-xs"
+                      >
+                        {client?.name ||
+                          `${(client?.id || clientId).substring(0, 8)}...`}
+                        <button
+                          onClick={() => removeSelectedClient(clientId)}
+                          className="ml-1 hover:text-destructive"
                         >
-                          {client.id.substring(0, 12)}...
-                          {client.description && (
-                            <span className="text-muted-foreground ml-1">
-                              ({client.description})
-                            </span>
-                          )}
-                        </Label>
-                      </div>
-                    ))
-                  )}
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
                 </div>
+              )}
+
+              {/* Available clients */}
+              <div className="space-y-2 max-h-32 overflow-y-auto border rounded p-2">
+                {activeClientKeys.length === 0 ? (
+                  <div className="text-xs text-muted-foreground text-center py-2">
+                    <p>{t("secrets.dialog.multiClient.noActiveClients")}</p>
+                    <Link
+                      to="/clients"
+                      className="inline-flex items-center gap-1 text-foreground underline mt-1"
+                    >
+                      <ExternalLink className="h-3 w-3" /> Open Clients
+                    </Link>
+                  </div>
+                ) : (
+                  activeClientKeys.map((client) => (
+                    <div
+                      key={client.id}
+                      className="flex items-center space-x-2"
+                    >
+                      <Checkbox
+                        id={client.id}
+                        checked={selectedClients.includes(client.id)}
+                        onCheckedChange={(checked) =>
+                          handleClientToggle(client.id, checked === true)
+                        }
+                      />
+                      <Label
+                        htmlFor={client.id}
+                        className="text-xs font-mono cursor-pointer flex-1"
+                      >
+                        {client.name || `${client.id.substring(0, 12)}...`}
+                        <span className="text-muted-foreground ml-1">
+                          {client.description || client.id.substring(0, 8)}
+                        </span>
+                      </Label>
+                    </div>
+                  ))
+                )}
               </div>
-            )}
+            </div>
           </div>
         </ScrollArea>
         <DialogFooter>

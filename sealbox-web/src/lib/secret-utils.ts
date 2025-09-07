@@ -51,31 +51,4 @@ export function filterSecrets(secrets: SecretUIData[], searchTerm: string) {
 /**
  * 获取状态对应的颜色类名
  */
-export function getStatusColor(status: SecretStatus): string {
-  switch (status) {
-    case "active":
-      return "text-green-600";
-    case "expiring":
-      return "text-yellow-600";
-    case "expired":
-      return "text-red-600";
-    default:
-      return "text-gray-600";
-  }
-}
-
-/**
- * 获取状态对应的 Badge 样式类名
- */
-export function getStatusBadge(status: SecretStatus): string {
-  switch (status) {
-    case "active":
-      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-    case "expiring":
-      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-    case "expired":
-      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
-    default:
-      return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
-  }
-}
+// Deprecated color helpers were removed in favor of semantic Badge/Alert variants.

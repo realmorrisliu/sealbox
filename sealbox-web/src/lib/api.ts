@@ -136,24 +136,68 @@ export class SealboxApi {
     );
   }
 
+  async getSecretPermissions(
+    key: string,
+  ): Promise<import("./types").SecretPermissionsResponse> {
+    return this.request(`/v1/secrets/${encodeURIComponent(key)}/permissions`);
+  }
 
-  // Client key management API
+  async revokeSecretPermission(key: string, clientId: string): Promise<void> {
+    return this.request(
+      `/v1/secrets/${encodeURIComponent(key)}/permissions/${encodeURIComponent(clientId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  // Clients management API (new)
   async listClientKeys(): Promise<ClientKeysListResponse> {
-    return this.request<ClientKeysListResponse>("/v1/client-key");
+    const data = await this.request<{ clients: any[] }>("/v1/clients");
+    // Map to legacy-compatible shape expected by UI
+    return {
+      client_keys: (data.clients || []).map((c) => ({
+        id: c.id,
+        name: c.name ?? null,
+        description: c.description ?? null,
+        created_at: c.created_at,
+        last_used_at: c.last_used_at ?? null,
+        status: c.status,
+      })),
+    };
   }
 
-  async createClientKey(data: CreateClientKeyRequest): Promise<void> {
-    return this.request<void>("/v1/client-key", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  async rotateClientKey(data: CreateClientKeyRequest): Promise<void> {
-    return this.request<void>("/v1/client-key", {
+  async updateClientStatus(
+    clientId: string,
+    status: "Active" | "Disabled" | "Retired",
+  ): Promise<{ client_id: string; status: string }> {
+    return this.request(`/v1/clients/${encodeURIComponent(clientId)}/status`, {
       method: "PUT",
-      body: JSON.stringify(data),
+      body: JSON.stringify({ status }),
     });
+  }
+
+  async renameClient(
+    clientId: string,
+    name: string,
+    description?: string,
+  ): Promise<{ client_id: string; name: string; description?: string }> {
+    return this.request(`/v1/clients/${encodeURIComponent(clientId)}/name`, {
+      method: "PUT",
+      body: JSON.stringify({ name, description }),
+    });
+  }
+
+  // Enrollment approve (web approves code shown on CLI)
+  async approveEnrollment(
+    code: string,
+    payload: { name?: string; description?: string },
+  ): Promise<{ approved: boolean; code: string }> {
+    return this.request<{ approved: boolean; code: string }>(
+      `/v1/enroll/${encodeURIComponent(code)}/approve`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload ?? {}),
+      },
+    );
   }
 
   // Admin API

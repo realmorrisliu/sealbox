@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,117 +10,183 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
-import { LanguageSelector } from "@/components/i18n/language-selector";
-import { ThemeToggle } from "@/components/theme/theme-toggle";
-import {
-  LogOut,
-  ChevronDown,
-  Server,
-  WifiOff,
-  Loader2,
-} from "lucide-react";
+// We inline language and theme controls inside the user menu.
+import { LogOut, ChevronDown, Globe, Sun, Moon, Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "@/stores/auth";
-import { useServerStatus } from "@/hooks/useServerStatus";
+import { cn } from "@/lib/utils";
+import { useTheme } from "@/components/theme/theme-provider";
+import {
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@/components/ui/dropdown-menu";
 
+import { AdaptiveLogo } from "@/components/brand/adaptive-logo";
+
+// Two-row Tailscale-like navigation
 export function Navigation() {
   const { t } = useTranslation();
-  const { logout, serverUrl } = useAuthStore();
-  const serverStatus = useServerStatus();
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "connected":
-        return "text-green-500";
-      case "connecting":
-        return "text-yellow-500";
-      case "disconnected":
-        return "text-red-500";
-      default:
-        return "text-gray-500";
-    }
-  };
+  const { logout } = useAuthStore();
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="w-full px-4">
-        <div className="flex h-12 items-center justify-between">
-          {/* Logo and Brand */}
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center space-x-2">
-              <div className="text-lg">🦭</div>
-              <div className="flex items-center space-x-1">
-                <span className="text-lg font-bold text-foreground">
-                  sealbox
-                </span>
-                <Badge
-                  variant="secondary"
-                  className="text-xs px-1.5 py-0.5 h-5"
-                >
-                  BETA
-                </Badge>
+    <nav className="sticky top-0 z-50 w-full bg-muted/40 backdrop-blur">
+      {/* Top bar */}
+      <div className="border-b bg-background/80">
+        <div className="container mx-auto max-w-screen-2xl h-16 px-8 md:px-10 lg:px-12 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AdaptiveLogo size={28} />
+            <div className="leading-tight">
+              <div className="font-semibold">Sealbox</div>
+              <div className="text-xs text-muted-foreground">
+                Self-hosted secrets hub
               </div>
             </div>
           </div>
 
-          {/* Right Side Controls */}
-          <div className="flex items-center space-x-0.5">
-            {/* Language Selector */}
-            <LanguageSelector />
-
-            {/* Theme Selector */}
-            <ThemeToggle />
-
-            {/* User Menu */}
-            <DropdownMenu
-              onOpenChange={(isOpen) => {
-                if (isOpen) {
-                  serverStatus.refresh();
-                }
-              }}
+          <div className="flex items-center gap-2">
+            <Link
+              to="/docs"
+              className="text-sm text-foreground/80 hover:text-primary px-3 py-2"
             >
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 px-2">
-                  <div className="w-5 h-5 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-medium mr-1">
-                    {serverUrl ? serverUrl.charAt(0).toUpperCase() : "S"}
-                  </div>
-                  <ChevronDown className="w-3 h-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <div className="relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none">
-                  <Server className="pointer-events-none shrink-0 size-4 text-muted-foreground" />
-                  <div className="flex-1 min-w-0 flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">
-                        {serverStatus.url}
-                      </p>
-                    </div>
-                    <div className={`${getStatusColor(serverStatus.status)} shrink-0 text-xs font-medium flex items-center`}>
-                      {serverStatus.status === "connected" && serverStatus.responseTime ? (
-                        `${serverStatus.responseTime}ms`
-                      ) : serverStatus.status === "connecting" ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <WifiOff className="h-3 w-3" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-xs text-red-600 cursor-pointer"
-                  onClick={logout}
-                >
-                  <LogOut className="pointer-events-none shrink-0 size-4" />
-                  <span>{t("nav.signOut")}</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              Docs
+            </Link>
+            <a
+              href="https://github.com/"
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-foreground/80 hover:text-primary px-3 py-2"
+            >
+              Support
+            </a>
+            <UserMenu onLogout={logout} label={t("auth.logout")} />
           </div>
+        </div>
+      </div>
+
+      {/* Sub navigation */}
+      <div className="border-b bg-background/80">
+        <div className="container mx-auto max-w-screen-2xl px-8 md:px-10 lg:px-12">
+          <MainTabs />
         </div>
       </div>
     </nav>
   );
 }
+
+function UserMenu({
+  onLogout,
+  label,
+}: {
+  onLogout: () => void;
+  label: string;
+}) {
+  const { theme, setTheme } = useTheme();
+  const { i18n } = useTranslation();
+  const languages = [
+    { code: "en", name: "English", icon: "🇺🇸" },
+    { code: "zh", name: "中文", icon: "🇨🇳" },
+    { code: "ja", name: "日本語", icon: "🇯🇵" },
+    { code: "de", name: "Deutsch", icon: "🇩🇪" },
+  ];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-9 px-2">
+          <div className="h-6 w-6 rounded-full bg-muted" />
+          <ChevronDown className="ml-1 h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel>Account</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Sun className="h-4 w-4" />
+            Appearance
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-44">
+            <DropdownMenuRadioGroup
+              value={theme}
+              onValueChange={setTheme as any}
+            >
+              <DropdownMenuRadioItem value="light">
+                <Sun className="h-4 w-4" /> Light
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="dark">
+                <Moon className="h-4 w-4" /> Dark
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="system">
+                <Monitor className="h-4 w-4" /> System
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Globe className="h-4 w-4" />
+            Language
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-44">
+            <DropdownMenuRadioGroup
+              value={i18n.language}
+              onValueChange={(v) => {
+                i18n.changeLanguage(v);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem("sealbox-language", v);
+                }
+              }}
+            >
+              {languages.map((l) => (
+                <DropdownMenuRadioItem key={l.code} value={l.code}>
+                  <span className="mr-2">{l.icon}</span>
+                  {l.name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onLogout} className="text-red-600">
+          <LogOut className="mr-2 h-4 w-4" /> {label}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function MainTabs() {
+  const router = useRouterState();
+  const links = [
+    { to: "/", label: "Secrets" },
+    { to: "/clients", label: "Clients" },
+    { to: "/settings", label: "Settings" },
+  ];
+
+  const activePath = router.location.pathname;
+  return (
+    <div className="flex items-center gap-2 h-12">
+      {links.map((l) => {
+        const active =
+          activePath === l.to || (l.to !== "/" && activePath.startsWith(l.to));
+        return (
+          <Link
+            key={l.to}
+            to={l.to}
+            className={cn(
+              "rounded-md px-3 py-2 text-sm transition-colors",
+              active
+                ? "bg-muted text-foreground"
+                : "text-foreground/70 hover:text-primary",
+            )}
+          >
+            {l.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+import { SealboxMark } from "@/components/brand/sealbox-logo";

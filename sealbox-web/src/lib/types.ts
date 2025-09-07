@@ -23,16 +23,30 @@ export interface Secret {
 
 export interface ClientKey {
   id: string;
-  public_key: string;
+  // server /v1/clients does not return public_key; keep optional to preserve compatibility
+  public_key?: string;
+  name?: string | null;
+  description?: string | null;
   created_at: number;
+  last_used_at?: number | null;
   status: "Active" | "Retired" | "Disabled";
-  description?: string;
-  metadata?: string;
+  metadata?: string | null;
 }
 
 // API request/response types
 export interface SecretsListResponse {
   secrets: SecretInfo[];
+}
+
+export interface SecretPermissionItem {
+  client_id: string;
+  client_name?: string | null;
+  authorized_at: number;
+}
+
+export interface SecretPermissionsResponse {
+  key: string;
+  authorized_clients: SecretPermissionItem[];
 }
 
 export interface CreateSecretRequest {
@@ -52,7 +66,6 @@ export interface CleanupExpiredResponse {
   deleted_count: number;
   cleaned_at: number;
 }
-
 
 // Error response types
 export interface ApiError {

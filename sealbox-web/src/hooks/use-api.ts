@@ -67,6 +67,28 @@ export function useDeleteSecret() {
   });
 }
 
+export function useSecretPermissions(key: string, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["permissions", key],
+    queryFn: () => apiClient!.getSecretPermissions(key),
+    enabled: !!apiClient && !!key && enabled,
+  });
+}
+
+export function useRevokeSecretPermission() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key, clientId }: { key: string; clientId: string }) =>
+      apiClient!.revokeSecretPermission(key, clientId),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["permissions", variables.key],
+      });
+    },
+  });
+}
 
 // Client key related hooks
 export function useClientKeys() {
@@ -98,12 +120,73 @@ export function useRotateClientKey() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateClientKeyRequest) =>
-      apiClient!.rotateClientKey(data),
+    // legacy no-op to keep UI buttons disabled state working; rotation via CLI
+    mutationFn: async (_data: CreateClientKeyRequest) => {},
     onSuccess: () => {
       // Refresh client keys and all secrets (affects encryption)
       queryClient.invalidateQueries({ queryKey: queryKeys.clientKeys });
       queryClient.invalidateQueries({ queryKey: queryKeys.secrets });
+    },
+  });
+}
+
+// Enrollment approve
+export function useApproveEnrollment() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      code,
+      name,
+      description,
+    }: {
+      code: string;
+      name?: string;
+      description?: string;
+    }) => apiClient!.approveEnrollment(code, { name, description }),
+    onSuccess: () => {
+      // New client likely appears shortly after CLI completes; refresh once
+      queryClient.invalidateQueries({ queryKey: queryKeys.clientKeys });
+    },
+  });
+}
+
+// Client updates
+export function useUpdateClientStatus() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      clientId,
+      status,
+    }: {
+      clientId: string;
+      status: "Active" | "Disabled" | "Retired";
+    }) => apiClient!.updateClientStatus(clientId, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.clientKeys });
+    },
+  });
+}
+
+export function useRenameClient() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      clientId,
+      name,
+      description,
+    }: {
+      clientId: string;
+      name: string;
+      description?: string;
+    }) => apiClient!.renameClient(clientId, name, description),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.clientKeys });
     },
   });
 }

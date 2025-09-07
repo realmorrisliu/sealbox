@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -9,12 +8,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Eye, Trash2, Package } from "lucide-react";
+import { Eye, Trash2, Package, Shield } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { CountdownTimer } from "@/components/common/countdown-timer";
-import { getStatusBadge } from "@/lib/secret-utils";
 import { EmptyState } from "@/components/common/empty-state";
 import type { SecretUIData } from "@/lib/types";
+import { useState } from "react";
+import { PermissionsDialog } from "@/components/secrets/permissions-dialog";
 
 interface SecretTableProps {
   secrets: SecretUIData[];
@@ -30,6 +30,7 @@ export function SecretTable({
   isDeleting,
 }: SecretTableProps) {
   const { t } = useTranslation();
+  const [permOpenFor, setPermOpenFor] = useState<string | null>(null);
 
   if (secrets.length === 0) {
     return (
@@ -42,15 +43,12 @@ export function SecretTable({
   }
 
   return (
-    <Card className="overflow-hidden">
+    <div className="overflow-hidden rounded-xl border bg-background">
       <Table>
         <TableHeader>
           <TableRow className="text-xs border-b bg-muted/30">
             <TableHead className="h-10 px-3 font-semibold">
               {t("secrets.table.name")}
-            </TableHead>
-            <TableHead className="h-10 px-3 font-semibold">
-              {t("secrets.table.version")}
             </TableHead>
             <TableHead className="h-10 px-3 font-semibold">
               {t("secrets.table.status")}
@@ -64,7 +62,7 @@ export function SecretTable({
             <TableHead className="h-10 px-3 font-semibold">
               {t("secrets.table.ttl")}
             </TableHead>
-            <TableHead className="w-32 h-10 px-3 font-semibold">
+            <TableHead className="w-40 h-10 px-3 font-semibold">
               {t("secrets.actions")}
             </TableHead>
           </TableRow>
@@ -73,11 +71,14 @@ export function SecretTable({
           {secrets.map((secret) => (
             <TableRow
               key={`${secret.key}-${secret.version}`}
-              className="text-xs hover:bg-muted/20 transition-colors"
+              className="text-xs min-h-12 border-b border-border hover:bg-accent/50 transition-colors duration-150"
             >
               <TableCell className="px-3 py-3 font-medium">
                 <div className="flex items-center gap-2">
                   <span className="font-mono">{secret.key}</span>
+                  <span className="text-xs text-muted-foreground">
+                    v{secret.version}
+                  </span>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -90,11 +91,15 @@ export function SecretTable({
                 </div>
               </TableCell>
               <TableCell className="px-3 py-3">
-                <span className="font-mono">v{secret.version}</span>
-              </TableCell>
-              <TableCell className="px-3 py-3">
                 <Badge
-                  className={`text-xs px-1.5 py-0.5 ${getStatusBadge(secret.status)}`}
+                  variant={
+                    secret.status === "active"
+                      ? "success"
+                      : secret.status === "expiring"
+                        ? "warning"
+                        : "destructive"
+                  }
+                  className="text-xs px-1.5 py-0.5"
                 >
                   {t(`secrets.status.${secret.status}`)}
                 </Badge>
@@ -122,6 +127,18 @@ export function SecretTable({
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="h-6 px-2"
+                    onClick={() => setPermOpenFor(secret.key)}
+                    title={t("secrets.permissions.clients")}
+                  >
+                    <Shield className="h-3 w-3 mr-1" />
+                    <span className="hidden md:inline">
+                      {t("secrets.permissions.clients")}
+                    </span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="h-6 w-6 p-0 text-red-600"
                     onClick={() => onDeleteSecret(secret)}
                     disabled={isDeleting}
@@ -135,6 +152,13 @@ export function SecretTable({
           ))}
         </TableBody>
       </Table>
-    </Card>
+      {permOpenFor && (
+        <PermissionsDialog
+          secretKey={permOpenFor}
+          open={!!permOpenFor}
+          onOpenChange={(o) => !o && setPermOpenFor(null)}
+        />
+      )}
+    </div>
   );
 }

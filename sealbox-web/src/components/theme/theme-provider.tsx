@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 
 type Theme = "light" | "dark" | "system";
 
@@ -33,15 +39,19 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       if (stored && stored !== "system") {
         return stored;
       }
-      
+
       // For system theme or no stored preference, check system preference
-      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      return window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
     }
     return "light"; // SSR fallback
   };
 
   const [theme, setTheme] = useState<Theme>(getStoredTheme);
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(getInitialResolvedTheme);
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(
+    getInitialResolvedTheme,
+  );
   const [mounted, setMounted] = useState(false);
 
   // Initialize theme from localStorage
@@ -86,9 +96,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   };
 
   return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
   );
 }
 
