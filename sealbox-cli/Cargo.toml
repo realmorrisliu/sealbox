@@ -19,7 +19,7 @@ tabled = "0.20"
 rpassword = "7.0"
 aes-gcm = { workspace = true }
 base64 = { workspace = true }
-comfy-table = "7.1"
+comfy-table = "7.2"
 uuid = { workspace = true }
 rand = { workspace = true }
 
