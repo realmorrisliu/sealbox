@@ -75,6 +75,7 @@
     "dialog": {
       "addNewSecret": "Add New Secret",
       "addNewSecretDescription": "Create a new secret entry for your application.",
+      "addNewSecretDescriptionBulk": "Create a new secret entry for your application. Bulk add is supported.",
       "name": "Name",
       "nameHelp": "SECRET_NAME",
       "value": "Value",
@@ -85,6 +86,26 @@
       "nameAndValueRequired": "Name and value are required",
       "secretAdded": "Secret added",
       "hasBeenCreated": "{{name}} has been created",
+      "bulk": {
+        "pasteLabel": "Paste secrets",
+        "pastePlaceholder": "NAME,VALUE[,TTL]\nDB_PASSWORD,s3cr3t,3600\nAPI_KEY,abcd",
+        "rowsLabel": "Secrets",
+        "addRow": "Add Row",
+        "summarySuccess": "Created {{success}} of {{total}} secrets",
+        "summaryPartial": "{{success}} created, {{failed}} failed",
+        "pasteHelp": "Supports \"name,value[,ttl]\" or \"name=value[,ttl]\". TTL is seconds and optional.",
+        "append": "Append parsed rows",
+        "apply": "Apply",
+        "columns": {
+          "name": "Name",
+          "value": "Value",
+          "ttl": "TTL (s)"
+        },
+        "unitSeconds": "s",
+        "removeRow": "Remove row",
+        "openClients": "Open Clients",
+        "createCount": "Create {{count}} Secrets"
+      },
       "multiClient": {
         "enableMode": "Multi-Client Mode",
         "description": "Allow multiple clients to access this secret",

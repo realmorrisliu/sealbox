@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CreateSecretDialog } from "@/components/secrets/create-secret-dialog";
+import { Plus } from "lucide-react";
 import { useClientKeys, useApproveEnrollment } from "@/hooks/use-api";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +74,7 @@ function SecretManagement() {
       actions={
         <CreateSecretDialog>
           <Button size="sm" className="h-9 px-4">
+            <Plus className="h-4 w-4 mr-2" />
             {t("secrets.controls.addSecret")}
           </Button>
         </CreateSecretDialog>
@@ -156,6 +158,7 @@ function SecretManagement() {
                   </Button>
                   <CreateSecretDialog>
                     <Button variant="outline" size="sm">
+                      <Plus className="h-4 w-4 mr-2" />
                       {t("secrets.controls.addSecret")}
                     </Button>
                   </CreateSecretDialog>

@@ -75,6 +75,7 @@
     "dialog": {
       "addNewSecret": "Neues Geheimnis hinzufügen",
       "addNewSecretDescription": "Erstellen Sie einen neuen Geheimnis-Eintrag für Ihre Anwendung.",
+      "addNewSecretDescriptionBulk": "Erstellen Sie einen neuen Geheimnis-Eintrag für Ihre Anwendung. Stapel-Erstellung wird unterstützt.",
       "name": "Name",
       "nameHelp": "SECRET_NAME",
       "value": "Wert",
@@ -85,6 +86,22 @@
       "nameAndValueRequired": "Name und Wert sind erforderlich",
       "secretAdded": "Geheimnis hinzugefügt",
       "hasBeenCreated": "{{name}} wurde erstellt",
+      "bulk": {
+        "pasteLabel": "Geheimnisse einfügen",
+        "pastePlaceholder": "NAME,VALUE[,TTL]\\nDB_PASSWORD,s3cr3t,3600\\nAPI_KEY,abcd",
+        "rowsLabel": "Geheimnisse",
+        "addRow": "Zeile hinzufügen",
+        "summarySuccess": "{{success}} von {{total}} Geheimnissen erstellt",
+        "summaryPartial": "{{success}} erstellt, {{failed}} fehlgeschlagen",
+        "pasteHelp": "Unterstützt \"name,value[,ttl]\" oder \"name=value[,ttl]\". TTL in Sekunden, optional.",
+        "append": "Analysierte Zeilen anhängen",
+        "apply": "Anwenden",
+        "columns": { "name": "Name", "value": "Wert", "ttl": "TTL (s)" },
+        "unitSeconds": "s",
+        "removeRow": "Zeile entfernen",
+        "openClients": "Clients öffnen",
+        "createCount": "{{count}} Geheimnisse erstellen"
+      },
       "multiClient": {
         "enableMode": "Multi-Client-Modus",
         "description": "Mehreren Clients Zugriff auf dieses Geheimnis gewähren",

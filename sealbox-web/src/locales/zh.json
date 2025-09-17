@@ -75,6 +75,7 @@
     "dialog": {
       "addNewSecret": "添加新密钥",
       "addNewSecretDescription": "为您的应用程序创建新的密钥条目。",
+      "addNewSecretDescriptionBulk": "为您的应用程序创建新的密钥条目。支持批量添加。",
       "name": "名称",
       "nameHelp": "SECRET_NAME",
       "value": "值",
@@ -85,6 +86,22 @@
       "nameAndValueRequired": "名称和值为必填项",
       "secretAdded": "密钥已添加",
       "hasBeenCreated": "{{name}} 已创建",
+      "bulk": {
+        "pasteLabel": "粘贴密钥",
+        "pastePlaceholder": "NAME,VALUE[,TTL]\nDB_PASSWORD,s3cr3t,3600\nAPI_KEY,abcd",
+        "rowsLabel": "密钥列表",
+        "addRow": "添加一行",
+        "summarySuccess": "已创建 {{success}} / {{total}} 条密钥",
+        "summaryPartial": "成功 {{success}} 条，失败 {{failed}} 条",
+        "pasteHelp": "支持 \"name,value[,ttl]\" 或 \"name=value[,ttl]\" 格式。TTL 为秒且可选。",
+        "append": "追加解析的行",
+        "apply": "应用",
+        "columns": { "name": "名称", "value": "值", "ttl": "TTL（秒）" },
+        "unitSeconds": "s",
+        "removeRow": "删除行",
+        "openClients": "打开客户端",
+        "createCount": "创建 {{count}} 条密钥"
+      },
       "multiClient": {
         "enableMode": "多客户端模式",
         "description": "允许多个客户端访问此密钥",

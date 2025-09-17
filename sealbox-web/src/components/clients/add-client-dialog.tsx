@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -13,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useApproveEnrollment } from "@/hooks/use-api";
+import { Loader2 } from "lucide-react";
 
 export function AddClientDialog({
   open,
@@ -29,18 +31,18 @@ export function AddClientDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{t("components.addClient.title")}</DialogTitle>
+          <DialogTitle className="text-lg">{t("components.addClient.title")}</DialogTitle>
+          <DialogDescription className="text-sm">
+            On the device, run
+            {" "}
+            <code className="bg-muted px-1 py-0.5 rounded">sealbox-cli up --enroll</code>
+            {" "}
+            and paste the enrollment code below.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="text-xs text-muted-foreground">
-            On the device, run:{" "}
-            <code className="bg-muted px-1 py-0.5 rounded">
-              sealbox-cli up --enroll
-            </code>{" "}
-            and paste the code here.
-          </div>
           <div>
             <Label htmlFor="enroll-code" className="text-xs">
               {t("components.addClient.enrollmentCode")}
@@ -101,6 +103,9 @@ export function AddClientDialog({
             }}
             disabled={approve.isPending || !code.trim()}
           >
+            {approve.isPending && (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            )}
             {t("components.addClient.approveAdd")}
           </Button>
         </DialogFooter>

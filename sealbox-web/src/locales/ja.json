@@ -75,6 +75,7 @@
     "dialog": {
       "addNewSecret": "新しいシークレットを追加",
       "addNewSecretDescription": "アプリケーション用の新しいシークレットエントリを作成します。",
+      "addNewSecretDescriptionBulk": "アプリケーション用の新しいシークレットエントリを作成します。バルク追加に対応しています。",
       "name": "名前",
       "nameHelp": "SECRET_NAME",
       "value": "値",
@@ -85,6 +86,22 @@
       "nameAndValueRequired": "名前と値は必須です",
       "secretAdded": "シークレットが追加されました",
       "hasBeenCreated": "{{name}} が作成されました",
+      "bulk": {
+        "pasteLabel": "シークレットを貼り付け",
+        "pastePlaceholder": "NAME,VALUE[,TTL]\nDB_PASSWORD,s3cr3t,3600\nAPI_KEY,abcd",
+        "rowsLabel": "シークレット一覧",
+        "addRow": "行を追加",
+        "summarySuccess": "{{total}}件中{{success}}件を作成しました",
+        "summaryPartial": "{{success}}件作成、{{failed}}件失敗",
+        "pasteHelp": "\"name,value[,ttl]\" または \"name=value[,ttl]\" 形式に対応。TTLは秒で任意です。",
+        "append": "解析結果を追加",
+        "apply": "適用",
+        "columns": { "name": "名前", "value": "値", "ttl": "TTL(秒)" },
+        "unitSeconds": "s",
+        "removeRow": "行を削除",
+        "openClients": "クライアントを開く",
+        "createCount": "{{count}} 件のシークレットを作成"
+      },
       "multiClient": {
         "enableMode": "マルチクライアントモード",
         "description": "複数のクライアントがこのシークレットにアクセスできるようにする",

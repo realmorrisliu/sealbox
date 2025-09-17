@@ -193,8 +193,8 @@ function ClientKeysPage() {
         size: "md",
       }}
       actions={
-        <Button onClick={() => setAddOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" /> Add client
+        <Button size="sm" className="h-9 px-4" onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" /> {t("pages.clients.addClient")}
         </Button>
       }
     >
