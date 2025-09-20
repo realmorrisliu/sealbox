@@ -165,6 +165,31 @@ export class SealboxApi {
     };
   }
 
+  async createClientKey(data: CreateClientKeyRequest): Promise<ClientKey> {
+    const response = await this.request<{
+      id: string;
+      name: string | null;
+      description: string | null;
+      created_at: number;
+      last_used_at: number | null;
+      status: ClientKey["status"];
+    }>("/v1/clients", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return {
+      id: response.id,
+      public_key: data.public_key,
+      name: response.name,
+      description: response.description,
+      created_at: response.created_at,
+      last_used_at: response.last_used_at,
+      status: response.status,
+      metadata: null,
+    };
+  }
+
   async updateClientStatus(
     clientId: string,
     status: "Active" | "Disabled" | "Retired",

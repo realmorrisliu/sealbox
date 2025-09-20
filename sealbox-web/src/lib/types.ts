@@ -52,10 +52,13 @@ export interface SecretPermissionsResponse {
 export interface CreateSecretRequest {
   secret: string;
   ttl?: number;
+  authorized_clients?: string[];
 }
 
 export interface CreateClientKeyRequest {
   public_key: string;
+  name?: string;
+  description?: string;
 }
 
 export interface ClientKeysListResponse {

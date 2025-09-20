@@ -35,7 +35,7 @@ export function SecretTable({
   if (secrets.length === 0) {
     return (
       <EmptyState
-        icon={Package}
+        icon={<Package className="h-5 w-5" />}
         title={t("secrets.empty.title")}
         description={t("secrets.empty.description")}
       />
