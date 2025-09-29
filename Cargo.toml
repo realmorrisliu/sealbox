@@ -33,4 +33,4 @@ tower-http = { version = "0.6", features = ["request-id", "trace", "cors"] }
 uuid = { version = "1.18.1", features = ["v4", "serde"] }
 reqwest = { version = "0.12", features = ["json"] }
 assert_cmd = "2.0"
-tempfile = "3.22"
+tempfile = "3.23"
