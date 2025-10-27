@@ -81,7 +81,7 @@ jobs:
       run: cargo build --release --all-features --workspace
     
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: sealbox-linux
         path: |
