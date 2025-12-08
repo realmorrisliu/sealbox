@@ -27,10 +27,10 @@ dotenvy = "0.15"
 config = "0.15"
 clap = { version = "4.5", features = ["derive"] }
 time = "0.3"
-http = "1.0"
+http = "1.4"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["request-id", "trace", "cors"] }
-uuid = { version = "1.18.1", features = ["v4", "serde"] }
+uuid = { version = "1.19.0", features = ["v4", "serde"] }
 reqwest = { version = "0.12", features = ["json"] }
 assert_cmd = "2.1"
 tempfile = "3.23"
