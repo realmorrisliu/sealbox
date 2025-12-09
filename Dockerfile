@@ -31,7 +31,7 @@ RUN touch sealbox-server/src/main.rs sealbox-server/src/lib.rs sealbox-cli/src/m
     cargo build --release
 
 # Runtime stage
-FROM alpine:3.22
+FROM alpine:3.23
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates && \
