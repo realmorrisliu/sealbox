@@ -6,7 +6,7 @@ resolver = "2"
 rust-version = "1.85.0"
 
 [workspace.dependencies]
-anyhow = "1.0.100"
+anyhow = "1.0.101"
 axum = { version = "0.8", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
