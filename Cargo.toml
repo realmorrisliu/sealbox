@@ -18,7 +18,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rusqlite = { version = "0.37.0", features = ["bundled", "uuid"] }
 rsa = { version = "0.9", features = ["pem"] }
-rand = "0.9"
+rand = "0.10"
 aes-gcm = "0.10"
 base64 = "0.22"
 hmac = "0.12"
