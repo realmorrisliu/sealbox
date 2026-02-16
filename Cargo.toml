@@ -30,7 +30,7 @@ time = "0.3"
 http = "1.4"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["request-id", "trace", "cors"] }
-uuid = { version = "1.20.0", features = ["v4", "serde"] }
+uuid = { version = "1.21.0", features = ["v4", "serde"] }
 reqwest = { version = "0.13", features = ["json"] }
 assert_cmd = "2.1"
-tempfile = "3.24"
+tempfile = "3.25"
