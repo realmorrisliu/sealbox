@@ -21,7 +21,7 @@ rsa = { version = "0.9", features = ["pem"] }
 rand = "0.10"
 aes-gcm = "0.10"
 base64 = "0.22"
-hmac = "0.12"
+hmac = "0.13"
 sha2 = "0.10"
 dotenvy = "0.15"
 config = "0.15"
