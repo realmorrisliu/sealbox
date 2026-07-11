@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sealbox"
+  short_description: "Operate Sealbox end-to-end: server, CLI, tenant APIs, secrets, keys, web UI, and migration operations."
+  default_prompt: "Handle Sealbox tasks from configuration and key lifecycle through secret operations, tenant administration, and incident troubleshooting. Confirm API auth mode (v1 token vs v2 tenant token) before giving decryption or mutation guidance."

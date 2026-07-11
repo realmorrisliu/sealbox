@@ -21,6 +21,12 @@ pub enum SealboxError {
     #[error("Master key not found: {0}")]
     MasterKeyNotFound(Uuid),
 
+    #[error("Tenant not found: {0}")]
+    TenantNotFound(String),
+
+    #[error("API token not found: {0}")]
+    ApiTokenNotFound(Uuid),
+
     #[error("Master key mismatch for {0}: expected {1}, got {2}")]
     MasterKeyMismatch(String, String, String),
 
@@ -58,6 +64,8 @@ impl IntoResponse for SealboxError {
                 (StatusCode::PRECONDITION_REQUIRED, errorfmt(&self))
             }
             SealboxError::MasterKeyNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::TenantNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::ApiTokenNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::MasterKeyMismatch(_, _, _) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
             }

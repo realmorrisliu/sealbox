@@ -213,7 +213,7 @@ pub async fn import_secrets(
 async fn fetch_secret_infos(config: &Config) -> Result<Vec<SecretInfo>> {
     let client = Client::new();
     let response = client
-        .get(format!("{}/v1/secrets", config.server.url))
+        .get(config.api_url("secrets"))
         .bearer_auth(&config.server.token)
         .send()
         .await

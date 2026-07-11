@@ -6,7 +6,8 @@ use crate::{
     error::Result,
     repo::{
         HealthRepo, MasterKeyRepo, SecretRepo, SqliteHealthRepo, SqliteMasterKeyRepo,
-        SqliteSecretRepo, create_db_connection,
+        SqliteSecretRepo, SqliteTenantRepo, TenantRepo, backup_before_migration,
+        create_db_connection, run_migrations,
     },
 };
 
@@ -17,14 +18,20 @@ pub(crate) struct AppState {
     pub(crate) health_repo: Arc<dyn HealthRepo>,
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
     pub(crate) master_key_repo: Arc<dyn MasterKeyRepo>,
+    pub(crate) tenant_repo: Arc<dyn TenantRepo>,
 }
 
 impl AppState {
     pub fn new(config: &SealboxConfig) -> Result<Self> {
         let conn = create_db_connection(&config.store_path)?;
 
-        SqliteSecretRepo::init_table(&conn)?;
-        SqliteMasterKeyRepo::init_table(&conn)?;
+        if let Some(backup_path) = backup_before_migration(&conn, &config.store_path)? {
+            info!(
+                backup_path = %backup_path.display(),
+                "preserved pre-tenant Sealbox database backup"
+            );
+        }
+        run_migrations(&conn)?;
 
         let state = Self {
             config: Arc::new(config.clone()),
@@ -32,6 +39,7 @@ impl AppState {
             health_repo: Arc::new(SqliteHealthRepo {}),
             secret_repo: Arc::new(SqliteSecretRepo {}),
             master_key_repo: Arc::new(SqliteMasterKeyRepo {}),
+            tenant_repo: Arc::new(SqliteTenantRepo {}),
         };
 
         // Perform startup cleanup of expired secrets

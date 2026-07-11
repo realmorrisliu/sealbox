@@ -4,7 +4,7 @@ use axum::{
     http::{HeaderName, Request},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -19,8 +19,8 @@ use tracing::{error, info_span};
 
 use crate::{
     api::{
-        auth::static_auth,
-        handler::{admin, master_key, secret},
+        auth::{static_auth, tenant_auth},
+        handler::{admin, master_key, secret, tenant},
         state::AppState,
     },
     config::SealboxConfig,
@@ -76,12 +76,7 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         CorsLayer::new().allow_origin([])
     };
 
-    Ok(Router::new()
-        // Health check endpoints without authentication (Kubernetes standard)
-        .route("/", get(root))
-        .route("/healthz/live", get(liveness_probe))
-        .route("/healthz/ready", get(readiness_probe))
-        // Business endpoints requiring authentication
+    let legacy_routes = Router::new()
         .route("/{version}/secrets", get(secret::list))
         .route(
             "/{version}/secrets/{secret_key}/history",
@@ -110,7 +105,65 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             "/{version}/admin/cleanup-expired",
             axum::routing::delete(admin::cleanup_expired),
         )
-        .route_layer(from_fn_with_state(state.clone(), static_auth))
+        .route_layer(from_fn_with_state(state.clone(), static_auth));
+
+    let tenant_routes = Router::new()
+        .route("/v2/secrets", get(secret::list_v2))
+        .route("/v2/secrets/{secret_key}/history", get(secret::history_v2))
+        .route(
+            "/v2/secrets/{secret_key}",
+            get(secret::get_v2)
+                .put(secret::save_v2)
+                .delete(secret::delete_v2),
+        )
+        .route(
+            "/v2/master-key",
+            get(master_key::list_v2)
+                .put(master_key::rotate_v2)
+                .post(master_key::create_v2),
+        )
+        .route("/v2/master-key/active", get(master_key::active_v2))
+        .route(
+            "/v2/master-key/by-id/{master_key_id}",
+            get(master_key::get_v2),
+        )
+        .route(
+            "/v2/master-key/by-id/{master_key_id}/secrets",
+            get(master_key::secrets_v2),
+        )
+        .route_layer(from_fn_with_state(state.clone(), tenant_auth));
+
+    let tenant_admin_routes = Router::new()
+        .route("/v2/admin/tenants", get(tenant::list).post(tenant::create))
+        .route("/v2/admin/tenants/{tenant_id}", get(tenant::get))
+        .route(
+            "/v2/admin/tenants/{tenant_id}/suspend",
+            post(tenant::suspend),
+        )
+        .route("/v2/admin/tenants/{tenant_id}/resume", post(tenant::resume))
+        .route(
+            "/v2/admin/tenants/{tenant_id}/tokens",
+            get(tenant::list_tokens).post(tenant::create_token),
+        )
+        .route(
+            "/v2/admin/tenants/{tenant_id}/tokens/{token_id}",
+            axum::routing::delete(tenant::revoke_token),
+        )
+        .route_layer(from_fn_with_state(state.clone(), static_auth));
+
+    let app = Router::new()
+        // Health check endpoints without authentication (Kubernetes standard)
+        .route("/", get(root))
+        .route("/healthz/live", get(liveness_probe))
+        .route("/healthz/ready", get(readiness_probe))
+        .merge(tenant_routes)
+        .merge(tenant_admin_routes);
+    let app = if config.legacy_v1_enabled {
+        app.merge(legacy_routes)
+    } else {
+        app
+    };
+    Ok(app
         .with_state(state)
         .layer(cors_layer)
         .layer(request_id_middleware))

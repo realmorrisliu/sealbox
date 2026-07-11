@@ -17,7 +17,7 @@ impl SqliteSecretRepo {
         // Initialize database table structure
         conn.execute(
             "CREATE TABLE IF NOT EXISTS secrets (
-                namespace TEXT NOT NULL,
+                namespace TEXT NOT NULL DEFAULT 'legacy',
                 key TEXT NOT NULL,
                 version INTEGER NOT NULL DEFAULT 1,
                 encrypted_data BLOB NOT NULL,
@@ -29,6 +29,10 @@ impl SqliteSecretRepo {
                 metadata TEXT,
                 PRIMARY KEY (namespace, key, version)
             )",
+            (),
+        )?;
+        conn.execute(
+            "UPDATE secrets SET namespace = 'legacy' WHERE namespace = ''",
             (),
         )?;
 
@@ -50,6 +54,7 @@ impl SqliteSecretRepo {
 
     fn prune_old_credential_versions(
         tx: &rusqlite::Transaction,
+        namespace: &str,
         key: &str,
         latest_version: i32,
     ) -> Result<()> {
@@ -59,8 +64,8 @@ impl SqliteSecretRepo {
         }
 
         let deleted_count = tx.execute(
-            "DELETE FROM secrets WHERE key = ?1 AND version <= ?2",
-            (key, oldest_version_to_delete),
+            "DELETE FROM secrets WHERE namespace = ?1 AND key = ?2 AND version <= ?3",
+            (namespace, key, oldest_version_to_delete),
         )?;
 
         if deleted_count > 0 {
@@ -73,14 +78,19 @@ impl SqliteSecretRepo {
         Ok(())
     }
 
-    fn cleanup_expired_for_key(tx: &rusqlite::Transaction, key: &str) -> Result<()> {
+    fn cleanup_expired_for_key(
+        tx: &rusqlite::Transaction,
+        namespace: &str,
+        key: &str,
+    ) -> Result<()> {
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
         tx.execute(
             "DELETE FROM secrets
-             WHERE key = ?1
+             WHERE namespace = ?1
+               AND key = ?2
                AND expires_at IS NOT NULL
-               AND expires_at < ?2",
-            (key, now),
+               AND expires_at < ?3",
+            (namespace, key, now),
         )?;
         Ok(())
     }
@@ -114,11 +124,12 @@ impl SqliteSecretRepo {
         conn: &mut rusqlite::Connection,
         query: &str,
         params: impl rusqlite::Params,
+        namespace: &str,
         key: &str,
     ) -> Result<Secret> {
         let tx = conn.transaction()?;
 
-        Self::cleanup_expired_for_key(&tx, key)?;
+        Self::cleanup_expired_for_key(&tx, namespace, key)?;
 
         let row = {
             let mut stmt = tx.prepare_cached(query)?;
@@ -148,30 +159,10 @@ impl SqliteSecretRepo {
     }
 }
 
-impl SecretRepo for SqliteSecretRepo {
+#[cfg(test)]
+impl SqliteSecretRepo {
     fn get_secret(&self, conn: &mut rusqlite::Connection, key: &str) -> Result<Secret> {
-        info!("get_secret: key={}", key);
-
-        self.get_secret_with_query(
-            conn,
-            "SELECT
-                namespace,
-                key,
-                version,
-                encrypted_data,
-                encrypted_data_key,
-                master_key_id,
-                created_at,
-                updated_at,
-                expires_at,
-                metadata
-            FROM secrets
-            WHERE key = ?1
-            ORDER BY version DESC
-            LIMIT 1",
-            [key],
-            key,
-        )
+        <Self as SecretRepo>::get_secret(self, conn, crate::repo::LEGACY_TENANT_ID, key)
     }
 
     fn get_secret_by_version(
@@ -180,7 +171,102 @@ impl SecretRepo for SqliteSecretRepo {
         key: &str,
         version: i32,
     ) -> Result<Secret> {
-        info!("get_secret_by_version: key={}, version={}", key, version);
+        <Self as SecretRepo>::get_secret_by_version(
+            self,
+            conn,
+            crate::repo::LEGACY_TENANT_ID,
+            key,
+            version,
+        )
+    }
+
+    fn create_new_version(
+        &self,
+        conn: &mut rusqlite::Connection,
+        key: &str,
+        data: &str,
+        master_key: crate::repo::MasterKey,
+        ttl: Option<i64>,
+    ) -> Result<Secret> {
+        <Self as SecretRepo>::create_new_version(
+            self,
+            conn,
+            crate::repo::LEGACY_TENANT_ID,
+            key,
+            data,
+            master_key,
+            ttl,
+        )
+    }
+
+    fn create_new_encrypted_version(
+        &self,
+        conn: &mut rusqlite::Connection,
+        key: &str,
+        input: EncryptedSecretInput,
+    ) -> Result<Secret> {
+        <Self as SecretRepo>::create_new_encrypted_version(
+            self,
+            conn,
+            crate::repo::LEGACY_TENANT_ID,
+            key,
+            input,
+        )
+    }
+
+    fn delete_secret(&self, conn: &rusqlite::Connection, key: &str) -> Result<()> {
+        <Self as SecretRepo>::delete_secret(self, conn, crate::repo::LEGACY_TENANT_ID, key)
+    }
+
+    fn delete_secret_by_version(
+        &self,
+        conn: &rusqlite::Connection,
+        key: &str,
+        version: i32,
+    ) -> Result<()> {
+        <Self as SecretRepo>::delete_secret_by_version(
+            self,
+            conn,
+            crate::repo::LEGACY_TENANT_ID,
+            key,
+            version,
+        )
+    }
+
+    fn fetch_secrets_by_master_key(
+        &self,
+        conn: &rusqlite::Connection,
+        master_key_id: &Uuid,
+    ) -> Result<Vec<Secret>> {
+        <Self as SecretRepo>::fetch_secrets_by_master_key(
+            self,
+            conn,
+            crate::repo::LEGACY_TENANT_ID,
+            master_key_id,
+        )
+    }
+
+    fn list_secrets(&self, conn: &rusqlite::Connection) -> Result<Vec<crate::repo::SecretInfo>> {
+        <Self as SecretRepo>::list_secrets(self, conn, crate::repo::LEGACY_TENANT_ID)
+    }
+
+    fn list_secret_versions(
+        &self,
+        conn: &rusqlite::Connection,
+        key: &str,
+    ) -> Result<Vec<crate::repo::SecretInfo>> {
+        <Self as SecretRepo>::list_secret_versions(self, conn, crate::repo::LEGACY_TENANT_ID, key)
+    }
+}
+
+impl SecretRepo for SqliteSecretRepo {
+    fn get_secret(
+        &self,
+        conn: &mut rusqlite::Connection,
+        namespace: &str,
+        key: &str,
+    ) -> Result<Secret> {
+        info!("get_secret: namespace={}, key={}", namespace, key);
 
         self.get_secret_with_query(
             conn,
@@ -196,9 +282,45 @@ impl SecretRepo for SqliteSecretRepo {
                 expires_at,
                 metadata
             FROM secrets
-            WHERE key = ?1 AND version = ?2
+            WHERE namespace = ?1 AND key = ?2
+            ORDER BY version DESC
             LIMIT 1",
-            (key, version),
+            (namespace, key),
+            namespace,
+            key,
+        )
+    }
+
+    fn get_secret_by_version(
+        &self,
+        conn: &mut rusqlite::Connection,
+        namespace: &str,
+        key: &str,
+        version: i32,
+    ) -> Result<Secret> {
+        info!(
+            "get_secret_by_version: namespace={}, key={}, version={}",
+            namespace, key, version
+        );
+
+        self.get_secret_with_query(
+            conn,
+            "SELECT
+                namespace,
+                key,
+                version,
+                encrypted_data,
+                encrypted_data_key,
+                master_key_id,
+                created_at,
+                updated_at,
+                expires_at,
+                metadata
+            FROM secrets
+            WHERE namespace = ?1 AND key = ?2 AND version = ?3
+            LIMIT 1",
+            (namespace, key, version),
+            namespace,
             key,
         )
     }
@@ -207,6 +329,7 @@ impl SecretRepo for SqliteSecretRepo {
     fn create_new_version(
         &self,
         conn: &mut rusqlite::Connection,
+        namespace: &str,
         key: &str,
         data: &str,
         master_key: crate::repo::MasterKey,
@@ -217,13 +340,14 @@ impl SecretRepo for SqliteSecretRepo {
         let tx = conn.transaction()?;
 
         let next_version = {
-            let mut stmt =
-                tx.prepare("SELECT COALESCE(MAX(version), 0) FROM secrets WHERE key = ?1")?;
-            let latest_version: i32 = stmt.query_one([key], |row| row.get(0))?;
+            let mut stmt = tx.prepare(
+                "SELECT COALESCE(MAX(version), 0) FROM secrets WHERE namespace = ?1 AND key = ?2",
+            )?;
+            let latest_version: i32 = stmt.query_one((namespace, key), |row| row.get(0))?;
             latest_version + 1
         };
 
-        let secret = Secret::new(key, data, master_key, next_version, ttl)?;
+        let secret = Secret::new(namespace, key, data, master_key, next_version, ttl)?;
 
         tx.execute(
             "INSERT INTO secrets (
@@ -260,6 +384,7 @@ impl SecretRepo for SqliteSecretRepo {
     fn create_new_encrypted_version(
         &self,
         conn: &mut rusqlite::Connection,
+        namespace: &str,
         key: &str,
         input: EncryptedSecretInput,
     ) -> Result<Secret> {
@@ -268,21 +393,14 @@ impl SecretRepo for SqliteSecretRepo {
         let tx = conn.transaction()?;
 
         let next_version = {
-            let mut stmt =
-                tx.prepare("SELECT COALESCE(MAX(version), 0) FROM secrets WHERE key = ?1")?;
-            let latest_version: i32 = stmt.query_one([key], |row| row.get(0))?;
+            let mut stmt = tx.prepare(
+                "SELECT COALESCE(MAX(version), 0) FROM secrets WHERE namespace = ?1 AND key = ?2",
+            )?;
+            let latest_version: i32 = stmt.query_one((namespace, key), |row| row.get(0))?;
             latest_version + 1
         };
 
-        let secret = Secret::from_encrypted(
-            key,
-            input.encrypted_data,
-            input.encrypted_data_key,
-            input.master_key_id,
-            next_version,
-            input.ttl,
-            input.metadata,
-        )?;
+        let secret = Secret::from_encrypted(namespace, key, next_version, input)?;
 
         tx.execute(
             "INSERT INTO secrets (
@@ -312,7 +430,12 @@ impl SecretRepo for SqliteSecretRepo {
         )?;
 
         if Self::has_credential_metadata(secret.metadata.as_deref()) {
-            Self::prune_old_credential_versions(&tx, &secret.key, secret.version)?;
+            Self::prune_old_credential_versions(
+                &tx,
+                &secret.namespace,
+                &secret.key,
+                secret.version,
+            )?;
         }
 
         tx.commit()?;
@@ -323,13 +446,14 @@ impl SecretRepo for SqliteSecretRepo {
     fn delete_secret_by_version(
         &self,
         conn: &rusqlite::Connection,
+        namespace: &str,
         key: &str,
         version: i32,
     ) -> Result<()> {
         info!("delete_secret_by_version");
         let changed = conn.execute(
-            "DELETE FROM secrets WHERE key = ?1 AND version = ?2",
-            (key, version),
+            "DELETE FROM secrets WHERE namespace = ?1 AND key = ?2 AND version = ?3",
+            (namespace, key, version),
         )?;
         if changed == 0 {
             return Err(SealboxError::SecretNotFound(key.to_string()));
@@ -337,9 +461,12 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(())
     }
 
-    fn delete_secret(&self, conn: &rusqlite::Connection, key: &str) -> Result<()> {
+    fn delete_secret(&self, conn: &rusqlite::Connection, namespace: &str, key: &str) -> Result<()> {
         info!("delete_secret");
-        let changed = conn.execute("DELETE FROM secrets WHERE key = ?1", [key])?;
+        let changed = conn.execute(
+            "DELETE FROM secrets WHERE namespace = ?1 AND key = ?2",
+            (namespace, key),
+        )?;
         if changed == 0 {
             return Err(SealboxError::SecretNotFound(key.to_string()));
         }
@@ -349,6 +476,7 @@ impl SecretRepo for SqliteSecretRepo {
     fn fetch_secrets_by_master_key(
         &self,
         conn: &rusqlite::Connection,
+        namespace: &str,
         master_key_id: &Uuid,
     ) -> Result<Vec<Secret>> {
         let mut stmt = conn.prepare(
@@ -364,10 +492,10 @@ impl SecretRepo for SqliteSecretRepo {
                 expires_at,
                 metadata
             FROM secrets
-            WHERE master_key_id = ?1",
+            WHERE namespace = ?1 AND master_key_id = ?2",
         )?;
         // Using query() and from_rows(), the most efficient way as shown in the official example
-        let rows = stmt.query([master_key_id])?;
+        let rows = stmt.query(rusqlite::params![namespace, master_key_id])?;
         let secrets: Vec<Secret> = from_rows::<Secret>(rows)
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| SealboxError::DatabaseError(e.to_string()))?;
@@ -404,8 +532,12 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(deleted_count)
     }
 
-    fn list_secrets(&self, conn: &rusqlite::Connection) -> Result<Vec<crate::repo::SecretInfo>> {
-        info!("list_secrets");
+    fn list_secrets(
+        &self,
+        conn: &rusqlite::Connection,
+        namespace: &str,
+    ) -> Result<Vec<crate::repo::SecretInfo>> {
+        info!("list_secrets: namespace={}", namespace);
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
 
         let mut stmt = conn.prepare(
@@ -429,14 +561,15 @@ impl SecretRepo for SqliteSecretRepo {
                         ORDER BY version DESC
                     ) AS row_num
                 FROM secrets
-                WHERE expires_at IS NULL OR expires_at > ?1
+                WHERE namespace = ?1
+                  AND (expires_at IS NULL OR expires_at > ?2)
             )
             WHERE row_num = 1
             ORDER BY updated_at DESC",
         )?;
 
         let secret_infos = stmt
-            .query_map([now], |row| {
+            .query_map((namespace, now), |row| {
                 Ok(crate::repo::SecretInfo {
                     key: row.get(0)?,
                     version: row.get(1)?,
@@ -455,9 +588,10 @@ impl SecretRepo for SqliteSecretRepo {
     fn list_secret_versions(
         &self,
         conn: &rusqlite::Connection,
+        namespace: &str,
         key: &str,
     ) -> Result<Vec<crate::repo::SecretInfo>> {
-        info!("list_secret_versions: key={}", key);
+        info!("list_secret_versions: namespace={}, key={}", namespace, key);
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
 
         let mut stmt = conn.prepare(
@@ -469,13 +603,14 @@ impl SecretRepo for SqliteSecretRepo {
                 expires_at,
                 metadata
             FROM secrets
-            WHERE key = ?1
-              AND (expires_at IS NULL OR expires_at > ?2)
+            WHERE namespace = ?1
+              AND key = ?2
+              AND (expires_at IS NULL OR expires_at > ?3)
             ORDER BY version DESC",
         )?;
 
         let secret_infos = stmt
-            .query_map((key, now), |row| {
+            .query_map((namespace, key, now), |row| {
                 Ok(crate::repo::SecretInfo {
                     key: row.get(0)?,
                     version: row.get(1)?,

@@ -1,6 +1,29 @@
-use sealbox_server::{config::SealboxConfig, create_app, error::Result};
+use clap::{Parser, Subcommand};
+use sealbox_server::{
+    config::SealboxConfig,
+    create_app,
+    error::{Result, SealboxError},
+    repo::inspect_migration_path,
+};
 use tracing::{error, info};
 use tracing_subscriber::{self, EnvFilter};
+
+#[derive(Debug, Parser)]
+#[command(name = "sealbox-server")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<ServerCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum ServerCommand {
+    /// Inspect a database's tenant migration without modifying it
+    MigrationReport {
+        /// SQLite database path; defaults to STORE_PATH
+        #[arg(long)]
+        store_path: Option<String>,
+    },
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,6 +44,25 @@ async fn main() -> Result<()> {
         .with_target(true)
         .with_line_number(true)
         .init();
+
+    let cli = Cli::parse();
+    if let Some(ServerCommand::MigrationReport { store_path }) = cli.command {
+        let path = store_path
+            .or_else(|| std::env::var("STORE_PATH").ok())
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                SealboxError::InvalidRequest(
+                    "--store-path or STORE_PATH is required for migration-report".to_string(),
+                )
+            })?;
+        let report = inspect_migration_path(&path)?;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report)
+                .map_err(|error| SealboxError::ResponseBuildFailed(error.to_string()))?
+        );
+        return Ok(());
+    }
 
     info!("Sealbox Server starting up...");
 

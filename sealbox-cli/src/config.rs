@@ -17,6 +17,8 @@ pub struct Config {
 pub struct ServerConfig {
     pub url: String,
     pub token: String,
+    #[serde(default = "default_api_version")]
+    pub api_version: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -47,6 +49,7 @@ impl Default for Config {
             server: ServerConfig {
                 url: "http://127.0.0.1:8080".to_string(),
                 token: String::new(),
+                api_version: default_api_version(),
             },
             keys: KeyConfig {
                 public_key_path: config_dir.join("public_key.pem"),
@@ -127,6 +130,10 @@ impl Config {
             self.server.token = Self::read_secret_file("SEALBOX_TOKEN_FILE", &token_file)?;
         }
 
+        if let Ok(api_version) = std::env::var("SEALBOX_API_VERSION") {
+            self.server.api_version = normalize_api_version(&api_version)?;
+        }
+
         if let Ok(public_key) = std::env::var("SEALBOX_PUBLIC_KEY") {
             self.keys.public_key_path = PathBuf::from(public_key);
         }
@@ -161,8 +168,26 @@ impl Config {
                 "Server authentication token not configured. Please set SEALBOX_TOKEN environment variable or run 'sealbox config set token <your-token>'"
             );
         }
+        normalize_api_version(&self.server.api_version)?;
 
         Ok(())
+    }
+
+    pub fn api_url(&self, path: &str) -> String {
+        format!(
+            "{}/{}/{}",
+            self.server.url.trim_end_matches('/'),
+            self.server.api_version,
+            path.trim_start_matches('/')
+        )
+    }
+
+    pub fn admin_url(&self, path: &str) -> String {
+        format!(
+            "{}/v2/admin/{}",
+            self.server.url.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
     }
 
     fn expand_paths(&mut self) -> Result<()> {
@@ -185,6 +210,18 @@ impl Config {
         let value = fs::read_to_string(path)
             .with_context(|| format!("Failed to read {var_name}: {path}"))?;
         Ok(value.trim_end_matches(['\r', '\n']).to_string())
+    }
+}
+
+fn default_api_version() -> String {
+    "v1".to_string()
+}
+
+pub(crate) fn normalize_api_version(value: &str) -> Result<String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "v1" | "1" => Ok("v1".to_string()),
+        "v2" | "2" => Ok("v2".to_string()),
+        other => anyhow::bail!("Unsupported Sealbox API version: {other}. Expected v1 or v2."),
     }
 }
 
@@ -234,6 +271,7 @@ mod tests {
             server: ServerConfig {
                 url: "http://test.com".to_string(),
                 token: "test-token".to_string(),
+                api_version: "v1".to_string(),
             },
             keys: KeyConfig {
                 public_key_path: PathBuf::from("~/test/public.pem"),
@@ -312,6 +350,7 @@ mod tests {
         config.apply_env_overrides().unwrap();
 
         assert_eq!(config.server.token, "file-token");
+        assert_eq!(config.server.api_version, "v1");
         assert_eq!(config.keys.public_key_path, public_key_file);
         assert_eq!(config.keys.private_key_path, private_key_file);
 

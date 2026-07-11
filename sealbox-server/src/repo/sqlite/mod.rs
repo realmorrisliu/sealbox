@@ -1,13 +1,20 @@
 pub(crate) mod health;
 pub(crate) mod master_key;
+mod migrations;
 pub(crate) mod secret;
+pub(crate) mod tenant;
 
 use rusqlite::Connection;
 
 use crate::error::Result;
 
+pub use self::migrations::{MigrationReport, inspect_migration_path};
 pub(crate) use self::{
-    health::SqliteHealthRepo, master_key::SqliteMasterKeyRepo, secret::SqliteSecretRepo,
+    health::SqliteHealthRepo,
+    master_key::SqliteMasterKeyRepo,
+    migrations::{backup_before_migration, run_migrations},
+    secret::SqliteSecretRepo,
+    tenant::SqliteTenantRepo,
 };
 
 pub(crate) fn create_db_connection(db_path: &str) -> Result<Connection> {

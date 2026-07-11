@@ -36,11 +36,7 @@ fn encode_path_segment(segment: &str) -> String {
 }
 
 fn secret_key_url(config: &Config, key: &str) -> String {
-    format!(
-        "{}/v1/secrets/{}",
-        config.server.url.trim_end_matches('/'),
-        encode_path_segment(key)
-    )
+    config.api_url(&format!("secrets/{}", encode_path_segment(key)))
 }
 
 pub async fn handle_command(command: SecretCommands, config: &Config) -> Result<()> {
@@ -96,7 +92,7 @@ async fn set_secret(
 async fn fetch_active_master_key(config: &Config) -> Result<MasterKey> {
     let client = Client::new();
     let response = client
-        .get(format!("{}/v1/master-key/active", config.server.url))
+        .get(config.api_url("master-key/active"))
         .bearer_auth(&config.server.token)
         .send()
         .await
@@ -360,7 +356,7 @@ async fn list_secrets(config: &Config, output: &OutputManager) -> Result<()> {
 
     let client = Client::new();
     let response = client
-        .get(format!("{}/v1/secrets", config.server.url))
+        .get(config.api_url("secrets"))
         .bearer_auth(&config.server.token)
         .send()
         .await

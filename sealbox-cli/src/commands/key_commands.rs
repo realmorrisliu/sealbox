@@ -130,7 +130,7 @@ async fn register_key(config: &Config, output: &OutputManager) -> Result<()> {
 
     let client = Client::new();
     let response = client
-        .post(format!("{}/v1/master-key", config.server.url))
+        .post(config.api_url("master-key"))
         .bearer_auth(&config.server.token)
         .json(&json!({ "public_key": public_key_pem }))
         .send()
@@ -172,7 +172,7 @@ async fn list_keys(config: &Config, output: &OutputManager) -> Result<()> {
 
     let client = Client::new();
     let response = client
-        .get(format!("{}/v1/master-key", config.server.url))
+        .get(config.api_url("master-key"))
         .bearer_auth(&config.server.token)
         .send()
         .await
@@ -286,7 +286,7 @@ async fn rotate_keys(
 
     let client = Client::new();
     let response = client
-        .put(format!("{}/v1/master-key", config.server.url))
+        .put(config.api_url("master-key"))
         .bearer_auth(&config.server.token)
         .json(&payload)
         .send()
@@ -320,10 +320,7 @@ async fn rotate_keys(
 async fn fetch_master_key(config: &Config, master_key_id: &Uuid) -> Result<MasterKey> {
     let client = Client::new();
     let response = client
-        .get(format!(
-            "{}/v1/master-key/by-id/{}",
-            config.server.url, master_key_id
-        ))
+        .get(config.api_url(&format!("master-key/by-id/{master_key_id}")))
         .bearer_auth(&config.server.token)
         .send()
         .await
@@ -356,10 +353,7 @@ struct MasterKeySecretsResponse {
 async fn fetch_secrets_by_master_key(config: &Config, master_key_id: &Uuid) -> Result<Vec<Secret>> {
     let client = Client::new();
     let response = client
-        .get(format!(
-            "{}/v1/master-key/by-id/{}/secrets",
-            config.server.url, master_key_id
-        ))
+        .get(config.api_url(&format!("master-key/by-id/{master_key_id}/secrets")))
         .bearer_auth(&config.server.token)
         .send()
         .await
@@ -405,6 +399,7 @@ async fn check_key_status(config: &Config, output: &OutputManager) -> Result<()>
             "private_key_path": private_key_path
         }
     });
+    let local_public_pem = fs::read_to_string(public_key_path).ok();
 
     // Check if key pair matches by reading and parsing both key files
     if Path::new(public_key_path).exists() && Path::new(private_key_path).exists() {
@@ -470,10 +465,18 @@ async fn check_key_status(config: &Config, output: &OutputManager) -> Result<()>
     if config.validate().is_ok() {
         match list_server_keys_internal(config).await {
             Ok(server_keys) => {
-                status_info["server_keys"] = json!({
+                let mut server_status = json!({
                     "count": server_keys.len(),
                     "keys": server_keys
                 });
+                if let Ok(active_key) = fetch_active_server_key_internal(config).await {
+                    server_status["active_key_id"] = json!(active_key.id);
+                    if let Some(local_public_pem) = &local_public_pem {
+                        server_status["active_key_matches_local"] =
+                            json!(active_key.public_key.trim() == local_public_pem.trim());
+                    }
+                }
+                status_info["server_keys"] = server_status;
             }
             Err(e) => {
                 status_info["server_keys"] = json!({
@@ -491,12 +494,28 @@ async fn check_key_status(config: &Config, output: &OutputManager) -> Result<()>
     Ok(())
 }
 
+async fn fetch_active_server_key_internal(config: &Config) -> Result<MasterKey> {
+    let response = Client::new()
+        .get(config.api_url("master-key/active"))
+        .bearer_auth(&config.server.token)
+        .send()
+        .await
+        .context("Failed to request active master key")?;
+    if !response.status().is_success() {
+        anyhow::bail!("Server returned error: {}", response.status());
+    }
+    response
+        .json()
+        .await
+        .context("Failed to parse active master key response")
+}
+
 async fn list_server_keys_internal(
     config: &Config,
 ) -> Result<Vec<sealbox_server::repo::MasterKey>> {
     let client = Client::new();
     let response = client
-        .get(format!("{}/v1/master-key", config.server.url))
+        .get(config.api_url("master-key"))
         .bearer_auth(&config.server.token)
         .send()
         .await
@@ -506,6 +525,7 @@ async fn list_server_keys_internal(
         response
             .json()
             .await
+            .map(|payload: MasterKeysListResponse| payload.master_keys)
             .context("Failed to parse server response")
     } else {
         anyhow::bail!("Server returned error: {}", response.status());

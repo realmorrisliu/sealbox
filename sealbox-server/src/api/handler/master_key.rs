@@ -1,4 +1,7 @@
-use axum::extract::{Json, State};
+use axum::{
+    Extension,
+    extract::{Json, State},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -6,9 +9,9 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::{
-    api::{SealboxResponse, Version, path::Path, state::AppState},
+    api::{SealboxResponse, Version, auth::TenantPrincipal, path::Path, state::AppState},
     error::{Result, SealboxError},
-    repo::{MasterKey, MasterKeyStatus},
+    repo::{LEGACY_TENANT_ID, MasterKey, MasterKeyStatus},
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -25,6 +28,11 @@ impl MasterKeyPathParams {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub(crate) struct MasterKeyIdPathParams {
     version: Version,
+    master_key_id: Uuid,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct TenantMasterKeyIdPathParams {
     master_key_id: Uuid,
 }
 
@@ -57,7 +65,9 @@ pub(crate) async fn list(
     match params.version() {
         Version::V1 => {
             let conn = state.conn_pool.lock()?;
-            let master_keys = state.master_key_repo.fetch_all_master_keys(&conn)?;
+            let master_keys = state
+                .master_key_repo
+                .fetch_all_master_keys(&conn, LEGACY_TENANT_ID)?;
             Ok(SealboxResponse::Json(json!({ "master_keys": master_keys })))
         }
         _ => Err(SealboxError::InvalidApiVersion),
@@ -72,7 +82,9 @@ pub(crate) async fn active(
     match params.version() {
         Version::V1 => {
             let conn = state.conn_pool.lock()?;
-            let master_key = state.master_key_repo.get_valid_master_key(&conn)?;
+            let master_key = state
+                .master_key_repo
+                .get_valid_master_key(&conn, LEGACY_TENANT_ID)?;
             Ok(SealboxResponse::Json(json!(master_key)))
         }
         _ => Err(SealboxError::InvalidApiVersion),
@@ -89,7 +101,7 @@ pub(crate) async fn get(
             let conn = state.conn_pool.lock()?;
             let master_key = state
                 .master_key_repo
-                .fetch_master_key(&conn, &params.master_key_id)?
+                .fetch_master_key(&conn, LEGACY_TENANT_ID, &params.master_key_id)?
                 .ok_or(SealboxError::MasterKeyNotFound(params.master_key_id))?;
             Ok(SealboxResponse::Json(json!(master_key)))
         }
@@ -107,11 +119,13 @@ pub(crate) async fn secrets(
             let conn = state.conn_pool.lock()?;
             let _master_key = state
                 .master_key_repo
-                .fetch_master_key(&conn, &params.master_key_id)?
+                .fetch_master_key(&conn, LEGACY_TENANT_ID, &params.master_key_id)?
                 .ok_or(SealboxError::MasterKeyNotFound(params.master_key_id))?;
-            let secrets = state
-                .secret_repo
-                .fetch_secrets_by_master_key(&conn, &params.master_key_id)?;
+            let secrets = state.secret_repo.fetch_secrets_by_master_key(
+                &conn,
+                LEGACY_TENANT_ID,
+                &params.master_key_id,
+            )?;
             Ok(SealboxResponse::Json(json!({ "secrets": secrets })))
         }
         _ => Err(SealboxError::InvalidApiVersion),
@@ -140,16 +154,18 @@ pub(crate) async fn rotate(
 
             let _old_master_key = state
                 .master_key_repo
-                .fetch_master_key(&conn, &old_master_key_id)?
+                .fetch_master_key(&conn, LEGACY_TENANT_ID, &old_master_key_id)?
                 .ok_or(SealboxError::MasterKeyNotFound(old_master_key_id))?;
             let _new_master_key = state
                 .master_key_repo
-                .fetch_master_key(&conn, &new_master_key_id)?
+                .fetch_master_key(&conn, LEGACY_TENANT_ID, &new_master_key_id)?
                 .ok_or(SealboxError::MasterKeyNotFound(new_master_key_id))?;
 
-            let secrets = state
-                .secret_repo
-                .fetch_secrets_by_master_key(&conn, &old_master_key_id)?;
+            let secrets = state.secret_repo.fetch_secrets_by_master_key(
+                &conn,
+                LEGACY_TENANT_ID,
+                &old_master_key_id,
+            )?;
 
             if updates.len() != secrets.len() {
                 return Err(SealboxError::InvalidRequest(format!(
@@ -199,12 +215,16 @@ pub(crate) async fn rotate(
             }
 
             tx.execute(
-                "UPDATE master_keys SET status = ?1 WHERE id = ?2",
-                rusqlite::params![MasterKeyStatus::Retired, old_master_key_id],
+                "UPDATE master_keys SET status = ?1 WHERE namespace = ?2 AND id = ?3",
+                rusqlite::params![
+                    MasterKeyStatus::Retired,
+                    LEGACY_TENANT_ID,
+                    old_master_key_id
+                ],
             )?;
             tx.execute(
-                "UPDATE master_keys SET status = ?1 WHERE id = ?2",
-                rusqlite::params![MasterKeyStatus::Active, new_master_key_id],
+                "UPDATE master_keys SET status = ?1 WHERE namespace = ?2 AND id = ?3",
+                rusqlite::params![MasterKeyStatus::Active, LEGACY_TENANT_ID, new_master_key_id],
             )?;
 
             tx.commit()?;
@@ -232,7 +252,11 @@ pub(crate) async fn create(
         Version::V1 => {
             let conn = state.conn_pool.lock()?;
             let mut master_key = MasterKey::new(payload.public_key)?;
-            if state.master_key_repo.get_valid_master_key(&conn).is_ok() {
+            if state
+                .master_key_repo
+                .get_valid_master_key(&conn, LEGACY_TENANT_ID)
+                .is_ok()
+            {
                 master_key.status = MasterKeyStatus::Retired;
             }
             state
@@ -244,6 +268,163 @@ pub(crate) async fn create(
     }
 }
 
+pub(crate) async fn list_v2(
+    State(state): State<AppState>,
+    Extension(principal): Extension<TenantPrincipal>,
+) -> Result<SealboxResponse> {
+    let conn = state.conn_pool.lock()?;
+    let keys = state
+        .master_key_repo
+        .fetch_all_master_keys(&conn, &principal.tenant_id)?;
+    Ok(SealboxResponse::Json(json!({ "master_keys": keys })))
+}
+
+pub(crate) async fn active_v2(
+    State(state): State<AppState>,
+    Extension(principal): Extension<TenantPrincipal>,
+) -> Result<SealboxResponse> {
+    let conn = state.conn_pool.lock()?;
+    let key = state
+        .master_key_repo
+        .get_valid_master_key(&conn, &principal.tenant_id)?;
+    Ok(SealboxResponse::Json(json!(key)))
+}
+
+pub(crate) async fn get_v2(
+    State(state): State<AppState>,
+    Extension(principal): Extension<TenantPrincipal>,
+    Path(params): Path<TenantMasterKeyIdPathParams>,
+) -> Result<SealboxResponse> {
+    let conn = state.conn_pool.lock()?;
+    let key = state
+        .master_key_repo
+        .fetch_master_key(&conn, &principal.tenant_id, &params.master_key_id)?
+        .ok_or(SealboxError::MasterKeyNotFound(params.master_key_id))?;
+    Ok(SealboxResponse::Json(json!(key)))
+}
+
+pub(crate) async fn secrets_v2(
+    State(state): State<AppState>,
+    Extension(principal): Extension<TenantPrincipal>,
+    Path(params): Path<TenantMasterKeyIdPathParams>,
+) -> Result<SealboxResponse> {
+    let conn = state.conn_pool.lock()?;
+    state
+        .master_key_repo
+        .fetch_master_key(&conn, &principal.tenant_id, &params.master_key_id)?
+        .ok_or(SealboxError::MasterKeyNotFound(params.master_key_id))?;
+    let secrets = state.secret_repo.fetch_secrets_by_master_key(
+        &conn,
+        &principal.tenant_id,
+        &params.master_key_id,
+    )?;
+    Ok(SealboxResponse::Json(json!({ "secrets": secrets })))
+}
+
+pub(crate) async fn create_v2(
+    State(state): State<AppState>,
+    Extension(principal): Extension<TenantPrincipal>,
+    Json(payload): Json<CreateMasterKeyPayload>,
+) -> Result<SealboxResponse> {
+    let conn = state.conn_pool.lock()?;
+    let mut key = MasterKey::new_in_namespace(principal.tenant_id.clone(), payload.public_key)?;
+    if state
+        .master_key_repo
+        .get_valid_master_key(&conn, &principal.tenant_id)
+        .is_ok()
+    {
+        key.status = MasterKeyStatus::Retired;
+    }
+    state.master_key_repo.create_master_key(&conn, &key)?;
+    Ok(SealboxResponse::Json(json!(key)))
+}
+
+pub(crate) async fn rotate_v2(
+    State(state): State<AppState>,
+    Extension(principal): Extension<TenantPrincipal>,
+    Json(payload): Json<RotateMasterKeyPayload>,
+) -> Result<SealboxResponse> {
+    rotate_for_namespace(&state, &principal.tenant_id, payload)
+}
+
+fn rotate_for_namespace(
+    state: &AppState,
+    namespace: &str,
+    payload: RotateMasterKeyPayload,
+) -> Result<SealboxResponse> {
+    let new_master_key_id = payload.new_master_key_id;
+    let old_master_key_id = payload.old_master_key_id;
+    if old_master_key_id == new_master_key_id {
+        return Err(SealboxError::InvalidRequest(
+            "old and new master key ids must be different".to_string(),
+        ));
+    }
+    let mut conn = state.conn_pool.lock()?;
+    state
+        .master_key_repo
+        .fetch_master_key(&conn, namespace, &old_master_key_id)?
+        .ok_or(SealboxError::MasterKeyNotFound(old_master_key_id))?;
+    state
+        .master_key_repo
+        .fetch_master_key(&conn, namespace, &new_master_key_id)?
+        .ok_or(SealboxError::MasterKeyNotFound(new_master_key_id))?;
+    let secrets =
+        state
+            .secret_repo
+            .fetch_secrets_by_master_key(&conn, namespace, &old_master_key_id)?;
+    if payload.updates.len() != secrets.len() {
+        return Err(SealboxError::InvalidRequest(format!(
+            "expected {} rewrapped data keys, got {}",
+            secrets.len(),
+            payload.updates.len()
+        )));
+    }
+    let mut updates_by_secret = HashMap::new();
+    for update in payload.updates {
+        if update.namespace != namespace {
+            return Err(SealboxError::InvalidRequest(
+                "rewrapped secret namespace does not match authenticated tenant".to_string(),
+            ));
+        }
+        let key = (update.namespace, update.key, update.version);
+        if updates_by_secret
+            .insert(key, update.encrypted_data_key)
+            .is_some()
+        {
+            return Err(SealboxError::InvalidRequest(
+                "duplicate rewrapped secret update".to_string(),
+            ));
+        }
+    }
+    let tx = conn.transaction()?;
+    for secret in secrets {
+        let update_key = (secret.namespace.clone(), secret.key.clone(), secret.version);
+        let Some(encrypted_data_key) = updates_by_secret.remove(&update_key) else {
+            return Err(SealboxError::InvalidRequest(format!(
+                "missing rewrapped data key for {} version {}",
+                secret.key, secret.version
+            )));
+        };
+        let mut rotated = secret;
+        rotated.encrypted_data_key = encrypted_data_key;
+        rotated.master_key_id = new_master_key_id;
+        rotated.updated_at = time::OffsetDateTime::now_utc().unix_timestamp();
+        state.secret_repo.update_secret_master_key(&tx, &rotated)?;
+    }
+    tx.execute(
+        "UPDATE master_keys SET status = ?1 WHERE namespace = ?2 AND id = ?3",
+        rusqlite::params![MasterKeyStatus::Retired, namespace, old_master_key_id],
+    )?;
+    tx.execute(
+        "UPDATE master_keys SET status = ?1 WHERE namespace = ?2 AND id = ?3",
+        rusqlite::params![MasterKeyStatus::Active, namespace, new_master_key_id],
+    )?;
+    tx.commit()?;
+    Ok(SealboxResponse::Json(
+        json!({ "master_key": new_master_key_id }),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,7 +432,7 @@ mod tests {
         api::{Version, path::Path as SealboxPath, state::AppState},
         config::SealboxConfig,
         crypto::master_key::generate_key_pair,
-        repo::{SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo},
+        repo::{SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo, SqliteTenantRepo},
     };
     use axum::extract::State;
     use std::sync::{Arc, Mutex};
@@ -260,12 +441,14 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
         crate::repo::SqliteMasterKeyRepo::init_table(&conn).expect("Should init master_keys table");
         crate::repo::SqliteSecretRepo::init_table(&conn).expect("Should init secrets table");
+        crate::repo::SqliteTenantRepo::init_tables(&conn).expect("Should init tenants tables");
 
         AppState {
             conn_pool: Arc::new(Mutex::new(conn)),
             master_key_repo: Arc::new(SqliteMasterKeyRepo),
             secret_repo: Arc::new(SqliteSecretRepo),
             health_repo: Arc::new(SqliteHealthRepo),
+            tenant_repo: Arc::new(SqliteTenantRepo),
             config: Arc::new(SealboxConfig::default()),
         }
     }

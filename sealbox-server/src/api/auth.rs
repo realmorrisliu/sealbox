@@ -10,6 +10,12 @@ use crate::{
     error::{Result, SealboxError},
 };
 
+#[derive(Clone, Debug)]
+pub(crate) struct TenantPrincipal {
+    pub(crate) tenant_id: String,
+    pub(crate) token_id: uuid::Uuid,
+}
+
 pub(crate) async fn static_auth(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -31,6 +37,37 @@ pub(crate) async fn static_auth(
         }
         _ => Err(SealboxError::Unauthorized),
     }
+}
+
+pub(crate) async fn tenant_auth(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    mut request: Request,
+    next: Next,
+) -> Result<Response> {
+    let Some(token) = bearer_token(&headers) else {
+        return Err(SealboxError::Unauthorized);
+    };
+    let authenticated = {
+        let conn = state.conn_pool.lock()?;
+        state.tenant_repo.authenticate_token(&conn, token)?
+    };
+    let Some(authenticated) = authenticated else {
+        return Err(SealboxError::Unauthorized);
+    };
+    request.extensions_mut().insert(TenantPrincipal {
+        tenant_id: authenticated.tenant_id,
+        token_id: authenticated.token_id,
+    });
+    Ok(next.run(request).await)
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("Authorization")
+        .and_then(|header| header.to_str().ok())
+        .and_then(|header| header.strip_prefix("Bearer "))
+        .filter(|token| !token.is_empty())
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {

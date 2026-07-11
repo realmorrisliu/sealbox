@@ -4,8 +4,9 @@ mod output;
 
 use crate::commands::{
     config_commands, credential_commands, key_commands, password_commands, secret_commands,
+    tenant_commands,
 };
-use crate::config::{Config, OutputFormat};
+use crate::config::{Config, OutputFormat, normalize_api_version};
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 
@@ -28,6 +29,10 @@ struct Cli {
     /// Authentication token
     #[arg(long, global = true)]
     token: Option<String>,
+
+    /// API version for secret/key operations (v1 or v2)
+    #[arg(long, global = true)]
+    api_version: Option<String>,
 
     /// Public key file path
     #[arg(long, global = true)]
@@ -85,6 +90,11 @@ enum Commands {
     Password {
         #[command(subcommand)]
         command: PasswordCommands,
+    },
+    /// Administer isolated tenants and tenant API tokens
+    Tenant {
+        #[command(subcommand)]
+        command: TenantCommands,
     },
 }
 
@@ -299,6 +309,52 @@ enum CredentialCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum TenantCommands {
+    /// Create a tenant and write its initial API token to a private file
+    Create {
+        #[arg(long)]
+        display_name: Option<String>,
+        #[arg(long)]
+        token_label: Option<String>,
+        #[arg(long)]
+        token_expires_at: Option<i64>,
+        #[arg(long)]
+        token_file: String,
+    },
+    /// List tenant metadata
+    List,
+    /// Get one tenant
+    Get { tenant_id: String },
+    /// Suspend tenant data-token authentication
+    Suspend { tenant_id: String },
+    /// Resume tenant data-token authentication
+    Resume { tenant_id: String },
+    /// Manage tenant API tokens
+    Token {
+        #[command(subcommand)]
+        command: TenantTokenCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum TenantTokenCommands {
+    /// Create a tenant token and write it to a private file
+    Create {
+        tenant_id: String,
+        #[arg(long)]
+        label: Option<String>,
+        #[arg(long)]
+        expires_at: Option<i64>,
+        #[arg(long)]
+        token_file: String,
+    },
+    /// List non-secret token metadata for a tenant
+    List { tenant_id: String },
+    /// Revoke a tenant token
+    Revoke { tenant_id: String, token_id: String },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -312,6 +368,9 @@ async fn main() -> Result<()> {
     }
     if let Some(token) = cli.token {
         config.server.token = token;
+    }
+    if let Some(api_version) = cli.api_version {
+        config.server.api_version = normalize_api_version(&api_version)?;
     }
     if let Some(public_key) = cli.public_key {
         config.keys.public_key_path = public_key.into();
@@ -332,6 +391,7 @@ async fn main() -> Result<()> {
             credential_commands::handle_command(command, &config).await
         }
         Commands::Password { command } => password_commands::handle_command(command, &config).await,
+        Commands::Tenant { command } => tenant_commands::handle_command(command, &config).await,
     }
 }
 

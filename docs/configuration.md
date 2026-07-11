@@ -20,6 +20,7 @@ The Sealbox server is configured entirely through environment variables.
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
 | `RUST_LOG` | Logging level | `info` | `debug`, `warn`, `error` |
+| `LEGACY_V1_ENABLED` | Enable root-token v1 compatibility routes | `true` | `false` for v2-only deployments |
 
 ### Example Server Configuration
 
@@ -35,6 +36,7 @@ export LISTEN_ADDR="0.0.0.0:8080"
 
 # Optional settings
 export RUST_LOG="info"
+export LEGACY_V1_ENABLED="false"  # Recommended after v1 migration
 
 # Create data directory
 mkdir -p "$(dirname "$STORE_PATH")"
@@ -42,6 +44,21 @@ mkdir -p "$(dirname "$STORE_PATH")"
 # Start server
 exec ./target/release/sealbox-server
 ```
+
+### Tenant Migration Inspection And Backup
+
+`migration-report` opens an existing database read-only and reports schema
+version, key/secret counts, empty legacy namespaces, and orphaned secret
+references without changing the file:
+
+```bash
+sealbox-server migration-report --store-path /var/lib/sealbox/sealbox.db
+```
+
+On the first startup that migrates populated v1 data, Sealbox creates
+`sealbox.db.pre-tenant-v2.bak` before the transaction. Migration fails closed on
+orphaned key references. Keep the backup until v2 clients and tenant data have
+been validated.
 
 ### Systemd Service Example
 
@@ -291,3 +308,19 @@ curl -H "Authorization: Bearer $SEALBOX_TOKEN" $SEALBOX_URL/v1/master-key
 # Verify key files exist and are readable
 ls -la ~/.config/sealbox/*.pem
 ```
+The server token is the root administration credential. Tenant data access uses
+separately issued tenant tokens against `/v2`; the server stores only token
+hashes. Root and tenant credentials are intentionally not interchangeable.
+
+For a v2 tenant client, configure:
+
+```bash
+export SEALBOX_URL=https://sealbox.internal
+export SEALBOX_API_VERSION=v2
+export SEALBOX_TOKEN_FILE=/run/secrets/tenant_token
+export SEALBOX_PUBLIC_KEY_FILE=/run/secrets/tenant_public.pem
+export SEALBOX_PRIVATE_KEY_FILE=/run/secrets/tenant_private.pem
+```
+
+The token and key files belong to the client. A remote or separately
+containerized Sealbox server needs only its database and root token file.

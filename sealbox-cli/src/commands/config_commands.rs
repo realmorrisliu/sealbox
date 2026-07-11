@@ -46,7 +46,8 @@ async fn show_config(config: &Config, output: &OutputManager) -> Result<()> {
     let config_value = json!({
         "server": {
             "url": config.server.url,
-            "token": if config.server.token.is_empty() { "<not set>" } else { "<configured>" }
+            "token": if config.server.token.is_empty() { "<not set>" } else { "<configured>" },
+            "api_version": config.server.api_version,
         },
         "keys": {
             "public_key_path": config.keys.public_key_path,
@@ -76,6 +77,13 @@ async fn set_config(
         "server.token" => {
             config.server.token = value.to_string();
             output.print_success("Authentication token configured");
+        }
+        "server.api_version" => {
+            config.server.api_version = crate::config::normalize_api_version(value)?;
+            output.print_success(&format!(
+                "API version set to: {}",
+                config.server.api_version
+            ));
         }
         "keys.public_key_path" => {
             config.keys.public_key_path = value.into();
@@ -107,7 +115,7 @@ async fn set_config(
         },
         _ => {
             anyhow::bail!(
-                "Unknown configuration key: {}. Supported keys:\n  - server.url\n  - server.token\n  - keys.public_key_path\n  - keys.private_key_path\n  - output.format",
+                "Unknown configuration key: {}. Supported keys:\n  - server.url\n  - server.token\n  - server.api_version\n  - keys.public_key_path\n  - keys.private_key_path\n  - output.format",
                 key
             );
         }
@@ -296,6 +304,7 @@ mod tests {
             let test_cases = vec![
                 ("server.url", "https://example.com"),
                 ("server.token", "test-token"),
+                ("server.api_version", "v2"),
                 ("keys.public_key_path", "/path/to/public.pem"),
                 ("keys.private_key_path", "/path/to/private.pem"),
                 ("output.format", "json"),
@@ -310,6 +319,7 @@ mod tests {
                 match key {
                     "server.url" => assert_eq!(test_config.server.url, value),
                     "server.token" => assert_eq!(test_config.server.token, value),
+                    "server.api_version" => assert_eq!(test_config.server.api_version, value),
                     "keys.public_key_path" => {
                         assert_eq!(test_config.keys.public_key_path, PathBuf::from(value))
                     }

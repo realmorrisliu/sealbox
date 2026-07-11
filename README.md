@@ -15,6 +15,7 @@ Sealbox is a simple yet secure secret management solution designed for developer
 - 📦 **Single binary** - No complex setup, just run the executable
 - 🗃️ **SQLite storage** - Embedded database, no external dependencies
 - 🔑 **Secret versioning** - Keep track of secret history
+- 🧱 **Tenant isolation** - Opaque tenant tokens, independent active keys, and tenant-scoped metadata/data APIs
 - 🌐 **REST API** - Standard HTTP interface for integration
 - 💻 **Full-featured CLI** - Complete command-line interface for key and secret management
 - 🔄 **Multiple output formats** - JSON, YAML, and table formats supported
@@ -107,6 +108,38 @@ printf '%s\n' "db-password" | ./target/release/sealbox-cli credential set db/pos
 ./target/release/sealbox-cli --help
 ```
 
+### Multi-Tenant Service Mode
+
+The server root token administers tenants but is not accepted by v2 tenant data
+routes. Each tenant receives its own high-entropy API token and registers its
+own public key. Tenant tokens are stored only as hashes by the server; the CLI
+writes a newly issued plaintext token once to a new mode-`0600` file.
+
+```bash
+# Root/admin client. AUTH_TOKEN_FILE is the server root token file.
+export SEALBOX_URL=http://127.0.0.1:8080
+export SEALBOX_TOKEN_FILE=/run/secrets/sealbox_root_token
+sealbox-cli tenant create \
+  --display-name "Application A" \
+  --token-label initial \
+  --token-file /secure/application-a/token
+
+# Tenant data client. The server does not need these key files.
+export SEALBOX_API_VERSION=v2
+export SEALBOX_TOKEN_FILE=/secure/application-a/token
+export SEALBOX_PUBLIC_KEY_FILE=/secure/application-a/public.pem
+export SEALBOX_PRIVATE_KEY_FILE=/secure/application-a/private.pem
+sealbox-cli key generate
+sealbox-cli key register
+printf '%s\n' 'secret-value' | sealbox-cli secret set api-key
+sealbox-cli secret get api-key
+```
+
+Use `sealbox-cli tenant token create`, `list`, and `revoke` to rotate tenant
+API access. Suspending a tenant blocks all of its data tokens without deleting
+encrypted records. Sealbox does not know or require an upstream application's
+user model; that application owns any user-to-tenant mapping.
+
 ## Docker Container How-To
 
 The Docker image contains both `sealbox-server` and `sealbox-cli`. Run the server as the default container command, then use short-lived CLI containers on the same network namespace for key setup, secret operations, and archive import/export.
@@ -145,7 +178,7 @@ docker run -d \
 curl -fsS http://127.0.0.1:8080/healthz/ready
 ```
 
-`AUTH_TOKEN_FILE` is read by the server as the bearer-token contents. The server does not need the public or private key files.
+`AUTH_TOKEN_FILE` is read by the server as the root bearer-token contents. The server does not need tenant token, public-key, or private-key files.
 
 ### Generate and Register Keys
 
@@ -349,6 +382,7 @@ Configure the server using environment variables:
 | `AUTH_TOKEN` | Static bearer token for API authentication | `your-secret-token` |
 | `AUTH_TOKEN_FILE` | File containing the bearer token, useful for Docker secrets | `/run/secrets/sealbox_auth_token` |
 | `LISTEN_ADDR` | Server listen address and port | `127.0.0.1:8080` |
+| `LEGACY_V1_ENABLED` | Expose the root-token v1 compatibility routes | `true` |
 
 ### CLI Configuration
 
@@ -368,6 +402,23 @@ Sealbox implements client-side envelope encryption for CLI writes and reads:
 6. **Client Decryption**: Only clients with the private key can decrypt retrieved secrets
 
 **Important**: Sealbox is intended as a lightweight local credentials store. If the same Docker runtime has the bearer token and private key, that runtime can retrieve secrets.
+
+For v2, set `SEALBOX_API_VERSION=v2` and use a tenant token with that tenant's
+matching key pair. The root token is accepted only by `/v2/admin/*` and legacy
+v1 routes; it is rejected by v2 tenant data routes. Set
+`LEGACY_V1_ENABLED=false` after all v1 clients have migrated.
+
+Before the first tenant-schema migration of a populated database, startup writes
+`<STORE_PATH>.pre-tenant-v2.bak` using SQLite's consistent backup path and
+refuses migration if a secret references no master key in the same namespace.
+Inspect an existing database without modifying it with:
+
+```bash
+sealbox-server migration-report --store-path /var/lib/sealbox/sealbox.db
+```
+
+Restore the backup to roll back a failed first migration. Do not attempt to
+reverse-migrate a database after v2 tenants have begun writing data.
 
 Credential commands store the username and password together inside the encrypted secret value. The username is also duplicated into plaintext `metadata` so credentials can be listed and searched by username without decrypting every value.
 
@@ -391,6 +442,23 @@ Exported archives are encrypted locally: the CLI builds a tar payload in memory,
 ---
 
 ## API Reference
+
+### Tenant Administration (v2 root token)
+
+```text
+POST   /v2/admin/tenants
+GET    /v2/admin/tenants
+GET    /v2/admin/tenants/:tenant_id
+POST   /v2/admin/tenants/:tenant_id/suspend
+POST   /v2/admin/tenants/:tenant_id/resume
+POST   /v2/admin/tenants/:tenant_id/tokens
+GET    /v2/admin/tenants/:tenant_id/tokens
+DELETE /v2/admin/tenants/:tenant_id/tokens/:token_id
+```
+
+Secret and master-key routes under `/v2` mirror the v1 paths but derive tenant
+scope exclusively from the bearer token. A tenant id in a request path, query,
+or body cannot select another tenant.
 
 All endpoints require `Authorization: Bearer <token>` header.
 

@@ -228,7 +228,7 @@ async fn list_credentials(
 
     let client = Client::new();
     let response = client
-        .get(format!("{}/v1/secrets", config.server.url))
+        .get(config.api_url("secrets"))
         .bearer_auth(&config.server.token)
         .send()
         .await

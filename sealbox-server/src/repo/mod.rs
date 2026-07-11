@@ -9,11 +9,15 @@ use uuid::Uuid;
 use crate::crypto::{data_key::DataKey, master_key::PublicMasterKey};
 use crate::error::Result;
 
+pub use self::sqlite::{MigrationReport, inspect_migration_path};
 pub(crate) use self::sqlite::{
-    SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+    SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo, SqliteTenantRepo,
+    backup_before_migration, create_db_connection, run_migrations,
 };
 
 mod sqlite;
+
+pub const LEGACY_TENANT_ID: &str = "legacy";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretInfo {
@@ -71,6 +75,7 @@ impl Secret {
     /// 6. Constructs and returns the new `Secret` instance.
     #[cfg(test)]
     pub(crate) fn new(
+        namespace: &str,
         key: &str,
         data: &str,
         master_key: MasterKey,
@@ -90,7 +95,7 @@ impl Secret {
         let expires_at = ttl.map(|ttl| now_timestamp + ttl);
 
         Ok(Self {
-            namespace: String::new(),
+            namespace: namespace.to_string(),
             key: key.to_string(),
             version,
             encrypted_data,
@@ -104,39 +109,42 @@ impl Secret {
     }
 
     pub(crate) fn from_encrypted(
+        namespace: &str,
         key: &str,
-        encrypted_data: Vec<u8>,
-        encrypted_data_key: Vec<u8>,
-        master_key_id: Uuid,
         version: i32,
-        ttl: Option<i64>,
-        metadata: Option<String>,
+        input: EncryptedSecretInput,
     ) -> Result<Self> {
         let now_timestamp = time::OffsetDateTime::now_utc().unix_timestamp();
-        let expires_at = ttl.map(|ttl| now_timestamp + ttl);
+        let expires_at = input.ttl.map(|ttl| now_timestamp + ttl);
 
         Ok(Self {
-            namespace: String::new(),
+            namespace: namespace.to_string(),
             key: key.to_string(),
             version,
-            encrypted_data,
-            encrypted_data_key,
-            master_key_id,
+            encrypted_data: input.encrypted_data,
+            encrypted_data_key: input.encrypted_data_key,
+            master_key_id: input.master_key_id,
             created_at: now_timestamp,
             updated_at: now_timestamp,
             expires_at,
-            metadata,
+            metadata: input.metadata,
         })
     }
 }
 
 pub(crate) trait SecretRepo: Send + Sync {
     /// Get latest secret with atomic lazy cleanup
-    fn get_secret(&self, conn: &mut rusqlite::Connection, key: &str) -> Result<Secret>;
+    fn get_secret(
+        &self,
+        conn: &mut rusqlite::Connection,
+        namespace: &str,
+        key: &str,
+    ) -> Result<Secret>;
     /// Get specific version secret with atomic lazy cleanup
     fn get_secret_by_version(
         &self,
         conn: &mut rusqlite::Connection,
+        namespace: &str,
         key: &str,
         version: i32,
     ) -> Result<Secret>;
@@ -144,6 +152,7 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn create_new_version(
         &self,
         conn: &mut rusqlite::Connection,
+        namespace: &str,
         key: &str,
         data: &str,
         master_key: MasterKey,
@@ -152,13 +161,15 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn create_new_encrypted_version(
         &self,
         conn: &mut rusqlite::Connection,
+        namespace: &str,
         key: &str,
         input: EncryptedSecretInput,
     ) -> Result<Secret>;
-    fn delete_secret(&self, conn: &rusqlite::Connection, key: &str) -> Result<()>;
+    fn delete_secret(&self, conn: &rusqlite::Connection, namespace: &str, key: &str) -> Result<()>;
     fn delete_secret_by_version(
         &self,
         conn: &rusqlite::Connection,
+        namespace: &str,
         key: &str,
         version: i32,
     ) -> Result<()>;
@@ -167,6 +178,7 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn fetch_secrets_by_master_key(
         &self,
         conn: &rusqlite::Connection,
+        namespace: &str,
         master_key_id: &Uuid,
     ) -> Result<Vec<Secret>>;
     /// Update the master_key_id, encrypted_data_key, and updated_at fields for a list of secrets in a single transaction.
@@ -174,11 +186,13 @@ pub(crate) trait SecretRepo: Send + Sync {
     /// Batch delete all expired secrets and return the count of deleted records.
     fn cleanup_expired_secrets(&self, conn: &rusqlite::Connection) -> Result<usize>;
     /// List all secrets with basic information (key, latest version, timestamps)
-    fn list_secrets(&self, conn: &rusqlite::Connection) -> Result<Vec<SecretInfo>>;
+    fn list_secrets(&self, conn: &rusqlite::Connection, namespace: &str)
+    -> Result<Vec<SecretInfo>>;
     /// List retained, non-expired versions for one secret key.
     fn list_secret_versions(
         &self,
         conn: &rusqlite::Connection,
+        namespace: &str,
         key: &str,
     ) -> Result<Vec<SecretInfo>>;
 }
@@ -212,6 +226,7 @@ impl FromSql for MasterKeyStatus {
 /// MasterKey struct, represents a row in the master_keys table
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MasterKey {
+    pub namespace: String,           // Tenant scope that owns this key
     pub id: Uuid,                    // Unique identifier (e.g., UUID)
     pub public_key: String,          // Public key (PEM format)
     pub created_at: i64,             // Creation timestamp (Unix time)
@@ -222,6 +237,10 @@ pub struct MasterKey {
 
 impl MasterKey {
     pub(crate) fn new(public_key: String) -> Result<Self> {
+        Self::new_in_namespace(LEGACY_TENANT_ID.to_string(), public_key)
+    }
+
+    pub(crate) fn new_in_namespace(namespace: String, public_key: String) -> Result<Self> {
         let id = Uuid::new_v4();
         let created_at = time::OffsetDateTime::now_utc().unix_timestamp();
         let status = MasterKeyStatus::Active;
@@ -229,6 +248,7 @@ impl MasterKey {
         let metadata = None;
 
         Ok(MasterKey {
+            namespace,
             id,
             public_key,
             created_at,
@@ -242,15 +262,121 @@ impl MasterKey {
 /// MasterKeyRepo trait for managing master_keys table
 pub(crate) trait MasterKeyRepo: Send + Sync {
     fn create_master_key(&self, conn: &rusqlite::Connection, key: &MasterKey) -> Result<()>;
-    fn fetch_all_master_keys(&self, conn: &rusqlite::Connection) -> Result<Vec<MasterKey>>;
+    fn fetch_all_master_keys(
+        &self,
+        conn: &rusqlite::Connection,
+        namespace: &str,
+    ) -> Result<Vec<MasterKey>>;
     fn fetch_master_key(
         &self,
         conn: &rusqlite::Connection,
+        namespace: &str,
         master_key_id: &Uuid,
     ) -> Result<Option<MasterKey>>;
 
     /// Fetch a valid master key.
-    fn get_valid_master_key(&self, conn: &rusqlite::Connection) -> Result<MasterKey>;
+    fn get_valid_master_key(
+        &self,
+        conn: &rusqlite::Connection,
+        namespace: &str,
+    ) -> Result<MasterKey>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TenantStatus {
+    Active,
+    Suspended,
+}
+
+impl ToSql for TenantStatus {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        let value = match self {
+            TenantStatus::Active => "Active",
+            TenantStatus::Suspended => "Suspended",
+        };
+        Ok(rusqlite::types::ToSqlOutput::from(value))
+    }
+}
+
+impl FromSql for TenantStatus {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        match value.as_str()? {
+            "Active" => Ok(TenantStatus::Active),
+            "Suspended" => Ok(TenantStatus::Suspended),
+            _ => Err(rusqlite::types::FromSqlError::InvalidType),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tenant {
+    pub id: String,
+    pub display_name: Option<String>,
+    pub status: TenantStatus,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiTokenMetadata {
+    pub id: Uuid,
+    pub tenant_id: String,
+    pub label: Option<String>,
+    pub created_at: i64,
+    pub expires_at: Option<i64>,
+    pub revoked_at: Option<i64>,
+    pub last_used_at: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthenticatedTenant {
+    pub tenant_id: String,
+    pub token_id: Uuid,
+}
+
+#[derive(Debug, Clone)]
+pub struct IssuedApiToken {
+    pub metadata: ApiTokenMetadata,
+    pub token: String,
+}
+
+pub(crate) trait TenantRepo: Send + Sync {
+    fn create_tenant(
+        &self,
+        conn: &rusqlite::Connection,
+        display_name: Option<String>,
+    ) -> Result<Tenant>;
+    fn list_tenants(&self, conn: &rusqlite::Connection) -> Result<Vec<Tenant>>;
+    fn get_tenant(&self, conn: &rusqlite::Connection, tenant_id: &str) -> Result<Option<Tenant>>;
+    fn set_tenant_status(
+        &self,
+        conn: &rusqlite::Connection,
+        tenant_id: &str,
+        status: TenantStatus,
+    ) -> Result<Tenant>;
+    fn issue_token(
+        &self,
+        conn: &rusqlite::Connection,
+        tenant_id: &str,
+        label: Option<String>,
+        expires_at: Option<i64>,
+    ) -> Result<IssuedApiToken>;
+    fn list_tokens(
+        &self,
+        conn: &rusqlite::Connection,
+        tenant_id: &str,
+    ) -> Result<Vec<ApiTokenMetadata>>;
+    fn revoke_token(
+        &self,
+        conn: &rusqlite::Connection,
+        tenant_id: &str,
+        token_id: &Uuid,
+    ) -> Result<()>;
+    fn authenticate_token(
+        &self,
+        conn: &rusqlite::Connection,
+        token: &str,
+    ) -> Result<Option<AuthenticatedTenant>>;
 }
 
 pub(crate) trait HealthRepo: Send + Sync {
@@ -301,8 +427,15 @@ mod tests {
         let version = 1;
         let ttl = Some(3600); // 1 hour
 
-        let secret = Secret::new(secret_key, secret_data, master_key.clone(), version, ttl)
-            .expect("Should create secret");
+        let secret = Secret::new(
+            LEGACY_TENANT_ID,
+            secret_key,
+            secret_data,
+            master_key.clone(),
+            version,
+            ttl,
+        )
+        .expect("Should create secret");
 
         assert_eq!(secret.key, secret_key);
         assert_eq!(secret.version, version);
@@ -312,7 +445,7 @@ mod tests {
         assert_eq!(secret.created_at, secret.updated_at);
         assert!(!secret.encrypted_data.is_empty());
         assert!(!secret.encrypted_data_key.is_empty());
-        assert_eq!(secret.namespace, "");
+        assert_eq!(secret.namespace, LEGACY_TENANT_ID);
         assert!(secret.metadata.is_none());
     }
 
@@ -321,8 +454,15 @@ mod tests {
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
         let master_key = MasterKey::new(public_pem).expect("Should create master key");
 
-        let secret = Secret::new("test-key", "test-data", master_key, 1, None)
-            .expect("Should create secret");
+        let secret = Secret::new(
+            LEGACY_TENANT_ID,
+            "test-key",
+            "test-data",
+            master_key,
+            1,
+            None,
+        )
+        .expect("Should create secret");
 
         assert!(secret.expires_at.is_none());
     }
@@ -334,9 +474,16 @@ mod tests {
 
         let secret_data = "Same secret data";
 
-        let secret1 = Secret::new("key1", secret_data, master_key.clone(), 1, None)
-            .expect("Should create first secret");
-        let secret2 = Secret::new("key2", secret_data, master_key, 2, None)
+        let secret1 = Secret::new(
+            LEGACY_TENANT_ID,
+            "key1",
+            secret_data,
+            master_key.clone(),
+            1,
+            None,
+        )
+        .expect("Should create first secret");
+        let secret2 = Secret::new(LEGACY_TENANT_ID, "key2", secret_data, master_key, 2, None)
             .expect("Should create second secret");
 
         // Even with same data, encrypted results should be different due to random data keys
@@ -350,8 +497,15 @@ mod tests {
         let master_key = MasterKey::new(public_pem).expect("Should create master key");
 
         let ttl_seconds = 7200i64; // 2 hours
-        let secret = Secret::new("test-key", "test-data", master_key, 1, Some(ttl_seconds))
-            .expect("Should create secret");
+        let secret = Secret::new(
+            LEGACY_TENANT_ID,
+            "test-key",
+            "test-data",
+            master_key,
+            1,
+            Some(ttl_seconds),
+        )
+        .expect("Should create secret");
 
         let expected_expiry = secret.created_at + ttl_seconds;
         assert_eq!(secret.expires_at, Some(expected_expiry));

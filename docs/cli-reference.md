@@ -2,6 +2,19 @@
 
 Complete reference for the Sealbox command-line interface.
 
+## Server Maintenance Command
+
+Inspect a pre-v2 database without modifying it:
+
+```bash
+sealbox-server migration-report --store-path /var/lib/sealbox/sealbox.db
+```
+
+The JSON report includes schema version, migration requirement, key and secret
+counts, empty legacy namespace rows, and orphaned secret references. Normal
+startup creates `<STORE_PATH>.pre-tenant-v2.bak` before migrating populated
+legacy data.
+
 ## Global Options
 
 All commands support these global options:
@@ -550,3 +563,21 @@ CLI commands can be configured using environment variables:
 - `2` - Authentication error
 - `3` - Network/connection error
 - `4` - File/configuration error
+## Tenant Administration Commands
+
+Tenant commands require the server root token. New token values are never
+printed; `--token-file` must name a file that does not already exist.
+
+```bash
+sealbox-cli tenant create --display-name app-a --token-file /secure/app-a/token
+sealbox-cli tenant list
+sealbox-cli tenant get <tenant-id>
+sealbox-cli tenant suspend <tenant-id>
+sealbox-cli tenant resume <tenant-id>
+sealbox-cli tenant token create <tenant-id> --label rotated --token-file /secure/app-a/token-2
+sealbox-cli tenant token list <tenant-id>
+sealbox-cli tenant token revoke <tenant-id> <token-id>
+```
+
+For tenant key and secret commands, set `SEALBOX_API_VERSION=v2`, select the
+tenant token file, and select that tenant's public/private key files.

@@ -7,6 +7,7 @@ pub struct SealboxConfig {
     pub auth_token: String,
     pub store_path: String,
     pub listen_addr: String,
+    pub legacy_v1_enabled: bool,
 }
 
 impl SealboxConfig {
@@ -38,12 +39,19 @@ impl SealboxConfig {
             }
         };
 
+        let legacy_v1_enabled = match env::var("LEGACY_V1_ENABLED") {
+            Ok(value) => Self::parse_bool("LEGACY_V1_ENABLED", &value)?,
+            Err(env::VarError::NotPresent) => true,
+            Err(err) => return Err(format!("failed to read LEGACY_V1_ENABLED: {err}")),
+        };
+
         info!(
             "Sealbox configuration loaded: {:?}",
             SealboxConfig {
                 auth_token: "[HIDDEN]".to_string(),
                 store_path: store_path.clone(),
                 listen_addr: listen_addr.clone(),
+                legacy_v1_enabled,
             }
         );
 
@@ -51,6 +59,7 @@ impl SealboxConfig {
             auth_token,
             store_path,
             listen_addr,
+            legacy_v1_enabled,
         })
     }
 
@@ -67,6 +76,14 @@ impl SealboxConfig {
     fn trim_secret_file_value(value: String) -> String {
         value.trim_end_matches(['\r', '\n']).to_string()
     }
+
+    fn parse_bool(name: &str, value: &str) -> Result<bool, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Ok(true),
+            "0" | "false" | "no" | "off" => Ok(false),
+            _ => Err(format!("{name} must be true or false")),
+        }
+    }
 }
 
 impl Default for SealboxConfig {
@@ -75,6 +92,7 @@ impl Default for SealboxConfig {
             auth_token: "test-token".to_string(),
             store_path: ":memory:".to_string(),
             listen_addr: "127.0.0.1:8080".to_string(),
+            legacy_v1_enabled: true,
         }
     }
 }
@@ -94,16 +112,24 @@ mod tests {
             std::env::set_var("AUTH_TOKEN_FILE", &token_file);
             std::env::set_var("STORE_PATH", ":memory:");
             std::env::set_var("LISTEN_ADDR", "127.0.0.1:0");
+            std::env::set_var("LEGACY_V1_ENABLED", "false");
         }
 
         let config = SealboxConfig::from_env().expect("Should load config");
 
         assert_eq!(config.auth_token, "file-token");
+        assert!(!config.legacy_v1_enabled);
 
         unsafe {
             std::env::remove_var("AUTH_TOKEN_FILE");
             std::env::remove_var("STORE_PATH");
             std::env::remove_var("LISTEN_ADDR");
+            std::env::remove_var("LEGACY_V1_ENABLED");
         }
+    }
+
+    #[test]
+    fn rejects_invalid_legacy_v1_flag() {
+        assert!(SealboxConfig::parse_bool("LEGACY_V1_ENABLED", "sometimes").is_err());
     }
 }

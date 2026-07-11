@@ -26,6 +26,10 @@ Sealbox is a lightweight, single-node secret storage service built in Rust. It p
 - **Envelope encryption**: Secrets are encrypted with random data keys, data keys are encrypted with the active public key
 - **RSA + AES-GCM**: 2048-bit RSA for key encryption, AES-256-GCM for data encryption
 - **Private-key locality**: Only clients with private keys can decrypt stored secrets or rewrap data keys during rotation
+- **Tenant authorization**: v2 data routes derive an opaque tenant id only from a hashed tenant bearer token
+- **Per-tenant keys**: Each tenant has an independent active RSA key and isolated secret/metadata namespace
+- **Root separation**: The static server token administers tenants and legacy v1 data; it is rejected by v2 tenant data routes
+- **Service independence**: Sealbox must not import or encode an upstream application's user, team, or channel model
 
 ## Web UI and CLI Collaboration
 
@@ -117,7 +121,7 @@ The CLI provides comprehensive secret management by interfacing with the server'
 # Register public key with server
 ./target/release/sealbox-cli key register
 
-# Store a secret (sent as plaintext, encrypted by server)
+# Store a secret (encrypted by the CLI before upload)
 ./target/release/sealbox-cli secret set mypassword "super-secret-value"
 
 # Store a secret with TTL (expires in 3600 seconds / 1 hour)
@@ -194,6 +198,8 @@ The CLI uses TOML configuration files with environment variable overrides:
 - `GET /v1/master-key` - List public keys
 - `PUT /v1/master-key` - Rotate keys
 - `DELETE /v1/admin/cleanup-expired` - Manual cleanup of expired secrets
+- `/v2/...` mirrors secret/master-key operations with tenant-token scope
+- `/v2/admin/tenants...` provides root-only tenant and token lifecycle operations
 
 ## Development Status
 
