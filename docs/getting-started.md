@@ -94,15 +94,31 @@ ServiceAccount is its entire authority over the cluster; scope it to exactly wha
 need, and add a second runner with a narrower ServiceAccount rather than reaching for a
 permissions system inside sealbox.
 
-## 5. Move your credentials in *(target)*
+## 5. Move your credentials in *(implemented)*
 
 ```bash
-sealbox admin                          # one passkey prompt for the whole session
-> set app/database-url                 # value on stdin, never on a command line
-> set app/oss-endpoint
-> set pg/prod-admin-password
-> exit                                 # the session lives in memory and dies with the process
+printf %s "$DATABASE_URL" | sealbox-cli secret set app/database-url
+printf %s "$OSS_ENDPOINT" | sealbox-cli secret set app/oss-endpoint
 ```
+
+The value comes from stdin; there is no argument form, so nothing lands in shell history or in
+`ps` output.
+
+Anything that is just a random number should be generated instead of carried in — then it has
+never existed anywhere else:
+
+```bash
+sealbox-cli secret gen app/session-key
+sealbox-cli secret gen app/hmac --type hex
+```
+
+> **The target**, once passkeys land, is one authentication for a whole session:
+>
+> ```bash
+> sealbox admin
+> > set app/database-url
+> > exit                               # the session lives in memory and dies with the process
+> ```
 
 Then delete the originals:
 

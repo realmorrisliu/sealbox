@@ -742,4 +742,67 @@ mod tests {
         let expected_expiry = secret.created_at + ttl_seconds;
         assert_eq!(secret.expires_at, Some(expected_expiry));
     }
+
+    #[test]
+    fn test_generated_password_avoids_ambiguous_characters() {
+        let spec = GenerateSpec {
+            kind: GenerateKind::Password,
+            length: Some(256),
+        };
+        let value = spec.generate().expect("Should generate");
+
+        assert_eq!(value.chars().count(), 256);
+        for c in ['0', 'O', '1', 'l', 'I'] {
+            assert!(
+                !value.contains(c),
+                "'{c}' is confused when a value is read aloud or retyped: {value}"
+            );
+        }
+        assert!(
+            value.chars().all(|c| c.is_ascii_alphanumeric()),
+            "no punctuation: symbols cost more in quoting and escaping than they add in entropy"
+        );
+    }
+
+    #[test]
+    fn test_generation_enforces_its_minimum_and_default() {
+        let too_short = GenerateSpec {
+            kind: GenerateKind::Password,
+            length: Some(MIN_GENERATED_LENGTH - 1),
+        };
+        let err = too_short.generate().unwrap_err().to_string();
+        assert!(
+            err.contains(&MIN_GENERATED_LENGTH.to_string()),
+            "the error must name the minimum: {err}"
+        );
+
+        let default = GenerateSpec {
+            kind: GenerateKind::Password,
+            length: None,
+        };
+        assert_eq!(
+            default.generate().unwrap().chars().count(),
+            DEFAULT_GENERATED_LENGTH
+        );
+    }
+
+    #[test]
+    fn test_generated_hex_is_hex_of_the_requested_byte_count() {
+        let spec = GenerateSpec {
+            kind: GenerateKind::Hex,
+            length: Some(32),
+        };
+        let value = spec.generate().expect("Should generate");
+        assert_eq!(value.len(), 64, "32 bytes render as 64 hex characters");
+        assert!(value.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_two_generations_differ() {
+        let spec = GenerateSpec {
+            kind: GenerateKind::Password,
+            length: Some(32),
+        };
+        assert_ne!(spec.generate().unwrap(), spec.generate().unwrap());
+    }
 }

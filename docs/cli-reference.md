@@ -1,9 +1,8 @@
 # CLI Reference
 
-> **Partly implemented.** `identity`, `audit`, and `bootstrap` exist and are documented below as
-> they actually behave. `grant`, `run`, `rotate`, `runner`, `set`, `gen`, and `admin` describe the
-> target and do not exist yet — today's secret commands are `sealbox-cli secret get|set|delete`.
-> See [`README.md`](../README.md).
+> **Partly implemented.** `identity`, `audit`, `bootstrap`, and the secret commands exist and are
+> documented below as they actually behave. `grant`, `run`, `rotate`, `runner`, and `admin`
+> describe the target and do not exist yet. See [`README.md`](../README.md).
 
 One binary, `sealbox`, used by humans, agents, and the runner alike. What differs is the identity
 it authenticates as.
@@ -83,6 +82,53 @@ permit is exactly the signal worth having. Readable by every identity, including
 concealing it protects nothing an agent could not already observe.
 
 Records name the *resource*, never its value.
+
+---
+
+## Secrets *(implemented)*
+
+### `sealbox-cli secret set <key> [--ttl N]`
+
+Reads the value from **stdin**. There is no argument form — while one exists it gets used, and
+every use puts a credential into shell history and into `ps` output for every user on the machine.
+
+```bash
+printf %s "$VALUE" | sealbox-cli secret set app/database-url
+sealbox-cli secret set app/token            # prompts, hidden, when run from a terminal
+sealbox-cli secret set k8s/dockerconfig < config.json
+```
+
+Only a trailing newline is stripped — the artefact of a pipe. Leading and interior whitespace
+survive, because silently altering a credential is worse than storing an odd one.
+
+### `sealbox-cli secret gen <key> [--type password|hex] [--length N] [--ttl N]`
+
+The server generates the value, encrypts it, and stores it. **The plaintext never crosses the
+network and is not returned to anyone — including the caller who asked for it.** That is what
+lets an agent provision a credential it can never read.
+
+```bash
+sealbox-cli secret gen app/session-key                       # password, 32 characters
+sealbox-cli secret gen app/hmac --type hex --length 32       # 32 bytes, 64 hex characters
+```
+
+`password` is alphanumeric without `0`/`O` or `1`/`l`/`I`, and without punctuation. Symbols in a
+generated credential cost more in shell quoting, connection-string escaping, and YAML type
+guessing than they add in entropy; length is the cheaper way to buy it. 32 characters of this
+alphabet is about 187 bits.
+
+A length below 16 is refused rather than honoured — a caller asking for eight is likelier to have
+made a mistake than to have a reason, and a weak credential looks exactly like a strong one.
+
+### `sealbox-cli secret list`
+
+Keys, versions, and timestamps. Never values. Expired secrets are omitted.
+
+### `sealbox-cli secret get <key> [--version N]` *(being replaced)*
+
+Returns ciphertext for the client to decrypt with its own private key. The target design has no
+command that yields a value at all — a secret is used through a grant, on a runner. This remains
+only because nothing else can consume a secret until runners exist.
 
 ---
 

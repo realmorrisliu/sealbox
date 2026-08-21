@@ -193,12 +193,26 @@ enum KeyCommands {
 
 #[derive(Subcommand)]
 enum SecretCommands {
-    /// Set secret
+    /// Store a secret. The value is read from stdin — never from an argument, which would put
+    /// it in shell history and in `ps` output.
     Set {
         /// Secret key name
         key: String,
-        /// Secret value (read from stdin if not provided)
-        value: Option<String>,
+        /// Time to live in seconds
+        #[arg(long)]
+        ttl: Option<i64>,
+    },
+    /// Have the server generate the value. It is encrypted without ever leaving the server, and
+    /// is not returned to anyone — including the caller who asked for it.
+    Gen {
+        /// Secret key name
+        key: String,
+        /// password (printable, unambiguous) or hex (raw randomness)
+        #[arg(long, default_value = "password")]
+        r#type: String,
+        /// Length. Defaults to 32; below 16 is refused.
+        #[arg(long)]
+        length: Option<usize>,
         /// Time to live in seconds
         #[arg(long)]
         ttl: Option<i64>,

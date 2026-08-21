@@ -111,7 +111,9 @@ Acceptance test: the author's own infrastructure runs on it.
 2. **`identities`** — *partly done.* Identities, three ordered roles, hashed tokens, revocation,
    the audit trail, and a bounded bootstrap all exist. **Still missing:** passkeys (ADR 0009),
    single-use invites for humans, join tokens for runners, and the `runner` role itself.
-3. **`sealbox set` and `sealbox gen`.**
+3. ~~**`sealbox set` and `sealbox gen`.**~~ *Done.* `set` reads stdin only; `gen` produces the
+   value server-side and returns it to nobody. Minimum length 16, default 32, password alphabet
+   without ambiguous characters or punctuation.
 4. **Grants stored server-side**, including script bodies, with parameters, a declared runner, and
    three injection forms (env var, `0600` temp file, env-file). Execution is argv, never a shell.
    Two built-in adapters: `kubernetes-secret` and `postgres-role` (ADR 0007).
