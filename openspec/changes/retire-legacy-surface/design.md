@@ -83,6 +83,24 @@ implementor, where it belongs.
 *Alternative rejected:* making the traits async at the same time. Nothing here needs it, and it
 would touch every call site for no present benefit.
 
+### Version lives in the route, not in a type
+
+Removing V2 and V3 leaves `Version` with a single variant, at which point the dynamic `{version}`
+path segment, the extractor, and every handler's match on it are noise: a one-armed match, and a
+path parameter no handler reads. Clippy correctly flags the result as unused.
+
+So the routes hardcode `/v1/...`. An unsupported version no longer produces a deserialization
+failure inside an extractor — it simply matches no route and returns 404, identically for a version
+that was once planned and one that never existed. The specs require rejection, not a particular
+status code.
+
+This also removes `MasterKeyPathParams`, `ListSecretsPathParams`, `SecretPathParams::version`, and
+the `InvalidApiVersion` error variant, which after this has no producer.
+
+*Alternative rejected:* keep the extractor and silence clippy with `_params`. That hides the
+problem rather than removing it, and leaves a type whose only purpose is to be constructed and
+discarded. When a v2 does arrive, a second route is clearer than a match inside a shared handler.
+
 ### CORS is deleted, not made configurable
 
 Not a setting defaulting to off: the layer and `SEALBOX_ALLOW_CORS` both go. A configuration switch

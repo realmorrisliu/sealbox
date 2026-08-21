@@ -1,8 +1,0 @@
-# Ignore artifacts:
-build
-coverage
-
-**/build
-**/public
-pnpm-lock.yaml
-routeTree.gen.ts

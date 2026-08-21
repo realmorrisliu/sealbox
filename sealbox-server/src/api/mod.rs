@@ -7,11 +7,9 @@ use axum::{
     routing::get,
 };
 use http::StatusCode;
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceBuilder;
 use tower_http::{
-    cors::{Any, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
 };
@@ -64,42 +62,31 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
 
     let state = AppState::new(config)?;
 
-    // CORS configuration - allow cross-origin requests in development mode
-    let cors_layer = if cfg!(debug_assertions) || std::env::var("SEALBOX_ALLOW_CORS").is_ok() {
-        tracing::info!("CORS enabled for development");
-        CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any)
-    } else {
-        tracing::info!("CORS disabled for production");
-        CorsLayer::new().allow_origin([])
-    };
-
+    // No CORS layer, and no configuration to add one: sealbox serves no browser client
+    // (ADR 0004). Behaviour is identical in debug and release builds.
     Ok(Router::new()
         // Health check endpoints without authentication (Kubernetes standard)
         .route("/", get(root))
         .route("/healthz/live", get(liveness_probe))
         .route("/healthz/ready", get(readiness_probe))
         // Business endpoints requiring authentication
-        .route("/{version}/secrets", get(secret::list))
+        .route("/v1/secrets", get(secret::list))
         .route(
-            "/{version}/secrets/{secret_key}",
+            "/v1/secrets/{secret_key}",
             get(secret::get).put(secret::save).delete(secret::delete),
         )
         .route(
-            "/{version}/master-key",
+            "/v1/master-key",
             get(master_key::list)
                 .put(master_key::rotate)
                 .post(master_key::create),
         )
         .route(
-            "/{version}/admin/cleanup-expired",
+            "/v1/admin/cleanup-expired",
             axum::routing::delete(admin::cleanup_expired),
         )
         .route_layer(from_fn_with_state(state.clone(), static_auth))
         .with_state(state)
-        .layer(cors_layer)
         .layer(request_id_middleware))
 }
 
@@ -127,14 +114,6 @@ async fn readiness_probe(State(state): State<AppState>) -> Result<SealboxRespons
     })?;
 
     Ok(SealboxResponse::Ok)
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "lowercase")]
-enum Version {
-    V1,
-    V2,
-    V3,
 }
 
 #[derive(Debug)]

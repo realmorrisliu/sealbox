@@ -36,9 +36,6 @@ pub enum SealboxError {
     #[error("Unauthorized")]
     Unauthorized,
 
-    #[error("Invalid API version")]
-    InvalidApiVersion,
-
     #[error("Unknown error")]
     Unknown,
 }
@@ -64,7 +61,6 @@ impl IntoResponse for SealboxError {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
             }
             SealboxError::Unauthorized => (StatusCode::UNAUTHORIZED, errorfmt(&self)),
-            SealboxError::InvalidApiVersion => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::Unknown => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
         };
 

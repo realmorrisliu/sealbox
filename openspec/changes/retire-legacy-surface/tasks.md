@@ -2,11 +2,11 @@
 
 Ordered first because each is independently verifiable and none blocks the others.
 
-- [ ] 1.1 Delete the `sealbox-web` directory, remove it from the workspace members in `Cargo.toml`, and drop the pnpm workspace files
-- [ ] 1.2 Remove any `sealbox-web` steps, caches, or path filters from `.github/workflows/`
-- [ ] 1.3 Delete the CORS layer and the `SEALBOX_ALLOW_CORS` read from `sealbox-server/src/api/mod.rs`; remove `tower-http`'s `cors` feature if nothing else uses it
-- [ ] 1.4 Remove `Version::V2` and `Version::V3` from `sealbox-server/src/api/mod.rs`, and collapse the now-unreachable match arms in every handler
-- [ ] 1.5 Verify: `cargo build --release --workspace`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`
+- [x] 1.1 Delete the `sealbox-web` directory, remove it from the workspace members in `Cargo.toml`, and drop the pnpm workspace files
+- [x] 1.2 Remove any `sealbox-web` steps, caches, or path filters from `.github/workflows/` — none existed; `sealbox-web` was never a workspace member nor referenced by CI
+- [x] 1.3 Delete the CORS layer and the `SEALBOX_ALLOW_CORS` read from `sealbox-server/src/api/mod.rs`; remove `tower-http`'s `cors` feature if nothing else uses it
+- [x] 1.4 Remove the `Version` enum entirely and hardcode `/v1/...` in the routes — with one variant left, the dynamic segment, the extractor, and every handler's match on it were pure noise. Also removes `MasterKeyPathParams`, `ListSecretsPathParams`, `SecretPathParams::version`, the `InvalidApiVersion` error variant, and three tests that asserted a handler-level rejection that no longer happens there
+- [x] 1.5 Verify: `cargo build --release --workspace`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`
 
 ## 2. Rename rotate → rekey
 
