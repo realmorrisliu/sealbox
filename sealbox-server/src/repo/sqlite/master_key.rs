@@ -105,7 +105,11 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
         Ok(master_key)
     }
 
-    fn ensure_server_held(&self, public_key_pem: &str) -> Result<MasterKey> {
+    fn ensure_server_held(
+        &self,
+        public_key_pem: &str,
+        status: MasterKeyStatus,
+    ) -> Result<MasterKey> {
         {
             let guard = self.conn.lock()?;
             let conn = &*guard;
@@ -126,12 +130,18 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
                     })
                 })
                 .optional()?;
-            if let Some(key) = existing {
+            if let Some(mut key) = existing {
+                conn.execute(
+                    "UPDATE master_keys SET status = ?1 WHERE id = ?2",
+                    (&status, &key.id),
+                )?;
+                key.status = status;
                 return Ok(key);
             }
         }
 
-        let key = MasterKey::server_held(public_key_pem.to_string())?;
+        let mut key = MasterKey::server_held(public_key_pem.to_string())?;
+        key.status = status;
         self.create_master_key(&key)?;
         info!("Registered the server's master key: {}", key.id);
         Ok(key)
@@ -220,13 +230,13 @@ mod tests {
 
         let (_, server_public) = generate_key_pair().expect("Should generate a key pair");
         let first = repo
-            .ensure_server_held(&server_public)
+            .ensure_server_held(&server_public, MasterKeyStatus::Active)
             .expect("Should register the server key");
         assert!(first.server_held);
 
         // Restarting must reuse it rather than register a duplicate.
         let second = repo
-            .ensure_server_held(&server_public)
+            .ensure_server_held(&server_public, MasterKeyStatus::Active)
             .expect("Should find the existing key");
         assert_eq!(first.id, second.id);
 

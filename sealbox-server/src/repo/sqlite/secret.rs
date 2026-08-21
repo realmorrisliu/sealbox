@@ -271,7 +271,7 @@ impl SecretRepo for SqliteSecretRepo {
     fn rekey_secrets(
         &self,
         old_master_key_id: &Uuid,
-        old_private_key_pem: &str,
+        old_private_key: &crate::crypto::master_key::PrivateMasterKey,
         new_master_key_id: &Uuid,
         new_public_key_pem: &str,
     ) -> Result<Vec<String>> {
@@ -306,7 +306,7 @@ impl SecretRepo for SqliteSecretRepo {
             let secret_key = secret.key.clone();
             match secret.rekey(
                 old_master_key_id,
-                old_private_key_pem,
+                old_private_key,
                 new_master_key_id,
                 new_public_key_pem,
             ) {
@@ -331,6 +331,17 @@ impl SecretRepo for SqliteSecretRepo {
                     info!("Failed to rekey secret {}: {}", secret_key, err);
                 }
             }
+        }
+
+        if !failed_secret_keys.is_empty() {
+            // Dropping the transaction rolls it back. A rekey that half-succeeded would leave
+            // secrets split across two master keys, with no record of which is which — worse
+            // than not having run at all.
+            info!(
+                "Rekey aborted: {} secret(s) could not be rekeyed, nothing committed",
+                failed_secret_keys.len()
+            );
+            return Ok(failed_secret_keys);
         }
 
         tx.commit()?;
@@ -391,6 +402,7 @@ mod tests {
     use super::*;
     use crate::crypto::master_key::generate_key_pair;
     use crate::repo::MasterKey;
+    use std::str::FromStr;
 
     fn setup_test_db() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
@@ -861,7 +873,10 @@ mod tests {
     fn test_rekey_secrets_moves_every_secret_to_the_new_key() {
         let repo = setup_test_repo();
 
-        let (old_private, old_public) = generate_key_pair().expect("Should generate old key pair");
+        let (old_private_pem, old_public) =
+            generate_key_pair().expect("Should generate old key pair");
+        let old_private = crate::crypto::master_key::PrivateMasterKey::from_str(&old_private_pem)
+            .expect("Should parse the old private key");
         let old_key = MasterKey::new(old_public).expect("Should create old master key");
         let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
         let new_key = MasterKey::new(new_public).expect("Should create new master key");
@@ -941,12 +956,18 @@ mod tests {
 
         let (_, old_public) = generate_key_pair().expect("Should generate old key pair");
         let old_key = MasterKey::new(old_public).expect("Should create old master key");
-        let (unrelated_private, _) = generate_key_pair().expect("Should generate unrelated pair");
+        let (unrelated_private_pem, _) =
+            generate_key_pair().expect("Should generate unrelated pair");
+        let unrelated_private =
+            crate::crypto::master_key::PrivateMasterKey::from_str(&unrelated_private_pem)
+                .expect("Should parse the unrelated private key");
         let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
         let new_key = MasterKey::new(new_public).expect("Should create new master key");
 
         repo.create_new_version("s1", "d1", old_key.clone(), None)
             .expect("Should create s1");
+        repo.create_new_version("s2", "d2", old_key.clone(), None)
+            .expect("Should create s2");
 
         let failed = repo
             .rekey_secrets(
@@ -957,11 +978,15 @@ mod tests {
             )
             .expect("Should report failures rather than error");
 
-        assert_eq!(failed, vec!["s1".to_string()]);
-        let secret = repo.get_secret("s1").expect("Should read secret");
-        assert_eq!(
-            secret.master_key_id, old_key.id,
-            "a failed rekey must leave the secret on its original master key"
-        );
+        assert_eq!(failed.len(), 2, "both secrets fail with an unrelated key");
+
+        // All or nothing: not one secret may have moved.
+        for key in ["s1", "s2"] {
+            let secret = repo.get_secret(key).expect("Should read secret");
+            assert_eq!(
+                secret.master_key_id, old_key.id,
+                "a failed rekey must leave every secret on its original master key"
+            );
+        }
     }
 }

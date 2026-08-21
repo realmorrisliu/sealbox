@@ -40,19 +40,19 @@ Mechanical, and done before the repo refactor so the refactor does not have to m
 - [x] 5.1 Add `SEALBOX_MASTER_KEY_PATH` to `SealboxConfig`; fail startup with a clear message if it is missing or unreadable — and deliberately do **not** generate one, since doing so on a mistyped path would silently make every existing secret cold
 - [x] 5.2 Load the private master key at startup via the existing `PrivateMasterKey`; register the corresponding public key with `server_held = 1` if not already present. `PrivateMasterKey::from_str` now also accepts PKCS#8, because OpenSSL 3 emits it by default and the previous failure said only "Invalid private key"
 - [x] 5.3 Make "the current master key" resolve to the server-held one for new secrets
-- [ ] 5.4 Reject operations that would require decrypting a secret whose master key is cold, with an error naming the cause
+- [x] 5.4 Reject operations that would require decrypting a secret whose master key is cold, with an error naming the cause
 - [x] 5.5 Verify: a new secret encrypts under the server-held key; a secret under a cold key reports cold rather than failing obscurely
 
 ## 6. Remove the private-key rekey endpoint
 
 The security fix, last, because it depends on 5.
 
-- [ ] 6.1 Delete `old_private_key_pem` from `RotateMasterKeyPayload`; the payload now names only source and destination master keys
-- [ ] 6.2 Rewrite the rekey handler to use the server-held private key; reject any request whose source key is cold
-- [ ] 6.3 Confirm no path logs, echoes, or stores submitted key material, including error paths
-- [ ] 6.4 Update the `sealbox-cli` rekey command to stop sending a private key
-- [ ] 6.5 Confirm rekey is atomic: a failure mid-operation leaves every secret on its original master key
-- [ ] 6.6 Verify: build, test, clippy clean
+- [x] 6.1 Delete `old_private_key_pem` from `RotateMasterKeyPayload`; the payload now names only source and destination master keys
+- [x] 6.2 Rewrite the rekey handler to use the server-held private key; reject any request whose source key is cold
+- [x] 6.3 Confirm no path logs, echoes, or stores submitted key material, including error paths. Also replaced `PrivateMasterKey`'s derived `Debug`, which would have printed the key's components on any `{:?}`
+- [x] 6.4 Update the `sealbox-cli` rekey command to stop sending a private key
+- [x] 6.5 Confirm rekey is atomic — it was **not**: failures were collected while successes still committed, contradicting the spec. The transaction is now dropped without committing if any secret fails, and the test asserts that not one secret moved
+- [x] 6.6 Verify: build, test, clippy clean
 
 ## 7. Tests and documentation
 

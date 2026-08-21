@@ -13,7 +13,6 @@ use crate::{
 pub(crate) struct RekeyPayload {
     new_master_key_id: Uuid,
     old_master_key_id: Uuid,
-    old_private_key_pem: String,
 }
 
 // GET /{version}/master-key
@@ -29,19 +28,31 @@ pub(crate) async fn rekey(
 ) -> Result<SealboxResponse> {
     let new_master_key_id = payload.new_master_key_id;
     let old_master_key_id = payload.old_master_key_id;
-    let old_private_key_pem = payload.old_private_key_pem;
 
-    let new_public_key_pem = state
+    // The private half comes from the server's own key files, never from the caller. A key the
+    // server does not hold is cold: its secrets cannot be decrypted here by anyone, which is
+    // the point of the distinction (ADR 0001).
+    let old_private_key = state
+        .server_keys
+        .get(&old_master_key_id)
+        .ok_or(SealboxError::MasterKeyNotServerHeld(old_master_key_id))?;
+
+    let new_key = state
         .master_key_repo
         .fetch_master_key(&new_master_key_id)?
-        .ok_or(SealboxError::MasterKeyNotFound(new_master_key_id))?
-        .public_key;
+        .ok_or(SealboxError::MasterKeyNotFound(new_master_key_id))?;
+
+    // Rekeying onto a cold key would make every affected secret unreadable by the server. There
+    // is no use for that yet, and the cost of doing it by accident is total.
+    if !new_key.server_held {
+        return Err(SealboxError::MasterKeyNotServerHeld(new_master_key_id));
+    }
 
     let failed_secret_keys = state.secret_repo.rekey_secrets(
         &old_master_key_id,
-        &old_private_key_pem,
+        old_private_key,
         &new_master_key_id,
-        &new_public_key_pem,
+        &new_key.public_key,
     )?;
 
     if !failed_secret_keys.is_empty() {
@@ -94,6 +105,7 @@ mod tests {
             secret_repo: Arc::new(SqliteSecretRepo::new(conn.clone())),
             health_repo: Arc::new(SqliteHealthRepo::new(conn)),
             config: Arc::new(SealboxConfig::default()),
+            server_keys: Arc::new(std::collections::HashMap::new()),
         }
     }
 
@@ -166,24 +178,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rekey_not_found() {
+    async fn test_rekey_refuses_a_source_key_the_server_does_not_hold() {
+        // The server's key files are what supply private halves. A source key absent from them
+        // is cold, and is refused before anything is read or written — there is no longer any
+        // way for a caller to supply the missing key material.
         let state = setup_test_state();
-        let (old_private_pem, _) = generate_key_pair().expect("Should generate old key pair");
         let old_master_key_id = uuid::Uuid::new_v4();
         let new_master_key_id = uuid::Uuid::new_v4();
 
         let payload = RekeyPayload {
             old_master_key_id,
             new_master_key_id,
-            old_private_key_pem: old_private_pem,
         };
 
         let result = rekey(State(state), Json(payload)).await;
 
-        assert!(result.is_err());
         match result.unwrap_err() {
-            SealboxError::MasterKeyNotFound(_) => {} // Expected
-            _ => panic!("Expected MasterKeyNotFound error"),
+            SealboxError::MasterKeyNotServerHeld(id) => assert_eq!(id, old_master_key_id),
+            other => panic!("Expected MasterKeyNotServerHeld, got {other:?}"),
         }
     }
 }

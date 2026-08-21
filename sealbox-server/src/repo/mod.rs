@@ -97,7 +97,7 @@ impl Secret {
     pub(crate) fn rekey(
         self,
         old_master_key_id: &Uuid,
-        old_private_key_pem: &str,
+        old_private_key: &PrivateMasterKey,
         new_master_key_id: &Uuid,
         new_public_key_pem: &str,
     ) -> Result<Self> {
@@ -115,10 +115,9 @@ impl Secret {
             ));
         }
 
-        let old_priv_key = PrivateMasterKey::from_str(old_private_key_pem)?;
         let new_pub_key = PublicMasterKey::from_str(new_public_key_pem)?;
 
-        let data_key = old_priv_key.decrypt(&secret.encrypted_data_key)?;
+        let data_key = old_private_key.decrypt(&secret.encrypted_data_key)?;
         let new_encrypted_data_key = new_pub_key.encrypt(&data_key)?;
 
         secret.encrypted_data_key = new_encrypted_data_key;
@@ -148,7 +147,7 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn rekey_secrets(
         &self,
         old_master_key_id: &Uuid,
-        old_private_key_pem: &str,
+        old_private_key: &PrivateMasterKey,
         new_master_key_id: &Uuid,
         new_public_key_pem: &str,
     ) -> Result<Vec<String>>;
@@ -235,9 +234,13 @@ pub(crate) trait MasterKeyRepo: Send + Sync {
     /// The current key new secrets are encrypted under. Always server-held.
     fn get_valid_master_key(&self) -> Result<MasterKey>;
 
-    /// Register the server's own master key if it is not already present. Idempotent, and
-    /// matched on the public key so a restart does not create a duplicate.
-    fn ensure_server_held(&self, public_key_pem: &str) -> Result<MasterKey>;
+    /// Register one of the server's own master keys if not already present, and set its status.
+    /// Idempotent, and matched on the public key so a restart does not create a duplicate.
+    fn ensure_server_held(
+        &self,
+        public_key_pem: &str,
+        status: MasterKeyStatus,
+    ) -> Result<MasterKey>;
 }
 
 pub(crate) trait HealthRepo: Send + Sync {
@@ -350,7 +353,7 @@ mod tests {
         let rekeyed_secret = original_secret
             .rekey(
                 &old_master_key.id,
-                &old_private_pem,
+                &PrivateMasterKey::from_str(&old_private_pem).expect("Should parse"),
                 &new_master_key.id,
                 &new_master_key.public_key,
             )
@@ -368,7 +371,9 @@ mod tests {
 
     #[test]
     fn test_secret_rekey_same_key() {
-        let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
+        let (private_pem, public_pem) = generate_key_pair().expect("Should generate key pair");
+        let private_key =
+            PrivateMasterKey::from_str(&private_pem).expect("Should parse private key");
         let master_key = MasterKey::new(public_pem).expect("Should create master key");
 
         let original_secret = Secret::new("test-key", "secret-data", master_key.clone(), 1, None)
@@ -379,7 +384,7 @@ mod tests {
             .clone()
             .rekey(
                 &master_key.id,
-                "dummy-private-key",
+                &private_key,
                 &master_key.id,
                 &master_key.public_key,
             )
@@ -410,7 +415,7 @@ mod tests {
         // Trying to rekey with wrong old key ID should fail
         let result = original_secret.rekey(
             &wrong_master_key.id, // Wrong old key ID
-            &old_private_pem,
+            &PrivateMasterKey::from_str(&old_private_pem).expect("Should parse"),
             &new_master_key.id,
             &new_master_key.public_key,
         );
@@ -423,9 +428,16 @@ mod tests {
     }
 
     #[test]
-    fn test_secret_rekey_invalid_private_key() {
+    fn test_secret_rekey_with_a_private_key_that_does_not_match() {
+        // A malformed private key is no longer expressible: `rekey` takes a parsed
+        // `PrivateMasterKey`, so the parse either succeeded before this point or there is
+        // nothing to call. What remains possible is a well-formed key that is simply the
+        // wrong one.
         let (_, old_public_pem) = generate_key_pair().expect("Should generate old key pair");
         let (_, new_public_pem) = generate_key_pair().expect("Should generate new key pair");
+        let (unrelated_pem, _) = generate_key_pair().expect("Should generate unrelated pair");
+        let unrelated_key =
+            PrivateMasterKey::from_str(&unrelated_pem).expect("Should parse private key");
 
         let old_master_key = MasterKey::new(old_public_pem).expect("Should create old master key");
         let new_master_key = MasterKey::new(new_public_pem).expect("Should create new master key");
@@ -434,10 +446,9 @@ mod tests {
             Secret::new("test-key", "secret-data", old_master_key.clone(), 1, None)
                 .expect("Should create secret");
 
-        // Invalid private key should cause rekeying to fail
         let result = original_secret.rekey(
             &old_master_key.id,
-            "invalid-private-key",
+            &unrelated_key,
             &new_master_key.id,
             &new_master_key.public_key,
         );

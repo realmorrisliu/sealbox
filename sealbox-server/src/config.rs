@@ -7,10 +7,12 @@ pub struct SealboxConfig {
     pub auth_token: String,
     pub store_path: String,
     pub listen_addr: String,
-    /// Path to the server's own master key (PEM). Its private half is what makes secrets
-    /// encrypted under it readable by the broker; without it the server cannot serve or rekey
-    /// anything (ADR 0001).
-    pub master_key_path: String,
+    /// Paths to the server's master keys (PEM), most-current first, comma-separated.
+    ///
+    /// The first becomes the key new secrets are encrypted under; any others are retired but
+    /// still loaded, so their secrets remain readable and can be rekeyed onto the current key.
+    /// A retired key is removed from this list once nothing references it (ADR 0001).
+    pub master_key_paths: Vec<String>,
 }
 
 impl SealboxConfig {
@@ -42,8 +44,12 @@ impl SealboxConfig {
             }
         };
 
-        let master_key_path = match env::var("SEALBOX_MASTER_KEY_PATH") {
-            Ok(val) if !val.trim().is_empty() => val,
+        let master_key_paths = match env::var("SEALBOX_MASTER_KEY_PATH") {
+            Ok(val) if !val.trim().is_empty() => val
+                .split(',')
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>(),
             _ => {
                 error!(
                     "Environment variable SEALBOX_MASTER_KEY_PATH is missing or empty. \
@@ -59,7 +65,7 @@ impl SealboxConfig {
             SealboxConfig {
                 auth_token: "[HIDDEN]".to_string(),
                 store_path: store_path.clone(),
-                master_key_path: master_key_path.clone(),
+                master_key_paths: master_key_paths.clone(),
                 listen_addr: listen_addr.clone(),
             }
         );
@@ -68,7 +74,7 @@ impl SealboxConfig {
             auth_token,
             store_path,
             listen_addr,
-            master_key_path,
+            master_key_paths,
         })
     }
 }
@@ -79,7 +85,7 @@ impl Default for SealboxConfig {
             auth_token: "test-token".to_string(),
             store_path: ":memory:".to_string(),
             listen_addr: "127.0.0.1:8080".to_string(),
-            master_key_path: String::new(),
+            master_key_paths: Vec::new(),
         }
     }
 }

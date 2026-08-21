@@ -210,34 +210,22 @@ async fn rekey_keys(
         .validate()
         .context("Configuration validation failed")?;
 
-    let private_key_path = config
-        .keys
-        .private_key_path
-        .to_str()
-        .context("Private key path contains invalid characters")?;
-
-    if !Path::new(private_key_path).exists() {
-        anyhow::bail!(
-            "Private key file does not exist: {}. Rekeying requires the old private key file",
-            private_key_path
-        );
-    }
-
-    let old_private_key_pem = fs::read_to_string(private_key_path)
-        .with_context(|| format!("Failed to read private key file: {private_key_path}"))?;
-
     let new_key_uuid = Uuid::parse_str(&new_key_id)
         .with_context(|| format!("Invalid new key ID format: {new_key_id}"))?;
     let old_key_uuid = Uuid::parse_str(&old_key_id)
         .with_context(|| format!("Invalid old key ID format: {old_key_id}"))?;
 
     output.print_info("Performing rekeying...");
-    output.print_warning("This operation will re-encrypt all secrets using the old key, please ensure the operation is correct!");
+    output.print_warning(
+        "This re-encrypts every secret currently under the old key. Both keys must be held by \
+         the server; no key material is sent.",
+    );
 
+    // No private key is transmitted. The server uses its own master keys, which is why
+    // SEALBOX_MASTER_KEY_PATH must still list the old key while a rekey is in flight.
     let payload = json!({
         "new_master_key_id": new_key_uuid,
         "old_master_key_id": old_key_uuid,
-        "old_private_key_pem": old_private_key_pem
     });
 
     let client = Client::new();
@@ -263,7 +251,7 @@ async fn rekey_keys(
             && failed_keys.as_array().is_some_and(|a| !a.is_empty())
         {
             output.print_warning(
-                "The following secrets failed to rekey and may need manual handling:",
+                "Rekey aborted — nothing was changed. These secrets could not be rekeyed:",
             );
             output.print_value(failed_keys)?;
         }

@@ -30,8 +30,16 @@ fn new_padding() -> Oaep {
     Oaep::new::<Sha256>()
 }
 
-#[derive(Debug)]
 pub struct PrivateMasterKey(RsaPrivateKey);
+
+/// Deliberately opaque. A derived `Debug` would print the private key's components, so a
+/// single `{:?}` anywhere — a log line, an error wrapper, a panic message — would leak the key
+/// that protects every secret the server can read.
+impl std::fmt::Debug for PrivateMasterKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PrivateMasterKey(<redacted>)")
+    }
+}
 
 impl PrivateMasterKey {
     /// Decrypt data using private key
