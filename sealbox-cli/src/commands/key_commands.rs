@@ -259,13 +259,13 @@ async fn rotate_keys(
         output.print_success("Key rotation completed!");
         output.print_value(&result)?;
 
-        if let Some(failed_keys) = result.get("failed_secret_keys") {
-            if !failed_keys.as_array().unwrap_or(&vec![]).is_empty() {
-                output.print_warning(
-                    "The following secrets failed to rotate and may need manual handling:",
-                );
-                output.print_value(failed_keys)?;
-            }
+        if let Some(failed_keys) = result.get("failed_secret_keys")
+            && failed_keys.as_array().is_some_and(|a| !a.is_empty())
+        {
+            output.print_warning(
+                "The following secrets failed to rotate and may need manual handling:",
+            );
+            output.print_value(failed_keys)?;
         }
     } else {
         let error_body = response

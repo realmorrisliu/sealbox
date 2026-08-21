@@ -177,7 +177,7 @@ pub enum MasterKeyStatus {
     Disabled,
 }
 impl ToSql for MasterKeyStatus {
-    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput> {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
         match self {
             MasterKeyStatus::Active => Ok(rusqlite::types::ToSqlOutput::from("Active")),
             MasterKeyStatus::Retired => Ok(rusqlite::types::ToSqlOutput::from("Retired")),
