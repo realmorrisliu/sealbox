@@ -13,6 +13,11 @@ is being replaced in significant part.
 | Target design | [`docs/agent-native-design.md`](docs/agent-native-design.md) |
 | Decisions and their reasoning | [`docs/adr/`](docs/adr/) — 11 ADRs |
 | Vocabulary — use these words, no synonyms | [`CONTEXT.md`](CONTEXT.md) |
+| Behavior already specified | [`openspec/specs/`](openspec/specs/) — `http-api`, `master-key`, `secret-encryption` |
+
+Work goes through OpenSpec: `/opsx:propose` to plan a change, `/opsx:apply` to build it,
+`/opsx:archive` when its tasks are done. Archived changes keep their reasoning in
+[`openspec/changes/archive/`](openspec/changes/archive/).
 
 **`retire-legacy-surface` is done** — the four cleanups below are complete, along with the
 server-held master key they turned out to require. Nothing else in the MVP has been built. When
