@@ -81,7 +81,7 @@ impl OutputManager {
             }
             OutputFormat::Table => {
                 let mut table = Table::new();
-                table.load_preset(UTF8_FULL);
+                table.load_style(UTF8_FULL);
                 table.set_header(vec!["Property", "Value"]);
 
                 table.add_row(vec!["Key", key]);
@@ -122,7 +122,7 @@ impl OutputManager {
             }
             OutputFormat::Table => {
                 let mut table = Table::new();
-                table.load_preset(UTF8_FULL);
+                table.load_style(UTF8_FULL);
                 table.set_header(vec!["ID", "Status", "Created At", "Public Key"]);
 
                 for key in keys {
@@ -173,7 +173,7 @@ impl OutputManager {
             }
             OutputFormat::Table => {
                 let mut table = Table::new();
-                table.load_preset(UTF8_FULL);
+                table.load_style(UTF8_FULL);
                 table.set_header(vec![
                     "Key",
                     "Version",
@@ -205,7 +205,7 @@ impl OutputManager {
 
     fn print_as_table(&self, value: &Value) -> Result<()> {
         let mut table = Table::new();
-        table.load_preset(UTF8_FULL);
+        table.load_style(UTF8_FULL);
 
         match value {
             Value::Object(obj) => {

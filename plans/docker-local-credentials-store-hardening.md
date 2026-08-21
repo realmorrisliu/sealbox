@@ -7,12 +7,13 @@
 - Make CLI/private-key workflows primary.
 - Keep the Web UI secondary until browser-side encryption and token storage are hardened.
 - Support Docker-secret-style `_FILE` inputs for bootstrap secrets and key material.
-- Use the latest local Rust toolchain and latest available crypto crate versions unless an upstream prerelease blocks the build.
+- Build with the latest stable Rust toolchain while supporting Rust 1.95 as the minimum version.
+- Use the latest available crypto crate versions unless an upstream prerelease blocks the build.
 
 ## Phase 1: Build And Container Baseline
 
 - Status: complete in this pass.
-- Updated the workspace Rust version to the current stable toolchain.
+- Set and enforce Rust 1.95 as the minimum supported toolchain.
 - Updated crypto dependencies and adapted API usage.
 - Added `_FILE` config loading for server secrets.
 - Added Docker-secret-friendly CLI key path handling.

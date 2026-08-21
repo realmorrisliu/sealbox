@@ -19,8 +19,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rusqlite = { version = "0.37.0", features = ["bundled", "uuid"] }
 rsa = { version = "0.10.0-rc.18", features = ["encoding", "sha2"] }
 rand = "0.10.1"
-aes-gcm = { version = "0.11.0-rc.4", features = ["rand_core"] }
-base64 = "0.22"
+aes-gcm = { version = "0.11", features = ["rand_core"] }
+base64 = "0.23"
 hmac = "0.13"
 sha2 = "0.11.0"
 dotenvy = "0.15"
@@ -29,7 +29,7 @@ clap = { version = "4.6", features = ["derive"] }
 time = "0.3"
 http = "1.4"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["request-id", "trace", "cors"] }
+tower-http = { version = "0.7", features = ["request-id", "trace", "cors"] }
 uuid = { version = "1.23.2", features = ["v4", "serde"] }
 reqwest = { version = "0.13", features = ["json"] }
 assert_cmd = "2.2"

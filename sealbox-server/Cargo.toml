@@ -2,6 +2,7 @@
 name = "sealbox-server"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 authors = ["luckywood <morrisliu1994@outlook.com>"]
 description = "Sealbox: A Simple Secret Storage Service – self-hosted and developer-friendly."
 license = "Apache-2.0"

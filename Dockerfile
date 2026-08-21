@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.96-alpine AS builder
+FROM rust:1.98-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache musl-dev pkgconfig openssl-dev
@@ -31,7 +31,7 @@ RUN touch sealbox-server/src/main.rs sealbox-server/src/lib.rs sealbox-cli/src/m
     cargo build --release
 
 # Runtime stage
-FROM alpine:3.23
+FROM alpine:3.24
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates && \
