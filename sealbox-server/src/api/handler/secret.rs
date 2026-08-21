@@ -4,7 +4,8 @@ use serde_json::json;
 
 use crate::{
     api::{SealboxResponse, path::Path, state::AppState},
-    error::Result,
+    error::{Result, SealboxError},
+    repo::{GenerateSpec, SecretValue},
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -61,10 +62,29 @@ pub(crate) async fn get(
     Ok(SealboxResponse::Json(json!(secret)))
 }
 
+/// Either supply a value or ask for one to be generated — never both, and never neither.
+/// Unknown fields are rejected so a typo in `generate` does not silently store nothing.
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SaveSecretPayload {
-    secret: String, // Now receives plaintext instead of encrypted data
+    secret: Option<String>,
+    generate: Option<GenerateSpec>,
     ttl: Option<i64>,
+}
+
+impl SaveSecretPayload {
+    fn value(self) -> Result<SecretValue> {
+        match (self.secret, self.generate) {
+            (Some(_), Some(_)) => Err(SealboxError::InvalidRequest(
+                "supply either `secret` or `generate`, not both".to_string(),
+            )),
+            (None, None) => Err(SealboxError::InvalidRequest(
+                "supply either `secret` or `generate`".to_string(),
+            )),
+            (Some(secret), None) => Ok(SecretValue::Supplied(secret)),
+            (None, Some(spec)) => Ok(SecretValue::Generated(spec)),
+        }
+    }
 }
 
 // PUT /v1/secrets/{secret_key}
@@ -75,14 +95,23 @@ pub(crate) async fn save(
 ) -> Result<SealboxResponse> {
     let master_key = state.master_key_repo.get_valid_master_key()?;
 
-    let secret = state.secret_repo.create_new_version(
-        &params.secret_key(),
-        &payload.secret,
-        master_key,
-        payload.ttl,
-    )?;
+    let ttl = payload.ttl;
+    let value = payload.value()?;
 
-    Ok(SealboxResponse::Json(json!(secret)))
+    let secret =
+        state
+            .secret_repo
+            .create_new_version(&params.secret_key(), &value, master_key, ttl)?;
+
+    // Metadata only. Returning the ciphertext and the encrypted data key would hand every caller
+    // the material to decrypt with, given a master key — for no reason: the caller asked to store
+    // a value, and the answer is which version it became.
+    Ok(SealboxResponse::Json(json!({
+        "key": secret.key,
+        "version": secret.version,
+        "created_at": secret.created_at,
+        "expires_at": secret.expires_at,
+    })))
 }
 
 #[derive(Debug, Deserialize)]

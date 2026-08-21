@@ -159,7 +159,7 @@ impl SecretRepo for SqliteSecretRepo {
     fn create_new_version(
         &self,
         key: &str,
-        data: &str,
+        value: &crate::repo::SecretValue,
         master_key: crate::repo::MasterKey,
         ttl: Option<i64>,
     ) -> Result<Secret> {
@@ -176,7 +176,9 @@ impl SecretRepo for SqliteSecretRepo {
             latest_version + 1
         };
 
-        let secret = Secret::new(key, data, master_key, next_version, ttl)?;
+        // The plaintext lives only from here to the envelope inside `Secret::new`.
+        let plaintext = value.resolve()?;
+        let secret = Secret::new(key, &plaintext, master_key, next_version, ttl)?;
 
         tx.execute(
             "INSERT INTO secrets (
@@ -364,6 +366,11 @@ mod tests {
         conn
     }
 
+    /// Tests only ever supply a value; generation has its own tests.
+    fn supplied(value: &str) -> crate::repo::SecretValue {
+        crate::repo::SecretValue::Supplied(value.to_string())
+    }
+
     fn setup_test_repo() -> SqliteSecretRepo {
         SqliteSecretRepo::new(Arc::new(Mutex::new(setup_test_db())))
     }
@@ -419,7 +426,7 @@ mod tests {
 
         // Create secret
         let created_secret = repo
-            .create_new_version(secret_key, secret_data, master_key, None)
+            .create_new_version(secret_key, &supplied(secret_data), master_key, None)
             .expect("Should create secret");
 
         // Get secret back
@@ -460,12 +467,17 @@ mod tests {
 
         // Create first version
         let secret_v1 = repo
-            .create_new_version(secret_key, "data version 1", master_key.clone(), None)
+            .create_new_version(
+                secret_key,
+                &supplied("data version 1"),
+                master_key.clone(),
+                None,
+            )
             .expect("Should create version 1");
 
         // Create second version
         let secret_v2 = repo
-            .create_new_version(secret_key, "data version 2", master_key, None)
+            .create_new_version(secret_key, &supplied("data version 2"), master_key, None)
             .expect("Should create version 2");
 
         assert_eq!(secret_v1.version, 1);
@@ -489,11 +501,16 @@ mod tests {
 
         // Create multiple versions
         let secret_v1 = repo
-            .create_new_version(secret_key, "data version 1", master_key.clone(), None)
+            .create_new_version(
+                secret_key,
+                &supplied("data version 1"),
+                master_key.clone(),
+                None,
+            )
             .expect("Should create version 1");
 
         let _secret_v2 = repo
-            .create_new_version(secret_key, "data version 2", master_key, None)
+            .create_new_version(secret_key, &supplied("data version 2"), master_key, None)
             .expect("Should create version 2");
 
         // Get specific version
@@ -527,11 +544,16 @@ mod tests {
 
         // Create multiple versions
         let _secret_v1 = repo
-            .create_new_version(secret_key, "data version 1", master_key.clone(), None)
+            .create_new_version(
+                secret_key,
+                &supplied("data version 1"),
+                master_key.clone(),
+                None,
+            )
             .expect("Should create version 1");
 
         let secret_v2 = repo
-            .create_new_version(secret_key, "data version 2", master_key, None)
+            .create_new_version(secret_key, &supplied("data version 2"), master_key, None)
             .expect("Should create version 2");
 
         // Delete version 1
@@ -572,7 +594,7 @@ mod tests {
 
         // Create secret with TTL
         let secret = repo
-            .create_new_version("ttl-secret", "temporary-data", master_key, ttl)
+            .create_new_version("ttl-secret", &supplied("temporary-data"), master_key, ttl)
             .expect("Should create secret with TTL");
 
         assert!(secret.expires_at.is_some());
@@ -595,7 +617,7 @@ mod tests {
         let _secret = repo
             .create_new_version(
                 "expired-secret",
-                "temporary-data",
+                &supplied("temporary-data"),
                 master_key,
                 Some(1i64), // 1 second
             )
@@ -623,7 +645,7 @@ mod tests {
         let secret = repo
             .create_new_version(
                 "expired-secret-v",
-                "temporary-data",
+                &supplied("temporary-data"),
                 master_key,
                 Some(1i64), // 1 second
             )
@@ -651,7 +673,7 @@ mod tests {
         let _expired1 = repo
             .create_new_version(
                 "expired1",
-                "data1",
+                &supplied("data1"),
                 master_key.clone(),
                 Some(1i64), // 1 second
             )
@@ -660,7 +682,7 @@ mod tests {
         let _expired2 = repo
             .create_new_version(
                 "expired2",
-                "data2",
+                &supplied("data2"),
                 master_key.clone(),
                 Some(1i64), // 1 second
             )
@@ -669,7 +691,7 @@ mod tests {
         let _permanent = repo
             .create_new_version(
                 "permanent",
-                "permanent-data",
+                &supplied("permanent-data"),
                 master_key.clone(),
                 None, // No TTL
             )
@@ -678,7 +700,7 @@ mod tests {
         let _long_lived = repo
             .create_new_version(
                 "long-lived",
-                "long-data",
+                &supplied("long-data"),
                 master_key,
                 Some(3600i64), // 1 hour
             )
@@ -721,11 +743,11 @@ mod tests {
 
         // Create only non-expired secrets
         let _permanent = repo
-            .create_new_version("permanent", "data", master_key.clone(), None)
+            .create_new_version("permanent", &supplied("data"), master_key.clone(), None)
             .expect("Should create permanent secret");
 
         let _long_lived = repo
-            .create_new_version("long-lived", "data", master_key, Some(3600i64))
+            .create_new_version("long-lived", &supplied("data"), master_key, Some(3600i64))
             .expect("Should create long-lived secret");
 
         // Run cleanup
@@ -750,20 +772,25 @@ mod tests {
 
         // Create several secrets
         let _secret1 = repo
-            .create_new_version("secret1", "data1", master_key.clone(), None)
+            .create_new_version("secret1", &supplied("data1"), master_key.clone(), None)
             .expect("Should create secret1");
 
         let _secret2 = repo
-            .create_new_version("secret2", "data2", master_key.clone(), Some(3600))
+            .create_new_version(
+                "secret2",
+                &supplied("data2"),
+                master_key.clone(),
+                Some(3600),
+            )
             .expect("Should create secret2 with TTL");
 
         let _secret3 = repo
-            .create_new_version("secret3", "data3", master_key.clone(), None)
+            .create_new_version("secret3", &supplied("data3"), master_key.clone(), None)
             .expect("Should create secret3");
 
         // Create multiple versions of secret1
         let _secret1_v2 = repo
-            .create_new_version("secret1", "data1-v2", master_key, None)
+            .create_new_version("secret1", &supplied("data1-v2"), master_key, None)
             .expect("Should create secret1 version 2");
 
         // List all secrets
@@ -803,7 +830,7 @@ mod tests {
         let _expired_secret = repo
             .create_new_version(
                 "expired-secret",
-                "temporary-data",
+                &supplied("temporary-data"),
                 master_key.clone(),
                 Some(1i64), // 1 second
             )
@@ -811,7 +838,12 @@ mod tests {
 
         // Create a permanent secret
         let _permanent_secret = repo
-            .create_new_version("permanent-secret", "permanent-data", master_key, None)
+            .create_new_version(
+                "permanent-secret",
+                &supplied("permanent-data"),
+                master_key,
+                None,
+            )
             .expect("Should create permanent secret");
 
         // Wait for the secret to expire
@@ -835,9 +867,9 @@ mod tests {
         let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
         let new_key = MasterKey::new(new_public).expect("Should create new master key");
 
-        repo.create_new_version("s1", "d1", old_key.clone(), None)
+        repo.create_new_version("s1", &supplied("d1"), old_key.clone(), None)
             .expect("Should create s1");
-        repo.create_new_version("s2", "d2", old_key.clone(), None)
+        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None)
             .expect("Should create s2");
 
         let failed = repo
@@ -865,9 +897,9 @@ mod tests {
         let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
         let new_key = MasterKey::new(new_public).expect("Should create new master key");
 
-        repo.create_new_version("s1", "d1", old_key.clone(), None)
+        repo.create_new_version("s1", &supplied("d1"), old_key.clone(), None)
             .expect("Should create s1");
-        repo.create_new_version("s2", "d2", old_key.clone(), None)
+        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None)
             .expect("Should create s2");
 
         let failed = repo

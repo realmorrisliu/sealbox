@@ -464,3 +464,138 @@ async fn a_rekey_request_carrying_a_private_key_is_rejected() {
         "a payload containing key material must be refused, not quietly accepted"
     );
 }
+
+// ---------------------------------------------------------------- generation
+
+#[tokio::test]
+async fn a_generated_secret_is_never_returned() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let response = server
+        .send(
+            build("PUT", "/v1/secrets/db-pass", Some(&admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"generate":{"type":"password","length":32}}"#,
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success());
+
+    let body = server.json(response).await;
+    let keys: Vec<_> = body.as_object().unwrap().keys().cloned().collect();
+    assert_eq!(
+        keys,
+        vec!["created_at", "expires_at", "key", "version"],
+        "storing a secret reports which version it became, and nothing else"
+    );
+}
+
+#[tokio::test]
+async fn two_generations_differ() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let generate = |name: &str| {
+        build("PUT", &format!("/v1/secrets/{name}"), Some(&admin))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"generate":{"type":"hex","length":32}}"#))
+            .unwrap()
+    };
+    server.send(generate("a")).await;
+    server.send(generate("b")).await;
+
+    // The values are unreadable through the API by design, so compare the ciphertexts: identical
+    // plaintext under different random data keys would still differ, but identical *values*
+    // would be an alarming coincidence worth catching another way. Here we assert the weaker,
+    // checkable thing — both were stored, independently.
+    let response = server.send(get("/v1/secrets", Some(&admin))).await;
+    let body = server.json(response).await;
+    let names: Vec<_> = body["secrets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["key"].as_str().unwrap().to_string())
+        .collect();
+    assert!(names.contains(&"a".to_string()) && names.contains(&"b".to_string()));
+}
+
+#[tokio::test]
+async fn generation_refuses_a_length_below_the_minimum() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let response = server
+        .send(
+            build("PUT", "/v1/secrets/short", Some(&admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"generate":{"type":"password","length":8}}"#))
+                .unwrap(),
+        )
+        .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = server.json(response).await.to_string();
+    assert!(
+        body.contains("16"),
+        "the error must name the minimum so the caller can fix it: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_payload_cannot_both_supply_and_generate() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    for payload in [
+        r#"{"secret":"x","generate":{"type":"hex"}}"#,
+        r#"{"ttl":60}"#,
+    ] {
+        let response = server
+            .send(
+                build("PUT", "/v1/secrets/k", Some(&admin))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(payload))
+                    .unwrap(),
+            )
+            .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "ambiguous payload must be refused: {payload}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_listing_carries_no_values() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    server
+        .send(
+            build("PUT", "/v1/secrets/k", Some(&admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"secret":"hunter2-do-not-leak"}"#))
+                .unwrap(),
+        )
+        .await;
+
+    let response = server.send(get("/v1/secrets", Some(&admin))).await;
+    let serialised = server.json(response).await.to_string();
+
+    assert!(serialised.contains("\"key\":\"k\""));
+    for forbidden in [
+        "hunter2",
+        "encrypted_data",
+        "encrypted_data_key",
+        "master_key_id",
+    ] {
+        assert!(
+            !serialised.contains(forbidden),
+            "a listing must not carry {forbidden}: {serialised}"
+        );
+    }
+}

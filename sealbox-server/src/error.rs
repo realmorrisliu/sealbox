@@ -27,6 +27,9 @@ pub enum SealboxError {
     #[error("Identity not found: {0}")]
     IdentityNotFound(String),
 
+    #[error("Invalid request: {0}")]
+    InvalidRequest(String),
+
     #[error("Unknown role: {0}. Expected one of: agent, operator, admin")]
     InvalidRole(String),
 
@@ -71,6 +74,7 @@ impl IntoResponse for SealboxError {
             SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::IdentityAlreadyExists(_) => (StatusCode::CONFLICT, errorfmt(&self)),
             SealboxError::IdentityNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
             SealboxError::InvalidRole(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
             SealboxError::Forbidden => (StatusCode::FORBIDDEN, errorfmt(&self)),
             SealboxError::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),

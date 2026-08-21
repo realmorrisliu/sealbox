@@ -323,6 +323,85 @@ pub struct NewAuditRecord {
     pub detail: Option<String>,
 }
 
+/// The shortest generated value the system will produce. A caller asking for less is more
+/// likely to have made a mistake than to have a reason, and a weak credential looks exactly
+/// like a strong one from the outside.
+pub const MIN_GENERATED_LENGTH: usize = 16;
+/// Used when a caller does not say. 32 of the password alphabet is about 187 bits.
+pub const DEFAULT_GENERATED_LENGTH: usize = 32;
+
+/// Alphanumeric, minus the characters that get confused when a value is read aloud, retyped
+/// from a screenshot, or pasted somewhere that mangles it: `0`/`O` and `1`/`l`/`I`.
+///
+/// No punctuation. Symbols in a generated credential cause trouble out of proportion to the
+/// entropy they add — quoting in shells, escaping in connection strings, and YAML deciding a
+/// value is something other than a string. Length is the cheaper way to buy entropy.
+const PASSWORD_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GenerateKind {
+    /// Printable, for a human or a connection string.
+    Password,
+    /// Raw randomness in hex, for machine consumption.
+    Hex,
+}
+
+/// A request to have the server produce the value rather than be given one.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GenerateSpec {
+    #[serde(rename = "type")]
+    pub kind: GenerateKind,
+    pub length: Option<usize>,
+}
+
+impl GenerateSpec {
+    /// Produce the value. Called where the encryption happens, so the plaintext exists only
+    /// between here and the envelope — never assigned to a field, returned, or logged.
+    pub(crate) fn generate(&self) -> Result<String> {
+        let length = self.length.unwrap_or(DEFAULT_GENERATED_LENGTH);
+        if length < MIN_GENERATED_LENGTH {
+            return Err(SealboxError::InvalidRequest(format!(
+                "generated length {length} is below the minimum of {MIN_GENERATED_LENGTH}"
+            )));
+        }
+
+        let mut rng = rand::thread_rng();
+        Ok(match self.kind {
+            GenerateKind::Password => {
+                use rand::Rng;
+                (0..length)
+                    .map(|_| PASSWORD_ALPHABET[rng.gen_range(0..PASSWORD_ALPHABET.len())] as char)
+                    .collect()
+            }
+            GenerateKind::Hex => {
+                let mut bytes = vec![0u8; length];
+                rand::RngCore::fill_bytes(&mut rng, &mut bytes);
+                bytes.iter().map(|b| format!("{b:02x}")).collect()
+            }
+        })
+    }
+}
+
+/// Where a new version's value comes from.
+#[derive(Debug, Clone)]
+pub enum SecretValue {
+    /// Handed in by a caller.
+    Supplied(String),
+    /// Produced by the server; the caller never sees it.
+    Generated(GenerateSpec),
+}
+
+impl SecretValue {
+    pub(crate) fn resolve(&self) -> Result<std::borrow::Cow<'_, str>> {
+        match self {
+            SecretValue::Supplied(value) => Ok(std::borrow::Cow::Borrowed(value)),
+            SecretValue::Generated(spec) => Ok(std::borrow::Cow::Owned(spec.generate()?)),
+        }
+    }
+}
+
 pub(crate) trait SecretRepo: Send + Sync {
     /// Get latest secret with atomic lazy cleanup
     fn get_secret(&self, key: &str) -> Result<Secret>;
@@ -331,7 +410,7 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn create_new_version(
         &self,
         key: &str,
-        data: &str,
+        value: &SecretValue,
         master_key: MasterKey,
         ttl: Option<i64>,
     ) -> Result<Secret>;
