@@ -128,8 +128,8 @@ enum KeyCommands {
     Register,
     /// List master keys on server
     List,
-    /// Rotate master key
-    Rotate {
+    /// Rekey: re-encrypt data keys under a different master key
+    Rekey {
         /// New master key ID
         #[arg(long)]
         new_key_id: String,

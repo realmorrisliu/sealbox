@@ -12,11 +12,11 @@ Ordered first because each is independently verifiable and none blocks the other
 
 Mechanical, and done before the repo refactor so the refactor does not have to move renamed code twice.
 
-- [ ] 2.1 Rename `Secret::rotate_master_key` → `Secret::rekey` in `sealbox-server/src/repo/mod.rs`, with its tests
-- [ ] 2.2 Rename the handler and route target in `sealbox-server/src/api/handler/master_key.rs` to rekey
-- [ ] 2.3 Rename the corresponding `sealbox-cli` command and its help text
-- [ ] 2.4 Grep for remaining uses of "rotate" that mean re-encryption and fix them, including log and error strings
-- [ ] 2.5 Verify: build, test, clippy clean
+- [x] 2.1 Rename `Secret::rotate_master_key` → `Secret::rekey` in `sealbox-server/src/repo/mod.rs`, with its tests
+- [x] 2.2 Rename the handler and route target in `sealbox-server/src/api/handler/master_key.rs` to rekey
+- [x] 2.3 Rename the corresponding `sealbox-cli` command and its help text
+- [x] 2.4 Grep for remaining uses of "rotate" that mean re-encryption and fix them, including log and error strings
+- [x] 2.5 Verify: build, test, clippy clean
 
 ## 3. Repo traits own their connection
 

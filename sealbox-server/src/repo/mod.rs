@@ -96,7 +96,7 @@ impl Secret {
         })
     }
 
-    pub(crate) fn rotate_master_key(
+    pub(crate) fn rekey(
         self,
         old_master_key_id: &Uuid,
         old_private_key_pem: &str,
@@ -334,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn test_secret_rotate_master_key() {
+    fn test_secret_rekey() {
         let (old_private_pem, old_public_pem) =
             generate_key_pair().expect("Should generate old key pair");
         let (_, new_public_pem) = generate_key_pair().expect("Should generate new key pair");
@@ -350,53 +350,53 @@ mod tests {
         let original_encrypted_data = original_secret.encrypted_data.clone();
         let original_encrypted_data_key = original_secret.encrypted_data_key.clone();
 
-        let rotated_secret = original_secret
-            .rotate_master_key(
+        let rekeyed_secret = original_secret
+            .rekey(
                 &old_master_key.id,
                 &old_private_pem,
                 &new_master_key.id,
                 &new_master_key.public_key,
             )
-            .expect("Should rotate master key");
+            .expect("Should rekey");
 
-        // Key rotation should update master key ID and encrypted data key
-        assert_eq!(rotated_secret.master_key_id, new_master_key.id);
+        // Rekeying should update master key ID and encrypted data key
+        assert_eq!(rekeyed_secret.master_key_id, new_master_key.id);
         assert_ne!(
-            rotated_secret.encrypted_data_key,
+            rekeyed_secret.encrypted_data_key,
             original_encrypted_data_key
         );
-        assert_eq!(rotated_secret.encrypted_data, original_encrypted_data); // Data itself unchanged
-        assert!(rotated_secret.updated_at >= original_created_at);
+        assert_eq!(rekeyed_secret.encrypted_data, original_encrypted_data); // Data itself unchanged
+        assert!(rekeyed_secret.updated_at >= original_created_at);
     }
 
     #[test]
-    fn test_secret_rotate_master_key_same_key() {
+    fn test_secret_rekey_same_key() {
         let (_, public_pem) = generate_key_pair().expect("Should generate key pair");
         let master_key = MasterKey::new(public_pem).expect("Should create master key");
 
         let original_secret = Secret::new("test-key", "secret-data", master_key.clone(), 1, None)
             .expect("Should create secret");
 
-        // Rotating to the same key should return the secret unchanged
-        let rotated_secret = original_secret
+        // Rekeying to the same key should return the secret unchanged
+        let rekeyed_secret = original_secret
             .clone()
-            .rotate_master_key(
+            .rekey(
                 &master_key.id,
                 "dummy-private-key",
                 &master_key.id,
                 &master_key.public_key,
             )
-            .expect("Should handle same key rotation");
+            .expect("Should handle same rekeying");
 
-        assert_eq!(rotated_secret.master_key_id, original_secret.master_key_id);
+        assert_eq!(rekeyed_secret.master_key_id, original_secret.master_key_id);
         assert_eq!(
-            rotated_secret.encrypted_data_key,
+            rekeyed_secret.encrypted_data_key,
             original_secret.encrypted_data_key
         );
     }
 
     #[test]
-    fn test_secret_rotate_master_key_wrong_old_key() {
+    fn test_secret_rekey_wrong_old_key() {
         let (old_private_pem, old_public_pem) =
             generate_key_pair().expect("Should generate old key pair");
         let (_, new_public_pem) = generate_key_pair().expect("Should generate new key pair");
@@ -410,8 +410,8 @@ mod tests {
         let original_secret = Secret::new("test-key", "secret-data", old_master_key, 1, None)
             .expect("Should create secret");
 
-        // Trying to rotate with wrong old key ID should fail
-        let result = original_secret.rotate_master_key(
+        // Trying to rekey with wrong old key ID should fail
+        let result = original_secret.rekey(
             &wrong_master_key.id, // Wrong old key ID
             &old_private_pem,
             &new_master_key.id,
@@ -426,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn test_secret_rotate_master_key_invalid_private_key() {
+    fn test_secret_rekey_invalid_private_key() {
         let (_, old_public_pem) = generate_key_pair().expect("Should generate old key pair");
         let (_, new_public_pem) = generate_key_pair().expect("Should generate new key pair");
 
@@ -437,8 +437,8 @@ mod tests {
             Secret::new("test-key", "secret-data", old_master_key.clone(), 1, None)
                 .expect("Should create secret");
 
-        // Invalid private key should cause rotation to fail
-        let result = original_secret.rotate_master_key(
+        // Invalid private key should cause rekeying to fail
+        let result = original_secret.rekey(
             &old_master_key.id,
             "invalid-private-key",
             &new_master_key.id,

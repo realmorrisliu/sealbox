@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub(crate) struct RotateMasterKeyPayload {
+pub(crate) struct RekeyPayload {
     new_master_key_id: Uuid,
     old_master_key_id: Uuid,
     old_private_key_pem: String,
@@ -25,9 +25,9 @@ pub(crate) async fn list(State(state): State<AppState>) -> Result<SealboxRespons
 }
 
 // PUT /{version}/master-key
-pub(crate) async fn rotate(
+pub(crate) async fn rekey(
     State(state): State<AppState>,
-    Json(payload): Json<RotateMasterKeyPayload>,
+    Json(payload): Json<RekeyPayload>,
 ) -> Result<SealboxResponse> {
     let new_master_key_id = payload.new_master_key_id;
     let old_master_key_id = payload.old_master_key_id;
@@ -51,23 +51,20 @@ pub(crate) async fn rotate(
     for secret in secrets {
         let secret_key = secret.key.clone();
 
-        match secret.rotate_master_key(
+        match secret.rekey(
             &old_master_key_id,
             &old_private_key_pem,
             &new_master_key_id,
             &new_public_key_pem,
         ) {
-            Ok(rotated_secret) => {
+            Ok(rekeyed_secret) => {
                 state
                     .secret_repo
-                    .update_secret_master_key(&tx, &rotated_secret)?;
+                    .update_secret_master_key(&tx, &rekeyed_secret)?;
             }
             Err(err) => {
                 failed_secret_keys.push(secret_key.clone());
-                error!(
-                    "Failed to rotate master key for secret {}: {}",
-                    secret_key, err
-                );
+                error!("Failed to rekey for secret {}: {}", secret_key, err);
             }
         }
     }
@@ -199,19 +196,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rotate_master_key_not_found() {
+    async fn test_rekey_not_found() {
         let state = setup_test_state();
         let (old_private_pem, _) = generate_key_pair().expect("Should generate old key pair");
         let old_master_key_id = uuid::Uuid::new_v4();
         let new_master_key_id = uuid::Uuid::new_v4();
 
-        let payload = RotateMasterKeyPayload {
+        let payload = RekeyPayload {
             old_master_key_id,
             new_master_key_id,
             old_private_key_pem: old_private_pem,
         };
 
-        let result = rotate(State(state), Json(payload)).await;
+        let result = rekey(State(state), Json(payload)).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {

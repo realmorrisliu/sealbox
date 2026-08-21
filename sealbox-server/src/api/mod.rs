@@ -78,7 +78,7 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         .route(
             "/v1/master-key",
             get(master_key::list)
-                .put(master_key::rotate)
+                .put(master_key::rekey)
                 .post(master_key::create),
         )
         .route(
