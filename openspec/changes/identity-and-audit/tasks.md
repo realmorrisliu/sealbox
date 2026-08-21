@@ -44,11 +44,11 @@
 
 ## 7. CLI
 
-- [ ] 7.1 `sealbox-cli identity create <name> --role <role>` — prints the token once, with a warning that it will not be shown again
-- [ ] 7.2 `sealbox-cli identity list` and `identity revoke <name>`
-- [ ] 7.3 `sealbox-cli audit [--identity X] [--action Y] [--since D]`
-- [ ] 7.4 Config carries this machine's identity token; remove any assumption of a shared token
-- [ ] 7.5 `sealbox-cli bootstrap --token <value>` for claiming a fresh server
+- [x] 7.1 `sealbox-cli identity create <name> --role <role>` — prints the token once, with a warning that it will not be shown again
+- [x] 7.2 `sealbox-cli identity list` and `identity revoke <name>`
+- [x] 7.3 `sealbox-cli audit [--identity X] [--action Y] [--since D] [--limit N]`. `--since` takes `90s`/`30m`/`24h`/`7d` or a timestamp — relative is what anyone types when something has just gone wrong. Query strings are built through `Url` so an action like `PUT /v1/secrets/db-password` encodes correctly
+- [x] 7.4 Config carries this machine's identity token; remove any assumption of a shared token
+- [x] 7.5 `sealbox-cli bootstrap --token <value>` for claiming a fresh server
 
 ## 8. Tests
 
@@ -60,6 +60,10 @@
 - [x] 8.6 An unauthenticated request is recorded without being attributed to an identity
 - [x] 8.7 Audit records contain no secret value, including on a failure path
 - [x] 8.8 Health probes stay unauthenticated and unaudited
+
+> **Noted while smoke-testing, out of scope here:** `sealbox-cli secret list` prints "Server does
+> not currently support listing all secrets" although `GET /v1/secrets` exists and works. The CLI
+> is due to be rewritten for the new command surface; folded in there rather than patched now.
 
 ## 9. Documentation
 

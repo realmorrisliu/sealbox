@@ -2,7 +2,9 @@ mod commands;
 mod config;
 mod output;
 
-use crate::commands::{config_commands, key_commands, secret_commands};
+use crate::commands::{
+    audit_commands, config_commands, identity_commands, key_commands, secret_commands,
+};
 use crate::config::{Config, OutputFormat};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -23,7 +25,7 @@ struct Cli {
     #[arg(long, global = true)]
     url: Option<String>,
 
-    /// Authentication token
+    /// This machine's identity token
     #[arg(long, global = true)]
     token: Option<String>,
 
@@ -73,6 +75,54 @@ enum Commands {
     Secret {
         #[command(subcommand)]
         command: SecretCommands,
+    },
+    /// Manage identities: who may call this server, and with what authority
+    Identity {
+        #[command(subcommand)]
+        command: IdentityCommands,
+    },
+    /// Read the audit trail: what was attempted, by whom, and whether it was allowed
+    Audit {
+        /// Only this identity
+        #[arg(long)]
+        identity: Option<String>,
+        /// Only this action, e.g. "PUT /v1/secrets/db-password"
+        #[arg(long)]
+        action: Option<String>,
+        /// How far back: 90s, 30m, 24h, 7d, or a Unix timestamp
+        #[arg(long)]
+        since: Option<String>,
+        /// Maximum records to return
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// Claim a server that has no identities yet, creating the first admin
+    Bootstrap {
+        /// The value the server was started with in SEALBOX_BOOTSTRAP_TOKEN
+        #[arg(long)]
+        token: String,
+        /// Name for the first admin identity
+        #[arg(long, default_value = "admin")]
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum IdentityCommands {
+    /// Create an identity and print its token once
+    Create {
+        /// Name, unique on this server
+        name: String,
+        /// One of: agent, operator, admin
+        #[arg(long)]
+        role: String,
+    },
+    /// List identities. Tokens are never shown.
+    List,
+    /// Revoke an identity. Takes effect on its next request; nobody else is affected.
+    Revoke {
+        /// Name of the identity to revoke
+        name: String,
     },
 }
 
@@ -226,5 +276,19 @@ async fn main() -> Result<()> {
         Commands::Config { command } => config_commands::handle_command(command, &mut config).await,
         Commands::Key { command } => key_commands::handle_command(command, &config).await,
         Commands::Secret { command } => secret_commands::handle_command(command, &config).await,
+        Commands::Identity { command } => identity_commands::handle_command(command, &config).await,
+        Commands::Audit {
+            identity,
+            action,
+            since,
+            limit,
+        } => {
+            let output = crate::output::OutputManager::new(config.output.format.clone());
+            audit_commands::list(&config, &output, identity, action, since, limit).await
+        }
+        Commands::Bootstrap { token, name } => {
+            let output = crate::output::OutputManager::new(config.output.format.clone());
+            identity_commands::bootstrap(&config, &output, token, name).await
+        }
     }
 }
