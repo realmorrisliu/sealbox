@@ -26,3 +26,17 @@ after the first user arrives.
 Anything already recorded in `openspec/specs/` still holds — those are statements about how the
 system behaves, not promises to an installed base, and they change through a change proposal
 rather than by drift.
+
+## The cryptographic construction is not covered by this
+
+`secret-encryption` requires that a dependency upgrade not alter the stored format or the
+parameters of the encryption. That requirement stands, and this ADR does not relax it, because
+the two are about different failures.
+
+Breaking a schema is loud: the database is rebuilt and the cost is a few minutes. Breaking a
+cryptographic construction can be silent — a changed nonce derivation, a different padding
+mode, a weaker default — and produces data that still appears to work while being less safe
+than intended. That is not something to discover after there are users.
+
+So: schemas, APIs, configuration, and commands may break freely. What the ciphertext is and how
+it was produced may not change without a deliberate, reviewed decision.
