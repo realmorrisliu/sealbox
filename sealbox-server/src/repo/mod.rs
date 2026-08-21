@@ -29,7 +29,6 @@ pub struct SecretInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Secret {
-    pub namespace: String,           // Secret namespace, used for logical grouping
     pub key: String,                 // Secret key identifier
     pub version: i32,                // Version number, incremented on each insert
     pub encrypted_data: Vec<u8>,     // The encrypted secret value
@@ -83,7 +82,6 @@ impl Secret {
         let expires_at = ttl.map(|ttl| now_timestamp + ttl);
 
         Ok(Self {
-            namespace: String::new(),
             key: key.to_string(),
             version,
             encrypted_data,
@@ -287,7 +285,6 @@ mod tests {
         assert_eq!(secret.created_at, secret.updated_at);
         assert!(!secret.encrypted_data.is_empty());
         assert!(!secret.encrypted_data_key.is_empty());
-        assert_eq!(secret.namespace, "");
         assert!(secret.metadata.is_none());
     }
 

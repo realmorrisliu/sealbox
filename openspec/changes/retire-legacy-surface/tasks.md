@@ -29,11 +29,11 @@ Mechanical, and done before the repo refactor so the refactor does not have to m
 
 ## 4. Schema migration
 
-- [ ] 4.1 Add `server_held INTEGER NOT NULL DEFAULT 0` to `master_keys`
-- [ ] 4.2 Rebuild `secrets` without `namespace`, with `PRIMARY KEY (key, version)`, in one transaction: create new table, copy rows, compare row counts, drop old, rename
-- [ ] 4.3 Remove the `namespace` field from `Secret` and every query, insert, and test referencing it
-- [ ] 4.4 Confirm the migration is idempotent on an already-migrated database and a fresh one
-- [ ] 4.5 Verify: run against a copy of a real database file; row count and every secret's decryptability unchanged
+- [x] 4.1 Add `server_held INTEGER NOT NULL DEFAULT 0` to `master_keys`
+- [x] 4.2 Rebuild `secrets` without `namespace`, with `PRIMARY KEY (key, version)`, in one transaction: create new table, copy rows, compare row counts, drop old, rename
+- [x] 4.3 Remove the `namespace` field from `Secret` and every query, insert, and test referencing it
+- [x] 4.4 Confirm the migration is idempotent on an already-migrated database and a fresh one
+- [x] 4.5 Verify: ran against a copy of the real database. 1 secret before and after, ciphertext byte-identical, `namespace` gone, `server_held` present and 0 — correctly reflecting that every existing master key is cold
 
 ## 5. Server-held master key
 

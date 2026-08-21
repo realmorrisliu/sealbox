@@ -29,8 +29,25 @@ impl SqliteMasterKeyRepo {
                 status TEXT NOT NULL,
                 description TEXT,
                 version INTEGER,
-                metadata TEXT
+                metadata TEXT,
+                server_held INTEGER NOT NULL DEFAULT 0
             )",
+            (),
+        )?;
+
+        Self::add_server_held_column(conn)?;
+
+        Ok(())
+    }
+
+    /// Whether the server holds this key's private half, which is what makes secrets encrypted
+    /// under it readable by the broker (ADR 0001). Idempotent.
+    fn add_server_held_column(conn: &rusqlite::Connection) -> Result<()> {
+        if super::has_column(conn, "master_keys", "server_held")? {
+            return Ok(());
+        }
+        conn.execute(
+            "ALTER TABLE master_keys ADD COLUMN server_held INTEGER NOT NULL DEFAULT 0",
             (),
         )?;
         Ok(())
