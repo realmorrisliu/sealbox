@@ -87,9 +87,15 @@ The cryptography crates' versions are governed by rsa, not by their own release 
 proposing them individually produces pull requests that cannot be correct. They are grouped, and
 major-version updates to them are not proposed automatically.
 
-The deeper failure — four pull requests merged while CI was red — is a repository settings matter
-(required status checks) that this change cannot enforce from a file. It is recorded as an operator
-task instead of quietly omitted.
+The deeper failure — four pull requests merged while CI was red — is a repository settings matter,
+so it was applied directly rather than merely recorded: `main` now requires `Test & Quality`,
+`Security Audit`, and `Build` to pass.
+
+Two choices in that configuration are deliberate. `strict` is off, so a PR need not be rebased onto
+the latest `main` before merging — with dependabot's volume, requiring that produces constant
+rebase churn for little benefit. And `enforce_admins` is off: dependabot is not an admin, so its
+pull requests are gated regardless, while the sole maintainer keeps a path for an emergency fix.
+Turning it on is one API call if that trade stops being worth it.
 
 ## Risks / Trade-offs
 

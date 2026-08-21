@@ -19,7 +19,7 @@
 - [x] 3.1 Group `rsa`, `rand`, `sha2`, and `aes-gcm` in `.github/dependabot.yml`, so they are never proposed individually
 - [x] 3.2 Ignore major-version updates for that group: their versions are governed by `rsa`, not their own release cadence
 - [x] 3.3 Add a comment in `dependabot.yml` explaining the constraint, so the next person to loosen it knows what it protects
-- [x] 3.4 Record the operator task: require passing status checks before merge on `main`, since four pull requests were merged with CI red — this cannot be enforced from a file in the repository
+- [x] 3.4 Require passing status checks before merge on `main`, since four pull requests were merged with CI red. Applied via `gh api`: `Test & Quality`, `Security Audit`, and `Build` are required; `strict` is off so dependabot PRs need no rebase churn; reviews are not required (single maintainer); force pushes and deletions are blocked. `enforce_admins` is off deliberately — dependabot is not an admin, so its PRs are gated, while the maintainer keeps an emergency path
 
 ## 4. Verify the whole of CI locally
 
