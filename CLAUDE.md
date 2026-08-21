@@ -11,7 +11,7 @@ is being replaced in significant part.
 | | |
 |---|---|
 | Target design | [`docs/agent-native-design.md`](docs/agent-native-design.md) |
-| Decisions and their reasoning | [`docs/adr/`](docs/adr/) — 11 ADRs |
+| Decisions and their reasoning | [`docs/adr/`](docs/adr/) — 12 ADRs |
 | Vocabulary — use these words, no synonyms | [`CONTEXT.md`](CONTEXT.md) |
 | Behavior already specified | [`openspec/specs/`](openspec/specs/) — `http-api`, `master-key`, `secret-encryption` |
 
@@ -93,8 +93,7 @@ Two bugs surfaced while doing it, both fixed: rekey committed partial results de
 requiring all-or-nothing, and `route_layer` had put the health probes behind authentication, so
 Kubernetes probes had been failing wherever this was deployed.
 
-Existing deployments: [`docs/migration-server-held-master-key.md`](docs/migration-server-held-master-key.md).
-Every pre-existing master key is cold, so those secrets are re-imported rather than rekeyed.
+An existing database from before this is not migrated — delete it and start again (ADR 0012).
 
 ### Then the MVP — ten items
 
@@ -147,6 +146,10 @@ cargo clippy --all-targets --all-features --workspace -- -D warnings   # zero wa
 
 ## Conventions
 
+- **Nothing is kept for backward compatibility** (ADR 0012). No migrations, no deprecation
+  periods, no compatibility shims — an incompatible database is deleted and rebuilt. Use this
+  freedom deliberately: a rename or a restructure costs nothing now and a great deal later, so
+  make the breaking decision *now* rather than deferring it.
 - **SQLite stays.** Writes are rare, reads cacheable, dataset is megabytes, the only growing table
   is append-only audit. Litestream covers durability. Postgres would cost the single-binary
   property and buy nothing.

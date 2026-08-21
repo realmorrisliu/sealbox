@@ -105,7 +105,7 @@ that were reversed.
 | | |
 |---|---|
 | [Design](docs/agent-native-design.md) | Topology, secret lifecycle, security boundary, MVP |
-| [Decisions](docs/adr/) | 11 ADRs, each with what was rejected and why |
+| [Decisions](docs/adr/) | 12 ADRs, each with what was rejected and why |
 | [Glossary](CONTEXT.md) | The vocabulary, and the synonyms to avoid |
 | [Getting started](docs/getting-started.md) | The intended setup, once it exists |
 | [CLI reference](docs/cli-reference.md) | Command surface |

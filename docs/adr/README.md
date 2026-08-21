@@ -17,3 +17,4 @@ is part of its weight.
 | [0009](0009-admin-authenticates-with-passkeys.md) | Admin authenticates with passkeys, not a stored token | Nothing on disk to steal, and a browser is the only trusted display |
 | [0010](0010-recovery-via-keypair-not-a-copied-key.md) | Recovery via a recovery keypair, not a copied key | A master key that appears in logs has leaked |
 | [0011](0011-rotation-uses-dual-credentials-and-a-linear-chain.md) | Rotation creates a second credential; a linear chain | Mutating in place guarantees a window where production is down |
+| [0012](0012-no-backward-compatibility-before-first-release.md) | No backward compatibility before the first release | Migration code for a database nobody has is pure carrying cost |

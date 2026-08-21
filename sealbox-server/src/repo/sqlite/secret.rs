@@ -38,52 +38,6 @@ impl SqliteSecretRepo {
             (),
         )?;
 
-        Self::drop_namespace_column(conn)?;
-
-        Ok(())
-    }
-
-    /// `namespace` was part of the primary key but never held a value. SQLite cannot drop a
-    /// column that participates in a primary key, so the table is rebuilt. Idempotent: does
-    /// nothing once the column is gone.
-    fn drop_namespace_column(conn: &rusqlite::Connection) -> Result<()> {
-        if !super::has_column(conn, "secrets", "namespace")? {
-            return Ok(());
-        }
-        info!("Migrating `secrets`: dropping the unused `namespace` column");
-
-        let before: i64 = conn.query_row("SELECT count(*) FROM secrets", [], |r| r.get(0))?;
-
-        conn.execute_batch(
-            "BEGIN;
-             CREATE TABLE secrets_migrated (
-                key TEXT NOT NULL,
-                version INTEGER NOT NULL DEFAULT 1,
-                encrypted_data BLOB NOT NULL,
-                encrypted_data_key BLOB NOT NULL,
-                master_key_id BLOB NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                expires_at INTEGER,
-                metadata TEXT,
-                PRIMARY KEY (key, version)
-             );
-             INSERT INTO secrets_migrated
-                SELECT key, version, encrypted_data, encrypted_data_key, master_key_id,
-                       created_at, updated_at, expires_at, metadata
-                FROM secrets;
-             DROP TABLE secrets;
-             ALTER TABLE secrets_migrated RENAME TO secrets;
-             COMMIT;",
-        )?;
-
-        let after: i64 = conn.query_row("SELECT count(*) FROM secrets", [], |r| r.get(0))?;
-        if before != after {
-            return Err(SealboxError::DatabaseError(format!(
-                "secrets migration lost rows: {before} before, {after} after"
-            )));
-        }
-        info!("Migrated {} secrets", after);
         Ok(())
     }
 }
@@ -895,59 +849,6 @@ mod tests {
             let secret = repo.get_secret(key).expect("Should read secret");
             assert_eq!(secret.master_key_id, new_key.id);
         }
-    }
-
-    #[test]
-    fn test_namespace_migration_preserves_rows_and_is_idempotent() {
-        let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
-
-        // A database as it existed before this change: namespace in the primary key.
-        conn.execute_batch(
-            "CREATE TABLE secrets (
-                namespace TEXT NOT NULL,
-                key TEXT NOT NULL,
-                version INTEGER NOT NULL DEFAULT 1,
-                encrypted_data BLOB NOT NULL,
-                encrypted_data_key BLOB NOT NULL,
-                master_key_id BLOB NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                expires_at INTEGER,
-                metadata TEXT,
-                PRIMARY KEY (namespace, key, version)
-             );
-             INSERT INTO secrets VALUES
-                ('', 'legacy', 1, x'0102', x'0304', x'05', 100, 100, NULL, NULL),
-                ('', 'legacy', 2, x'0607', x'0809', x'05', 200, 200, NULL, NULL);",
-        )
-        .expect("Should create the pre-migration schema");
-
-        SqliteSecretRepo::init_table(&conn).expect("Should migrate");
-
-        assert!(
-            !super::super::has_column(&conn, "secrets", "namespace").expect("Should read schema"),
-            "namespace column should be gone"
-        );
-        let count: i64 = conn
-            .query_row("SELECT count(*) FROM secrets", [], |r| r.get(0))
-            .expect("Should count rows");
-        assert_eq!(count, 2, "no row may be lost");
-
-        let data: Vec<u8> = conn
-            .query_row(
-                "SELECT encrypted_data FROM secrets WHERE key = 'legacy' AND version = 2",
-                [],
-                |r| r.get(0),
-            )
-            .expect("Should read the migrated row");
-        assert_eq!(data, vec![0x06, 0x07], "ciphertext must survive verbatim");
-
-        // Running it again must be a no-op, not a second rebuild.
-        SqliteSecretRepo::init_table(&conn).expect("Should be idempotent");
-        let count: i64 = conn
-            .query_row("SELECT count(*) FROM secrets", [], |r| r.get(0))
-            .expect("Should count rows");
-        assert_eq!(count, 2);
     }
 
     #[test]
