@@ -56,10 +56,10 @@ The security fix, last, because it depends on 5.
 
 ## 7. Tests and documentation
 
-- [ ] 7.1 Add a test that a rekey request carrying private key material is rejected and nothing is written
-- [ ] 7.2 Add a test that rekey from a cold source key is refused
-- [ ] 7.3 Add a test that no response carries `Access-Control-Allow-*` headers, in a debug build
-- [ ] 7.4 Add a test that a non-`v1` version is rejected
+- [x] 7.1 Add a test that a rekey request carrying private key material is rejected and nothing is written. The payload now uses `deny_unknown_fields`, so an old client sending `old_private_key_pem` fails loudly instead of having its private key silently discarded
+- [x] 7.2 Add a test that rekey from a cold source key is refused
+- [x] 7.3 Add a test that no response carries `Access-Control-Allow-*` headers, in a debug build. These are the first HTTP-level tests in the repo, and they immediately found that `route_layer` had put the health probes behind authentication — so Kubernetes probes, which send no credential, were being rejected. Fixed by registering public routes after the auth layer
+- [x] 7.4 Add a test that a non-`v1` version is rejected
 - [ ] 7.5 Update `docs/configuration.md` for `SEALBOX_MASTER_KEY_PATH` and the removal of `SEALBOX_ALLOW_CORS`
 - [ ] 7.6 Update `docs/cli-reference.md` for the renamed rekey command
 - [ ] 7.7 Remove the stale web UI, CORS, and rotate references from `CLAUDE.md`'s repository layout and cleanup list

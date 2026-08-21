@@ -10,6 +10,10 @@ use crate::{
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+/// Unknown fields are rejected rather than ignored. A client still sending
+/// `old_private_key_pem` — an old CLI, a script, a copied example — gets a clear failure
+/// instead of silently transmitting its private key to a server that quietly discards it.
+#[serde(deny_unknown_fields)]
 pub(crate) struct RekeyPayload {
     new_master_key_id: Uuid,
     old_master_key_id: Uuid,

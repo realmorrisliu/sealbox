@@ -64,11 +64,11 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
 
     // No CORS layer, and no configuration to add one: sealbox serves no browser client
     // (ADR 0004). Behaviour is identical in debug and release builds.
+    // `route_layer` applies only to routes registered *before* it, so the authenticated
+    // routes are declared first and the public ones after. Declaring the health probes first
+    // silently put them behind the auth middleware, which meant Kubernetes probes — which send
+    // no credential — were being rejected.
     Ok(Router::new()
-        // Health check endpoints without authentication (Kubernetes standard)
-        .route("/", get(root))
-        .route("/healthz/live", get(liveness_probe))
-        .route("/healthz/ready", get(readiness_probe))
         // Business endpoints requiring authentication
         .route("/v1/secrets", get(secret::list))
         .route(
@@ -86,6 +86,10 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             axum::routing::delete(admin::cleanup_expired),
         )
         .route_layer(from_fn_with_state(state.clone(), static_auth))
+        // Public endpoints, registered after the auth layer so it does not cover them
+        .route("/", get(root))
+        .route("/healthz/live", get(liveness_probe))
+        .route("/healthz/ready", get(readiness_probe))
         .with_state(state)
         .layer(request_id_middleware))
 }
