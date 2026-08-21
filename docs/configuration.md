@@ -1,6 +1,9 @@
 # Configuration
 
-> **This describes the target configuration. It is not implemented yet** — see the status note in
+> **Partly implemented.** The server section's `SEALBOX_STORE_PATH`, `SEALBOX_LISTEN_ADDR`, and
+> `SEALBOX_MASTER_KEY_PATH` work today, as does `SEALBOX_AUTH_TOKEN` — a single static token that
+> identities and passkeys will replace. Everything about the runner, passkeys, invites, and
+> `SEALBOX_PUBLIC_URL` describes the target and does not exist yet. See
 > [`README.md`](../README.md).
 
 Three things are configured separately, because they are trusted differently: the **server** holds
@@ -14,10 +17,11 @@ Environment variables. On Fly.io, non-secret values go in `fly.toml`, secrets vi
 | Variable | Required | Meaning |
 |---|:--:|---|
 | `SEALBOX_STORE_PATH` | ✓ | SQLite path, on the persistent volume |
-| `SEALBOX_MASTER_KEY_PATH` | ✓ | Server master key, on the persistent volume, `0600` |
+| `SEALBOX_MASTER_KEY_PATH` | ✓ | Server master key(s) on the persistent volume, `0600`. Comma-separated, **most-current first** — see below. |
 | `SEALBOX_LISTEN_ADDR` | ✓ | e.g. `0.0.0.0:8080` |
 | `SEALBOX_PUBLIC_URL` | ✓ | Public HTTPS URL. **Also the WebAuthn relying-party ID** — changing it invalidates every registered passkey. |
-| `SEALBOX_BOOTSTRAP_TOKEN` | first run | Accepted only while zero identities exist, within 30 minutes of start, once. Unset it afterwards. |
+| `SEALBOX_AUTH_TOKEN` | ✓ *(today)* | The single static bearer token. Replaced by identities and passkeys; see [ADR 0009](adr/0009-admin-authenticates-with-passkeys.md). |
+| `SEALBOX_BOOTSTRAP_TOKEN` | first run *(planned)* | Accepted only while zero identities exist, within 30 minutes of start, once. Unset it afterwards. |
 
 ```toml
 # fly.toml
@@ -37,6 +41,36 @@ fly secrets set SEALBOX_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
 # after `sealbox init`:
 fly secrets unset SEALBOX_BOOTSTRAP_TOKEN
 ```
+
+### Master keys move as a list
+
+`SEALBOX_MASTER_KEY_PATH` takes one or more paths. The first is the key new secrets are
+encrypted under; any others are retired but still loaded, so the secrets already under them stay
+readable and can be rekeyed onto the current one.
+
+```bash
+# steady state
+SEALBOX_MASTER_KEY_PATH=/data/master.pem
+
+# while rotating: the old key stays listed until nothing references it
+SEALBOX_MASTER_KEY_PATH=/data/master-2.pem,/data/master-1.pem
+```
+
+Without this, rotating the server's master key would deadlock — the private half needed to read
+the existing secrets would already be gone.
+
+Sealbox will **not generate a key for you**. A mistyped path would silently produce a fresh key,
+leaving every stored secret encrypted under one nobody holds, and the failure would only surface
+later on a read. Generate it explicitly:
+
+```bash
+openssl genrsa -out master.pem 2048      # PKCS#8 and PKCS#1 are both accepted
+chmod 600 master.pem
+```
+
+A secret whose master key is not in this list is **cold**: the server cannot decrypt it under any
+circumstances, including rekey. That is the mechanism behind ADR 0001's two tiers, and it is not
+an error state — it is how a credential is kept beyond the reach of a compromised server.
 
 > **`SEALBOX_PUBLIC_URL` is load-bearing.** WebAuthn credentials are bound to a domain. Moving to a
 > new hostname means re-registering every passkey — recoverable (the recovery key decrypts the

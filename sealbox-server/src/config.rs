@@ -20,27 +20,27 @@ impl SealboxConfig {
     pub fn from_env() -> Result<Self, String> {
         info!("Loading Sealbox configuration from environment variables...");
 
-        let auth_token = match env::var("AUTH_TOKEN") {
+        let auth_token = match env::var("SEALBOX_AUTH_TOKEN") {
             Ok(val) if !val.trim().is_empty() => val,
             _ => {
-                error!("Environment variable AUTH_TOKEN is missing or empty");
-                return Err("AUTH_TOKEN is missing or empty".into());
+                error!("Environment variable SEALBOX_AUTH_TOKEN is missing or empty");
+                return Err("SEALBOX_AUTH_TOKEN is missing or empty".into());
             }
         };
 
-        let store_path = match env::var("STORE_PATH") {
+        let store_path = match env::var("SEALBOX_STORE_PATH") {
             Ok(val) if !val.trim().is_empty() => val,
             _ => {
-                error!("Environment variable STORE_PATH is missing or empty");
-                return Err("STORE_PATH is missing or empty".into());
+                error!("Environment variable SEALBOX_STORE_PATH is missing or empty");
+                return Err("SEALBOX_STORE_PATH is missing or empty".into());
             }
         };
 
-        let listen_addr = match env::var("LISTEN_ADDR") {
+        let listen_addr = match env::var("SEALBOX_LISTEN_ADDR") {
             Ok(val) if !val.trim().is_empty() => val,
             _ => {
-                error!("Environment variable LISTEN_ADDR is missing or empty");
-                return Err("LISTEN_ADDR is missing or empty".into());
+                error!("Environment variable SEALBOX_LISTEN_ADDR is missing or empty");
+                return Err("SEALBOX_LISTEN_ADDR is missing or empty".into());
             }
         };
 

@@ -60,12 +60,12 @@ The security fix, last, because it depends on 5.
 - [x] 7.2 Add a test that rekey from a cold source key is refused
 - [x] 7.3 Add a test that no response carries `Access-Control-Allow-*` headers, in a debug build. These are the first HTTP-level tests in the repo, and they immediately found that `route_layer` had put the health probes behind authentication — so Kubernetes probes, which send no credential, were being rejected. Fixed by registering public routes after the auth layer
 - [x] 7.4 Add a test that a non-`v1` version is rejected
-- [ ] 7.5 Update `docs/configuration.md` for `SEALBOX_MASTER_KEY_PATH` and the removal of `SEALBOX_ALLOW_CORS`
-- [ ] 7.6 Update `docs/cli-reference.md` for the renamed rekey command
-- [ ] 7.7 Remove the stale web UI, CORS, and rotate references from `CLAUDE.md`'s repository layout and cleanup list
-- [ ] 7.8 Final verification: `cargo fmt --check`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`
+- [x] 7.5 Update `docs/configuration.md` for `SEALBOX_MASTER_KEY_PATH` and the removal of `SEALBOX_ALLOW_CORS`. Also prefixed the remaining server env vars with `SEALBOX_` — adding one prefixed variable alongside three unprefixed ones was an inconsistency this change introduced
+- [x] 7.6 Update `docs/cli-reference.md` for the renamed rekey command — it describes the target command surface, which has no client-side rekey, so nothing there referred to the old one
+- [x] 7.7 Remove the stale web UI, CORS, and rotate references from `CLAUDE.md`'s repository layout and cleanup list
+- [x] 7.8 Final verification: `cargo fmt --check`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`
 
 ## 8. Migration runbook
 
-- [ ] 8.1 Write the operator steps into `docs/`: back up the database file, generate a server master key, set `SEALBOX_MASTER_KEY_PATH`, start, verify
-- [ ] 8.2 State plainly that pre-existing secrets stay on cold keys and are re-imported with the CLI holding their private key, and why no migration path is offered
+- [x] 8.1 Write the operator steps into `docs/`: back up the database file, generate a server master key, set `SEALBOX_MASTER_KEY_PATH`, start, verify
+- [x] 8.2 State plainly that pre-existing secrets stay on cold keys and are re-imported with the CLI holding their private key, and why no migration path is offered

@@ -58,8 +58,8 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
 
 # Default environment variables
-ENV STORE_PATH=/data/sealbox.db
-ENV LISTEN_ADDR=0.0.0.0:8080
+ENV SEALBOX_STORE_PATH=/data/sealbox.db
+ENV SEALBOX_LISTEN_ADDR=0.0.0.0:8080
 
 # Default command
 CMD ["sealbox-server"]

@@ -14,8 +14,9 @@ is being replaced in significant part.
 | Decisions and their reasoning | [`docs/adr/`](docs/adr/) — 11 ADRs |
 | Vocabulary — use these words, no synonyms | [`CONTEXT.md`](CONTEXT.md) |
 
-Nothing in the MVP has been built yet. When you touch this repo, you are either doing one of the
-four cleanups or building an MVP item — both listed under **Work order** below.
+**`retire-legacy-surface` is done** — the four cleanups below are complete, along with the
+server-held master key they turned out to require. Nothing else in the MVP has been built. When
+you touch this repo you are building an MVP item, listed under **Work order** below.
 
 ## What sealbox is
 
@@ -70,28 +71,32 @@ Getting these wrong makes the codebase incoherent:
 
 ## Work order
 
-### Four cleanups first — each justified on its own
+### Done: `retire-legacy-surface`
 
-1. **Delete `RotateMasterKeyPayload.old_private_key_pem`** (`api/handler/master_key.rs`). It
-   requires clients to POST a private key in the clear; anyone reading server memory, request
-   bodies, or logs during a rotation decrypts the entire history.
-2. **Move `rusqlite::Connection` out of the repo traits** (`repo/mod.rs`) into the implementors,
-   and drop `conn_pool.lock()` from the handlers — a database lock never belonged in the HTTP
-   layer.
-3. **Delete `sealbox-web` and the CORS layer** (ADR 0004). ~4500 lines of TypeScript, four
-   locales, one pnpm workspace; `api/mod.rs` currently allows any origin in debug builds.
-4. **Rename `rotate_master_key` → `rekey`.** `rotate` is now reserved for values.
+The private-key rekey endpoint, `sealbox-web`, the CORS layer, the `Version` enum, and
+`Secret.namespace` are all gone; `rotate_master_key` is now `rekey`; the repo traits own their
+connection and mention no rusqlite type; routes hardcode `/v1/`.
 
-Also dead: `Version::V2`/`V3` in `api/mod.rs` (every handler returns `InvalidApiVersion`), and
-`Secret.namespace`, which has been `String::new()` since birth yet is part of the SQLite primary
-key.
+Removing the client-supplied private key required the server to hold a master key of its own, so
+**`SEALBOX_MASTER_KEY_PATH`** now exists — a comma-separated list, most-current first, so
+rotating it does not deadlock on the private half needed to read the old secrets.
+`master_keys.server_held` records which keys the server holds; a secret under any other key is
+**cold** and cannot be decrypted here, by design. All server env vars now carry a `SEALBOX_`
+prefix.
+
+Two bugs surfaced while doing it, both fixed: rekey committed partial results despite the spec
+requiring all-or-nothing, and `route_layer` had put the health probes behind authentication, so
+Kubernetes probes had been failing wherever this was deployed.
+
+Existing deployments: [`docs/migration-server-held-master-key.md`](docs/migration-server-held-master-key.md).
+Every pre-existing master key is cold, so those secrets are re-imported rather than rekeyed.
 
 ### Then the MVP — ten items
 
 Acceptance test: the author's own infrastructure runs on it.
 
 1. **Server on Fly.io** — master key and SQLite on the volume, Litestream to object storage.
-   Includes the initialisation ceremony: deploy-time bootstrap token (never logged, single use,
+   The master key itself already exists; what remains is the hosting and the ceremony. Includes the initialisation ceremony: deploy-time bootstrap token (never logged, single use,
    time-boxed, zero-identity only) and recovery-keypair backup with **mandatory re-entry
    verification** (ADR 0010).
 2. **`identities`** — role per human/agent/runner, revocable. Single-use 24h invites bound to a
@@ -124,7 +129,7 @@ the proof the design is right.
   encryption), `repo/` (SQLite via rusqlite + serde_rusqlite), `config.rs`, `error.rs`
 - **`sealbox-cli/`** — `commands/`, `config.rs` (TOML + env overrides), `output.rs`. Reuses the
   server's crypto modules.
-- **`sealbox-web/`** — **being deleted**, see cleanup 3.
+- **`sealbox-server/tests/`** — HTTP-level tests: routing, middleware, payload rejection.
 
 ## Commands
 
