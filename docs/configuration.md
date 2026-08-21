@@ -1,10 +1,9 @@
 # Configuration
 
-> **Partly implemented.** The server section's `SEALBOX_STORE_PATH`, `SEALBOX_LISTEN_ADDR`, and
-> `SEALBOX_MASTER_KEY_PATH` work today, as does `SEALBOX_AUTH_TOKEN` — a single static token that
-> identities and passkeys will replace. Everything about the runner, passkeys, invites, and
-> `SEALBOX_PUBLIC_URL` describes the target and does not exist yet. See
-> [`README.md`](../README.md).
+> **Partly implemented.** Everything in the server section works today except `SEALBOX_PUBLIC_URL`,
+> which belongs to passkeys. Identities, roles, and the audit trail exist; **passkeys, invites, and
+> join tokens do not** — humans and agents alike currently authenticate with a bearer token.
+> Everything about the runner describes the target. See [`README.md`](../README.md).
 
 Three things are configured separately, because they are trusted differently: the **server** holds
 everything, the **runner** holds plaintext transiently, and the **CLI** holds nothing but a
@@ -20,8 +19,8 @@ Environment variables. On Fly.io, non-secret values go in `fly.toml`, secrets vi
 | `SEALBOX_MASTER_KEY_PATH` | ✓ | Server master key(s) on the persistent volume, `0600`. Comma-separated, **most-current first** — see below. |
 | `SEALBOX_LISTEN_ADDR` | ✓ | e.g. `0.0.0.0:8080` |
 | `SEALBOX_PUBLIC_URL` | ✓ | Public HTTPS URL. **Also the WebAuthn relying-party ID** — changing it invalidates every registered passkey. |
-| `SEALBOX_AUTH_TOKEN` | ✓ *(today)* | The single static bearer token. Replaced by identities and passkeys; see [ADR 0009](adr/0009-admin-authenticates-with-passkeys.md). |
-| `SEALBOX_BOOTSTRAP_TOKEN` | first run *(planned)* | Accepted only while zero identities exist, within 30 minutes of start, once. Unset it afterwards. |
+| `SEALBOX_BOOTSTRAP_TOKEN` | first run | Creates the first admin. Accepted only while zero identities exist and only within the window below. Unset it afterwards. |
+| `SEALBOX_BOOTSTRAP_WINDOW_SECS` | | How long the bootstrap token stays usable. Default 1800. |
 
 ```toml
 # fly.toml
@@ -38,9 +37,13 @@ Environment variables. On Fly.io, non-secret values go in `fly.toml`, secrets vi
 
 ```bash
 fly secrets set SEALBOX_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
-# after `sealbox init`:
+# after claiming the server:
 fly secrets unset SEALBOX_BOOTSTRAP_TOKEN
 ```
+
+The window exists because leaving the token in the environment after use is the normal outcome,
+not the exceptional one. After it closes, the token is refused even on a server with no
+identities — restart to reopen it.
 
 ### Master keys move as a list
 
@@ -163,14 +166,21 @@ Overridden by environment, then by flags:
 | `SEALBOX_TOKEN` | The bearer token, for agent and operator identities |
 | `SEALBOX_OUTPUT` | `output` |
 
-**There is no admin credential here.** Admin operations authenticate with a passkey per operation
-or per `sealbox admin` session, and that session exists only in process memory
-([ADR 0009](adr/0009-admin-authenticates-with-passkeys.md)). An agent that reads every file on
-your machine finds nothing that can approve a grant.
+`token` is **this machine's identity token**, not a shared secret — every caller has its own, and
+revoking one affects nobody else. It is shown once, when the identity is created.
 
-Agent and runner identities do hold bearer tokens, since neither has a fingerprint. Their
-authority is bounded: an agent may only run grants that already exist, and a runner may only claim
-jobs addressed to it.
+Roles are ordered, and each admits everything below it:
+
+| Role | May |
+|---|---|
+| `agent` | read secrets and metadata, read the audit trail, invoke approved capabilities |
+| `operator` | additionally store and delete secrets |
+| `admin` | additionally manage identities and master keys |
+
+> **Not yet: passkeys.** [ADR 0009](adr/0009-admin-authenticates-with-passkeys.md) replaces admin
+> authentication so that no admin credential exists on disk at all. Until that lands, an admin
+> token is a file on your machine — keep it off machines where an agent runs, or accept that an
+> agent there could read it.
 
 ## Security notes
 

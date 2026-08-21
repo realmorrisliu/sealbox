@@ -1,13 +1,13 @@
 # Getting Started
 
-> **This describes the target setup. It is not implemented yet** — see the status note in
-> [`README.md`](../README.md). Written down now because the ceremony below is part of the design,
-> not an afterthought.
+> **Partly implemented.** Steps 1, 2, and 3 work today in a simpler form — bootstrap and identity
+> creation exist; the recovery-keypair ceremony and passkeys do not. The runner and grants are the
+> target. Each step is marked. See [`README.md`](../README.md).
 
-Setting sealbox up takes about half an hour, once. There are four steps and each exists for a
-reason; none of them is boilerplate.
+Setting sealbox up takes about half an hour, once. Every step exists for a reason; none of them is
+boilerplate.
 
-## 1. Bring the server up
+## 1. Bring the server up *(implemented)*
 
 ```bash
 fly launch
@@ -29,7 +29,11 @@ fly secrets unset SEALBOX_BOOTSTRAP_TOKEN
 > should not be able to claim your server. This is the same reason GitLab and Grafana take their
 > initial credential from the environment.
 
-## 2. Become admin, and back up the master key
+## 2. Become admin *(partly implemented)*
+
+> **Implemented today**, in a simpler form: `sealbox-cli bootstrap --token <value> --name root`
+> creates the first admin and prints its token once. The recovery keypair ceremony and passkey
+> registration described below are the target and do not exist yet.
 
 ```bash
 sealbox init --server https://sealbox.example.dev --bootstrap-token <value>
@@ -53,7 +57,21 @@ stands between a lost server and lost credentials. Since it is also a master key
 not hold ([ADR 0001](adr/0001-broker-over-e2ee.md)), it decrypts the database directly, and works
 even if every passkey is lost. **Authentication and encryption fail independently, by design.**
 
-## 3. Put a runner in your cluster
+## 3. Create an identity for each caller *(implemented)*
+
+```bash
+sealbox-cli identity create claude-code --role agent
+sealbox-cli identity create alice --role operator
+```
+
+Each token is printed once. Give an agent the narrowest role that lets it do its job: an `agent`
+reads and invokes but cannot store secrets or manage identities, and every attempt it makes is
+recorded whether it succeeds or is refused.
+
+Revoking one identity is immediate and affects no one else — which is the whole reason there is
+no shared token.
+
+## 4. Put a runner in your cluster *(target)*
 
 ```bash
 sealbox identity create prod-cluster --role runner   # → join token, 15 minutes, single use
@@ -76,7 +94,7 @@ ServiceAccount is its entire authority over the cluster; scope it to exactly wha
 need, and add a second runner with a narrower ServiceAccount rather than reaching for a
 permissions system inside sealbox.
 
-## 4. Move your credentials in
+## 5. Move your credentials in *(target)*
 
 ```bash
 sealbox admin                          # one passkey prompt for the whole session
@@ -98,7 +116,7 @@ No import command is needed for bulk work — a shell loop inside one admin sess
 sealbox admin --exec 'for f in ~/creds/*; do set app/$(basename $f) < $f; done'
 ```
 
-## 5. Grant the first capability
+## 6. Grant the first capability *(target)*
 
 Have an agent draft it by imitating [`examples/grants/`](../examples/grants/):
 

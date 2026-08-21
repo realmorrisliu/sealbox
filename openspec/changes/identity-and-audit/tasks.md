@@ -67,8 +67,8 @@
 
 ## 9. Documentation
 
-- [ ] 9.1 Update `docs/configuration.md`: `SEALBOX_AUTH_TOKEN` gone, `SEALBOX_BOOTSTRAP_TOKEN` in, identity token in the CLI config
-- [ ] 9.2 Update `docs/cli-reference.md` for the identity and audit commands that now exist
-- [ ] 9.3 Update `docs/getting-started.md` so the first steps are bootstrap and identity creation
-- [ ] 9.4 Update `CLAUDE.md`: MVP item 2 partially done — identities and audit yes, passkeys and enrolment flows not yet
-- [ ] 9.5 Final verification: `cargo fmt --check`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`
+- [x] 9.1 Update `docs/configuration.md`: `SEALBOX_AUTH_TOKEN` gone, `SEALBOX_BOOTSTRAP_TOKEN` in, identity token in the CLI config
+- [x] 9.2 Update `docs/cli-reference.md` for the identity and audit commands that now exist
+- [x] 9.3 Update `docs/getting-started.md` so the first steps are bootstrap and identity creation
+- [x] 9.4 Update `CLAUDE.md`: MVP item 2 partially done — identities and audit yes, passkeys and enrolment flows not yet
+- [x] 9.5 Final verification: `cargo fmt --check`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`

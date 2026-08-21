@@ -1,7 +1,9 @@
 # CLI Reference
 
-> **This describes the target command surface. It is not implemented yet** — see the status note
-> in [`README.md`](../README.md).
+> **Partly implemented.** `identity`, `audit`, and `bootstrap` exist and are documented below as
+> they actually behave. `grant`, `run`, `rotate`, `runner`, `set`, `gen`, and `admin` describe the
+> target and do not exist yet — today's secret commands are `sealbox-cli secret get|set|delete`.
+> See [`README.md`](../README.md).
 
 One binary, `sealbox`, used by humans, agents, and the runner alike. What differs is the identity
 it authenticates as.
@@ -10,19 +12,81 @@ it authenticates as.
 
 ## Command surface at a glance
 
+Roles are ordered: each admits everything below it.
+
 | Command | admin | operator | agent | runner |
 |---|:--:|:--:|:--:|:--:|
-| `run`, `grants`, `ls`, `audit` | ✓ | ✓ | ✓ | |
-| `rotate` (via an approved grant) | ✓ | ✓ | ✓ | |
-| `set`, `gen` | ✓ | ✓ | | |
-| `grant add/rm`, `identity *` | ✓ | | | |
-| `runner` | | | | ✓ |
+| `audit`, read secrets and metadata | ✓ | ✓ | ✓ | |
+| `run`, `rotate` (via an approved grant) *(target)* | ✓ | ✓ | ✓ | |
+| store and delete secrets | ✓ | ✓ | | |
+| `identity *`, master keys | ✓ | | | |
+| `grant add/rm` *(target)* | ✓ | | | |
+| `runner` *(target)* | | | | ✓ |
 
-Admin commands require a **passkey approval**, not a stored token ([ADR 0009](adr/0009-admin-authenticates-with-passkeys.md)).
+An identity that is authenticated but lacks the role gets **403**, distinct from the **401** of a
+missing or unknown credential — so a caller can tell a missing credential from an insufficient one.
+
+Admin commands will require a **passkey approval** rather than a stored token
+([ADR 0009](adr/0009-admin-authenticates-with-passkeys.md)); today they use the admin identity's
+token.
 
 ---
 
-## Setup
+## Identities *(implemented)*
+
+### `sealbox-cli bootstrap --token <value> [--name <name>]`
+
+Claims a server that has no identities, creating the first admin and printing its token once.
+
+```bash
+sealbox-cli bootstrap --token "$SEALBOX_BOOTSTRAP_TOKEN" --name root
+```
+
+Refused unless all three hold: no identity exists, the token matches what the server was started
+with, and the bootstrap window is still open. Unset the environment variable afterwards.
+
+### `sealbox-cli identity create <name> --role <agent|operator|admin>`
+
+Creates an identity and prints its token **once**. There is no way to retrieve it later; if it is
+lost, revoke the identity and create another.
+
+```bash
+sealbox-cli identity create claude-code --role agent
+sealbox-cli identity create alice --role operator
+```
+
+Roles are ordered — each admits everything below it:
+
+| Role | May |
+|---|---|
+| `agent` | read secrets and metadata, read the audit trail, invoke approved capabilities |
+| `operator` | additionally store and delete secrets |
+| `admin` | additionally manage identities and master keys |
+
+### `sealbox-cli identity list` / `identity revoke <name>`
+
+Listing never shows tokens. Revocation takes effect on that identity's next request and affects
+no one else; the identity is marked rather than deleted, so audit records naming it stay readable.
+
+### `sealbox-cli audit [--identity X] [--action Y] [--since D] [--limit N]`
+
+```bash
+sealbox-cli audit --since 24h
+sealbox-cli audit --identity claude-code --since 7d
+sealbox-cli audit --action "PUT /v1/secrets/db-password"
+```
+
+`--since` takes `90s`, `30m`, `24h`, `7d`, or a Unix timestamp.
+
+Every attempt is recorded, including refusals — an agent reaching for something its role does not
+permit is exactly the signal worth having. Readable by every identity, including agents:
+concealing it protects nothing an agent could not already observe.
+
+Records name the *resource*, never its value.
+
+---
+
+## Setup *(target)*
 
 ### `sealbox init`
 

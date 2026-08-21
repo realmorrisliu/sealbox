@@ -59,8 +59,13 @@ The server cannot execute: a hosted instance has no route into your VPC, and giv
 expose production to the internet. The runner polls **outbound**, so the cluster needs no inbound
 port. The CLI is a remote control.
 
-**Humans authenticate with passkeys** (ADR 0009) — there is no admin credential on disk. Agents
-and runners hold bearer tokens, because they have no fingers.
+**Humans will authenticate with passkeys** (ADR 0009) — no admin credential on disk. *Not built
+yet:* every identity currently holds a bearer token. Authorisation does not care how an identity
+authenticated, so passkeys replace how a credential is presented, not what it resolves to.
+
+**Authorisation lives in the router**, not in handlers: routes are grouped by required role and
+each group carries its own gate, so a route not placed in a group is not routed at all. Adding an
+endpoint without choosing a group makes it 404, never open.
 
 ## Vocabulary that changed
 
@@ -103,9 +108,9 @@ Acceptance test: the author's own infrastructure runs on it.
    The master key itself already exists; what remains is the hosting and the ceremony. Includes the initialisation ceremony: deploy-time bootstrap token (never logged, single use,
    time-boxed, zero-identity only) and recovery-keypair backup with **mandatory re-entry
    verification** (ADR 0010).
-2. **`identities`** — role per human/agent/runner, revocable. Single-use 24h invites bound to a
-   named identity for humans; 15-minute join tokens exchanged for a self-generated keypair for
-   runners.
+2. **`identities`** — *partly done.* Identities, three ordered roles, hashed tokens, revocation,
+   the audit trail, and a bounded bootstrap all exist. **Still missing:** passkeys (ADR 0009),
+   single-use invites for humans, join tokens for runners, and the `runner` role itself.
 3. **`sealbox set` and `sealbox gen`.**
 4. **Grants stored server-side**, including script bodies, with parameters, a declared runner, and
    three injection forms (env var, `0600` temp file, env-file). Execution is argv, never a shell.
