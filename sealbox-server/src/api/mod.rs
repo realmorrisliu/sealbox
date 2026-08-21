@@ -2,9 +2,9 @@ use axum::{
     Router,
     extract::State,
     http::{HeaderName, Request},
-    middleware::from_fn_with_state,
+    middleware::{from_fn, from_fn_with_state},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, put},
 };
 use http::StatusCode;
 use serde_json::json;
@@ -17,8 +17,8 @@ use tracing::{error, info_span};
 
 use crate::{
     api::{
-        auth::static_auth,
-        handler::{admin, master_key, secret},
+        auth::{authenticate_and_audit, require_admin, require_agent, require_operator},
+        handler::{admin, audit, identity, master_key, secret},
         state::AppState,
     },
     config::SealboxConfig,
@@ -28,7 +28,7 @@ use crate::{
 mod auth;
 mod handler;
 mod path;
-mod state;
+pub(crate) mod state;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
@@ -64,17 +64,27 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
 
     // No CORS layer, and no configuration to add one: sealbox serves no browser client
     // (ADR 0004). Behaviour is identical in debug and release builds.
-    // `route_layer` applies only to routes registered *before* it, so the authenticated
-    // routes are declared first and the public ones after. Declaring the health probes first
-    // silently put them behind the auth middleware, which meant Kubernetes probes — which send
-    // no credential — were being rejected.
-    Ok(Router::new()
-        // Business endpoints requiring authentication
+    // Routes are grouped by the role they require, and each group carries its own gate.
+    // A route that is not placed in a group is not in the router at all, so a forgotten
+    // endpoint 404s rather than serving. A per-handler check has the opposite default.
+    //
+    // `route_layer` applies only to routes registered before it, which is how the health probes
+    // once ended up behind authentication. The public routes are therefore registered last, on
+    // the outermost router, after every auth layer.
+    let agent_routes = Router::new()
         .route("/v1/secrets", get(secret::list))
+        .route("/v1/secrets/{secret_key}", get(secret::get))
+        .route("/v1/audit", get(audit::list))
+        .route_layer(from_fn(require_agent));
+
+    let operator_routes = Router::new()
         .route(
             "/v1/secrets/{secret_key}",
-            get(secret::get).put(secret::save).delete(secret::delete),
+            put(secret::save).delete(secret::delete),
         )
+        .route_layer(from_fn(require_operator));
+
+    let admin_routes = Router::new()
         .route(
             "/v1/master-key",
             get(master_key::list)
@@ -85,11 +95,23 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             "/v1/admin/cleanup-expired",
             axum::routing::delete(admin::cleanup_expired),
         )
-        .route_layer(from_fn_with_state(state.clone(), static_auth))
-        // Public endpoints, registered after the auth layer so it does not cover them
+        .route("/v1/identities", get(identity::list).post(identity::create))
+        .route(
+            "/v1/identities/{name}",
+            axum::routing::delete(identity::revoke),
+        )
+        .route_layer(from_fn(require_admin));
+
+    Ok(Router::new()
+        .merge(agent_routes)
+        .merge(operator_routes)
+        .merge(admin_routes)
+        .route_layer(from_fn_with_state(state.clone(), authenticate_and_audit))
+        // Public: no credential, and not audited. Registered after every auth layer.
         .route("/", get(root))
         .route("/healthz/live", get(liveness_probe))
         .route("/healthz/ready", get(readiness_probe))
+        .route("/v1/bootstrap", axum::routing::post(identity::bootstrap))
         .with_state(state)
         .layer(request_id_middleware))
 }

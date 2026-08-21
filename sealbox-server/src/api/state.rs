@@ -3,6 +3,7 @@ use tracing::info;
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::{
@@ -10,8 +11,9 @@ use crate::{
     crypto::master_key::PrivateMasterKey,
     error::{Result, SealboxError},
     repo::{
-        HealthRepo, MasterKeyRepo, MasterKeyStatus, SecretRepo, SqliteHealthRepo,
-        SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+        AuditRepo, HealthRepo, IdentityRepo, MasterKeyRepo, MasterKeyStatus, SecretRepo,
+        SqliteAuditRepo, SqliteHealthRepo, SqliteIdentityRepo, SqliteMasterKeyRepo,
+        SqliteSecretRepo, create_db_connection,
     },
 };
 
@@ -21,6 +23,12 @@ pub(crate) struct AppState {
     pub(crate) health_repo: Arc<dyn HealthRepo>,
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
     pub(crate) master_key_repo: Arc<dyn MasterKeyRepo>,
+    pub(crate) identity_repo: Arc<dyn IdentityRepo>,
+    pub(crate) audit_repo: Arc<dyn AuditRepo>,
+    /// When the bootstrap token stops being accepted. Stored as a deadline rather than a start
+    /// time so it is directly assertable, and so a token left in the environment after use —
+    /// the normal outcome — stops being useful on its own.
+    pub(crate) bootstrap_deadline: Instant,
     /// Private halves of the server's own master keys, by id. Only rekey needs these; a key
     /// absent from this map is cold, and nothing can decrypt secrets under it.
     pub(crate) server_keys: Arc<HashMap<Uuid, PrivateMasterKey>>,
@@ -32,6 +40,8 @@ impl AppState {
 
         SqliteSecretRepo::init_table(&conn)?;
         SqliteMasterKeyRepo::init_table(&conn)?;
+        SqliteIdentityRepo::init_table(&conn)?;
+        SqliteAuditRepo::init_table(&conn)?;
 
         // One connection, shared by the repositories. Nothing above this layer holds it:
         // a database lock has no business in an HTTP handler.
@@ -41,8 +51,11 @@ impl AppState {
             config: Arc::new(config.clone()),
             health_repo: Arc::new(SqliteHealthRepo::new(conn.clone())),
             secret_repo: Arc::new(SqliteSecretRepo::new(conn.clone())),
-            master_key_repo: Arc::new(SqliteMasterKeyRepo::new(conn)),
+            master_key_repo: Arc::new(SqliteMasterKeyRepo::new(conn.clone())),
+            identity_repo: Arc::new(SqliteIdentityRepo::new(conn.clone())),
+            audit_repo: Arc::new(SqliteAuditRepo::new(conn)),
             server_keys: Arc::new(HashMap::new()),
+            bootstrap_deadline: Instant::now() + config.bootstrap_window,
         };
 
         let server_keys = state.load_server_master_keys()?;

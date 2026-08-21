@@ -107,9 +107,12 @@ mod tests {
         AppState {
             master_key_repo: Arc::new(SqliteMasterKeyRepo::new(conn.clone())),
             secret_repo: Arc::new(SqliteSecretRepo::new(conn.clone())),
-            health_repo: Arc::new(SqliteHealthRepo::new(conn)),
+            health_repo: Arc::new(SqliteHealthRepo::new(conn.clone())),
+            identity_repo: Arc::new(crate::repo::SqliteIdentityRepo::new(conn.clone())),
+            audit_repo: Arc::new(crate::repo::SqliteAuditRepo::new(conn)),
             config: Arc::new(SealboxConfig::default()),
             server_keys: Arc::new(std::collections::HashMap::new()),
+            bootstrap_deadline: std::time::Instant::now(),
         }
     }
 

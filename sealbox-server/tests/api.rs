@@ -1,137 +1,466 @@
-//! HTTP-level tests for behavior that cannot be asserted from a handler in isolation:
-//! routing, middleware, and payload rejection.
+//! HTTP-level tests: routing, middleware, authentication, authorisation, and audit.
+//! These assert behavior no handler can assert in isolation.
 
-use axum::body::Body;
+use axum::{Router, body::Body};
 use http::{Request, StatusCode, header};
 use sealbox_server::{config::SealboxConfig, create_app};
 use tower::ServiceExt;
 
-/// A server with its own temporary store and master key. The key file is required at startup,
-/// deliberately: sealbox will not invent one.
-fn test_config(dir: &tempfile::TempDir) -> SealboxConfig {
-    let key_path = dir.path().join("master.pem");
-    let (private_pem, _) =
-        sealbox_server::crypto::master_key::generate_key_pair().expect("Should generate a key");
-    std::fs::write(&key_path, private_pem).expect("Should write the key file");
+const BOOTSTRAP_TOKEN: &str = "bootstrap-secret";
 
-    SealboxConfig {
-        auth_token: "test-token".to_string(),
-        store_path: dir.path().join("test.db").to_string_lossy().into_owned(),
-        listen_addr: "127.0.0.1:0".to_string(),
-        master_key_paths: vec![key_path.to_string_lossy().into_owned()],
+/// A server with its own temporary store. The router is cloned per request so state — including
+/// the identities created during a test — persists across them.
+struct TestServer {
+    app: Router,
+    _dir: tempfile::TempDir,
+}
+
+impl TestServer {
+    fn new() -> Self {
+        Self::with_bootstrap_window(std::time::Duration::from_secs(1800))
+    }
+
+    /// A server whose bootstrap window has already closed.
+    fn with_closed_bootstrap_window() -> Self {
+        Self::with_bootstrap_window(std::time::Duration::ZERO)
+    }
+
+    fn with_bootstrap_window(bootstrap_window: std::time::Duration) -> Self {
+        let dir = tempfile::tempdir().expect("Should create a temp dir");
+        let key_path = dir.path().join("master.pem");
+        let (private_pem, _) =
+            sealbox_server::crypto::master_key::generate_key_pair().expect("Should generate a key");
+        std::fs::write(&key_path, private_pem).expect("Should write the key file");
+
+        let config = SealboxConfig {
+            bootstrap_token: Some(BOOTSTRAP_TOKEN.to_string()),
+            store_path: dir.path().join("test.db").to_string_lossy().into_owned(),
+            listen_addr: "127.0.0.1:0".to_string(),
+            master_key_paths: vec![key_path.to_string_lossy().into_owned()],
+            bootstrap_window,
+        };
+
+        Self {
+            app: create_app(&config).expect("Should build the app"),
+            _dir: dir,
+        }
+    }
+
+    async fn send(&self, request: Request<Body>) -> http::Response<Body> {
+        self.app
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("Should handle request")
+    }
+
+    async fn json(&self, response: http::Response<Body>) -> serde_json::Value {
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .expect("Should read body");
+        serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
+    }
+
+    /// Claim the server and return the first admin's token.
+    async fn bootstrap(&self) -> String {
+        let response = self
+            .send(
+                post("/v1/bootstrap", None)
+                    .body(Body::from(
+                        serde_json::json!({ "token": BOOTSTRAP_TOKEN, "name": "root" }).to_string(),
+                    ))
+                    .expect("Should build request"),
+            )
+            .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "bootstrap should succeed"
+        );
+        self.json(response).await["token"]
+            .as_str()
+            .expect("Should return a token")
+            .to_string()
+    }
+
+    /// Create an identity with the given role and return its token.
+    async fn identity(&self, admin: &str, name: &str, role: &str) -> String {
+        let response = self
+            .send(
+                post("/v1/identities", Some(admin))
+                    .body(Body::from(
+                        serde_json::json!({ "name": name, "role": role }).to_string(),
+                    ))
+                    .expect("Should build request"),
+            )
+            .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "creating {name} as {role}"
+        );
+        self.json(response).await["token"]
+            .as_str()
+            .expect("Should return a token")
+            .to_string()
     }
 }
 
-async fn send(request: Request<Body>) -> http::Response<Body> {
-    let dir = tempfile::tempdir().expect("Should create a temp dir");
-    let app = create_app(&test_config(&dir)).expect("Should build the app");
-    app.oneshot(request).await.expect("Should handle request")
+fn get(uri: &str, token: Option<&str>) -> Request<Body> {
+    build("GET", uri, token).body(Body::empty()).unwrap()
 }
+
+fn post(uri: &str, token: Option<&str>) -> http::request::Builder {
+    build("POST", uri, token).header(header::CONTENT_TYPE, "application/json")
+}
+
+fn build(method: &str, uri: &str, token: Option<&str>) -> http::request::Builder {
+    let builder = Request::builder().method(method).uri(uri);
+    match token {
+        Some(t) => builder.header(header::AUTHORIZATION, format!("Bearer {t}")),
+        None => builder,
+    }
+}
+
+// ---------------------------------------------------------------- transport
 
 #[tokio::test]
 async fn no_response_carries_cors_headers() {
-    // The CORS layer used to be enabled whenever debug assertions were on, so debug builds
-    // behaved differently from release. This test runs in a debug build.
+    let server = TestServer::new();
     for (method, uri) in [
         ("GET", "/healthz/live"),
         ("GET", "/v1/secrets"),
         ("OPTIONS", "/v1/secrets"),
     ] {
-        let response = send(
-            Request::builder()
-                .method(method)
-                .uri(uri)
-                .header(header::ORIGIN, "https://example.com")
-                .body(Body::empty())
-                .expect("Should build request"),
-        )
-        .await;
-
+        let response = server
+            .send(
+                build(method, uri, None)
+                    .header(header::ORIGIN, "https://example.com")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
         let cors: Vec<_> = response
             .headers()
             .keys()
-            .filter(|name| name.as_str().starts_with("access-control-"))
+            .filter(|n| n.as_str().starts_with("access-control-"))
             .collect();
-        assert!(
-            cors.is_empty(),
-            "{method} {uri} returned CORS headers: {cors:?}"
-        );
+        assert!(cors.is_empty(), "{method} {uri} returned {cors:?}");
     }
 }
 
 #[tokio::test]
 async fn only_v1_is_routed() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
     for uri in ["/v2/secrets", "/v3/secrets", "/v99/secrets", "/vx/secrets"] {
-        let response = send(
-            Request::builder()
-                .uri(uri)
-                .header(header::AUTHORIZATION, "Bearer test-token")
-                .body(Body::empty())
-                .expect("Should build request"),
-        )
-        .await;
-
-        assert_eq!(
-            response.status(),
-            StatusCode::NOT_FOUND,
-            "{uri} should not be routed, and should be refused identically to a version that \
-             never existed"
-        );
+        let response = server.send(get(uri, Some(&admin))).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
     }
 }
 
 #[tokio::test]
+async fn health_probes_need_no_credential() {
+    let server = TestServer::new();
+    for uri in ["/healthz/live", "/healthz/ready"] {
+        let response = server.send(get(uri, None)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{uri} should be public");
+    }
+}
+
+// ---------------------------------------------------------------- identity
+
+#[tokio::test]
+async fn business_endpoints_require_an_identity() {
+    let server = TestServer::new();
+    // No credential at all.
+    let response = server.send(get("/v1/secrets", None)).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    // A syntactically fine token belonging to nobody.
+    let response = server
+        .send(get("/v1/secrets", Some("sealbox_deadbeef")))
+        .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "there is no shared credential to fall back to"
+    );
+}
+
+#[tokio::test]
+async fn the_role_matrix_is_enforced() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let operator = server.identity(&admin, "op", "operator").await;
+    let agent = server.identity(&admin, "bot", "agent").await;
+
+    // Reading is open to every role.
+    for token in [&admin, &operator, &agent] {
+        let response = server.send(get("/v1/secrets", Some(token))).await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // Managing identities is admin-only, and refusal is forbidden — not unauthorised.
+    for (token, who) in [(&operator, "operator"), (&agent, "agent")] {
+        let response = server.send(get("/v1/identities", Some(token))).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "{who} must not manage identities, and must be told it is forbidden rather than \
+             unauthenticated"
+        );
+    }
+    let response = server.send(get("/v1/identities", Some(&admin))).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Writing a secret is operator-and-above.
+    let write = |token: String| {
+        build("PUT", "/v1/secrets/k", Some(&token))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"secret":"v"}"#))
+            .unwrap()
+    };
+    let response = server.send(write(agent.clone())).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "an agent may invoke, but may not store secrets"
+    );
+    let response = server.send(write(operator.clone())).await;
+    assert!(response.status().is_success(), "an operator may store");
+}
+
+#[tokio::test]
+async fn revocation_is_immediate_and_isolated() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let doomed = server.identity(&admin, "doomed", "operator").await;
+    let bystander = server.identity(&admin, "bystander", "operator").await;
+
+    assert!(
+        server
+            .send(get("/v1/secrets", Some(&doomed)))
+            .await
+            .status()
+            .is_success()
+    );
+
+    let response = server
+        .send(
+            build("DELETE", "/v1/identities/doomed", Some(&admin))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success());
+
+    assert_eq!(
+        server
+            .send(get("/v1/secrets", Some(&doomed)))
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED,
+        "a revoked identity stops working on the very next request"
+    );
+    assert!(
+        server
+            .send(get("/v1/secrets", Some(&bystander)))
+            .await
+            .status()
+            .is_success(),
+        "revoking one identity must not disturb another"
+    );
+}
+
+#[tokio::test]
+async fn a_token_is_returned_once_and_never_again() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.identity(&admin, "op", "operator").await;
+
+    let response = server.send(get("/v1/identities", Some(&admin))).await;
+    let body = server.json(response).await;
+    let serialised = body.to_string();
+
+    assert!(
+        !serialised.contains("token"),
+        "listing identities must not expose credentials: {serialised}"
+    );
+    assert!(
+        !serialised.contains("sealbox_"),
+        "no token prefix may appear in a listing: {serialised}"
+    );
+}
+
+// ---------------------------------------------------------------- bootstrap
+
+#[tokio::test]
+async fn bootstrap_works_once_and_cannot_be_replayed() {
+    let server = TestServer::new();
+    let _admin = server.bootstrap().await;
+
+    let response = server
+        .send(
+            post("/v1/bootstrap", None)
+                .body(Body::from(
+                    serde_json::json!({ "token": BOOTSTRAP_TOKEN, "name": "second" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "bootstrap must be refused once any identity exists"
+    );
+}
+
+#[tokio::test]
+async fn bootstrap_refuses_after_the_window_closes() {
+    // The token is correct and no identity exists — the window alone must refuse it, so that a
+    // token left in the environment stops being useful without anyone removing it.
+    let server = TestServer::with_closed_bootstrap_window();
+    let response = server
+        .send(
+            post("/v1/bootstrap", None)
+                .body(Body::from(
+                    serde_json::json!({ "token": BOOTSTRAP_TOKEN, "name": "late" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn bootstrap_refuses_a_wrong_token() {
+    let server = TestServer::new();
+    let response = server
+        .send(
+            post("/v1/bootstrap", None)
+                .body(Body::from(
+                    serde_json::json!({ "token": "wrong", "name": "root" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------- audit
+
+#[tokio::test]
+async fn attempts_are_recorded_including_refusals() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let agent = server.identity(&admin, "bot", "agent").await;
+
+    // A refusal: an agent reaching for an admin endpoint.
+    server.send(get("/v1/identities", Some(&agent))).await;
+    // An unauthenticated attempt.
+    server.send(get("/v1/secrets", None)).await;
+
+    let response = server.send(get("/v1/audit?limit=50", Some(&admin))).await;
+    let body = server.json(response).await;
+    let records = body["audit"].as_array().expect("Should return records");
+
+    let forbidden = records
+        .iter()
+        .find(|r| r["identity"] == "bot" && r["outcome"] == "Forbidden");
+    assert!(
+        forbidden.is_some(),
+        "a refused attempt must be recorded against the identity that made it: {records:?}"
+    );
+
+    let anonymous = records
+        .iter()
+        .find(|r| r["outcome"] == "Unauthenticated" && r["identity"].is_null());
+    assert!(
+        anonymous.is_some(),
+        "an unauthenticated attempt is recorded without inventing an identity: {records:?}"
+    );
+
+    // Bootstrap itself is in the trail, from an empty start.
+    assert!(
+        records
+            .iter()
+            .any(|r| r["action"] == "POST /v1/bootstrap" && r["outcome"] == "Allowed"),
+        "claiming the server must be the first thing in the record"
+    );
+}
+
+#[tokio::test]
+async fn audit_records_carry_no_secret_values() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let response = server
+        .send(
+            build("PUT", "/v1/secrets/db-password", Some(&admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"secret":"hunter2-do-not-log-me"}"#))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success());
+
+    let response = server.send(get("/v1/audit?limit=50", Some(&admin))).await;
+    let serialised = server.json(response).await.to_string();
+
+    assert!(
+        serialised.contains("secrets/db-password"),
+        "the resource is named so the record is useful"
+    );
+    assert!(
+        !serialised.contains("hunter2"),
+        "the value must never reach the audit trail: {serialised}"
+    );
+}
+
+#[tokio::test]
+async fn health_probes_are_not_audited() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.send(get("/healthz/live", None)).await;
+    server.send(get("/healthz/ready", None)).await;
+
+    let response = server.send(get("/v1/audit?limit=50", Some(&admin))).await;
+    let serialised = server.json(response).await.to_string();
+    assert!(
+        !serialised.contains("healthz"),
+        "probes are noise, not activity: {serialised}"
+    );
+}
+
+// ---------------------------------------------------------------- payloads
+
+#[tokio::test]
 async fn a_rekey_request_carrying_a_private_key_is_rejected() {
-    // An old client sending `old_private_key_pem` must fail loudly. Silently ignoring the field
-    // would mean a private key crossed the network for nothing, and the caller would never know.
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
     let (private_pem, _) =
         sealbox_server::crypto::master_key::generate_key_pair().expect("Should generate a key");
-    let body = serde_json::json!({
-        "new_master_key_id": uuid::Uuid::new_v4(),
-        "old_master_key_id": uuid::Uuid::new_v4(),
-        "old_private_key_pem": private_pem,
-    });
 
-    let response = send(
-        Request::builder()
-            .method("PUT")
-            .uri("/v1/master-key")
-            .header(header::AUTHORIZATION, "Bearer test-token")
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(body.to_string()))
-            .expect("Should build request"),
-    )
-    .await;
+    let response = server
+        .send(
+            build("PUT", "/v1/master-key", Some(&admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "new_master_key_id": uuid::Uuid::new_v4(),
+                        "old_master_key_id": uuid::Uuid::new_v4(),
+                        "old_private_key_pem": private_pem,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
 
     assert_eq!(
         response.status(),
         StatusCode::UNPROCESSABLE_ENTITY,
         "a payload containing key material must be refused, not quietly accepted"
     );
-}
-
-#[tokio::test]
-async fn business_endpoints_require_authentication() {
-    let response = send(
-        Request::builder()
-            .uri("/v1/secrets")
-            .body(Body::empty())
-            .expect("Should build request"),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn health_probes_need_no_credential() {
-    for uri in ["/healthz/live", "/healthz/ready"] {
-        let response = send(
-            Request::builder()
-                .uri(uri)
-                .body(Body::empty())
-                .expect("Should build request"),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::OK, "{uri} should be public");
-    }
 }

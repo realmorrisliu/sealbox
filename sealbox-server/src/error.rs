@@ -21,6 +21,18 @@ pub enum SealboxError {
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
+    #[error("Identity already exists: {0}")]
+    IdentityAlreadyExists(String),
+
+    #[error("Identity not found: {0}")]
+    IdentityNotFound(String),
+
+    #[error("Unknown role: {0}. Expected one of: agent, operator, admin")]
+    InvalidRole(String),
+
+    #[error("Forbidden: this identity's role does not permit that")]
+    Forbidden,
+
     #[error("Master key not found: {0}")]
     MasterKeyNotFound(Uuid),
 
@@ -57,6 +69,10 @@ impl IntoResponse for SealboxError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
             SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::IdentityAlreadyExists(_) => (StatusCode::CONFLICT, errorfmt(&self)),
+            SealboxError::IdentityNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::InvalidRole(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
+            SealboxError::Forbidden => (StatusCode::FORBIDDEN, errorfmt(&self)),
             SealboxError::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
             SealboxError::MissingValidMasterKey => {
                 (StatusCode::PRECONDITION_REQUIRED, errorfmt(&self))

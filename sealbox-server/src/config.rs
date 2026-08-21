@@ -4,7 +4,12 @@ use tracing::{error, info};
 /// Sealbox configuration struct
 #[derive(Debug, Clone)]
 pub struct SealboxConfig {
-    pub auth_token: String,
+    /// Accepted only to create the very first admin identity, and only while none exists.
+    /// Absent in normal operation; unset it once bootstrap is done.
+    pub bootstrap_token: Option<String>,
+    /// How long after start-up the bootstrap token stays usable. Bounded because leaving the
+    /// token in the environment after use is the normal outcome, not the exceptional one.
+    pub bootstrap_window: std::time::Duration,
     pub store_path: String,
     pub listen_addr: String,
     /// Paths to the server's master keys (PEM), most-current first, comma-separated.
@@ -20,13 +25,16 @@ impl SealboxConfig {
     pub fn from_env() -> Result<Self, String> {
         info!("Loading Sealbox configuration from environment variables...");
 
-        let auth_token = match env::var("SEALBOX_AUTH_TOKEN") {
-            Ok(val) if !val.trim().is_empty() => val,
-            _ => {
-                error!("Environment variable SEALBOX_AUTH_TOKEN is missing or empty");
-                return Err("SEALBOX_AUTH_TOKEN is missing or empty".into());
-            }
-        };
+        // Optional: only a server with no identities has any use for it.
+        let bootstrap_token = env::var("SEALBOX_BOOTSTRAP_TOKEN")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
+
+        let bootstrap_window = env::var("SEALBOX_BOOTSTRAP_WINDOW_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(std::time::Duration::from_secs(30 * 60));
 
         let store_path = match env::var("SEALBOX_STORE_PATH") {
             Ok(val) if !val.trim().is_empty() => val,
@@ -63,7 +71,8 @@ impl SealboxConfig {
         info!(
             "Sealbox configuration loaded: {:?}",
             SealboxConfig {
-                auth_token: "[HIDDEN]".to_string(),
+                bootstrap_token: bootstrap_token.as_ref().map(|_| "[HIDDEN]".to_string()),
+                bootstrap_window,
                 store_path: store_path.clone(),
                 master_key_paths: master_key_paths.clone(),
                 listen_addr: listen_addr.clone(),
@@ -71,7 +80,8 @@ impl SealboxConfig {
         );
 
         Ok(SealboxConfig {
-            auth_token,
+            bootstrap_token,
+            bootstrap_window,
             store_path,
             listen_addr,
             master_key_paths,
@@ -82,7 +92,8 @@ impl SealboxConfig {
 impl Default for SealboxConfig {
     fn default() -> Self {
         SealboxConfig {
-            auth_token: "test-token".to_string(),
+            bootstrap_token: None,
+            bootstrap_window: std::time::Duration::from_secs(30 * 60),
             store_path: ":memory:".to_string(),
             listen_addr: "127.0.0.1:8080".to_string(),
             master_key_paths: Vec::new(),

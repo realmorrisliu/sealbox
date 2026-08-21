@@ -13,7 +13,8 @@ use crate::{
 };
 
 pub(crate) use self::sqlite::{
-    SqliteHealthRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+    SqliteAuditRepo, SqliteHealthRepo, SqliteIdentityRepo, SqliteMasterKeyRepo, SqliteSecretRepo,
+    create_db_connection,
 };
 
 mod sqlite;
@@ -126,6 +127,200 @@ impl Secret {
 
         Ok(secret)
     }
+}
+
+/// What an identity is allowed to do. Ordered: each role admits everything the one below it can
+/// do. Three roles with a natural inclusion order need no permission matrix, and a matrix would
+/// invite per-resource entries — the boundary this design relies on is the grant, not an ACL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Role {
+    /// Invoke approved capabilities and read metadata. Nothing else.
+    Agent,
+    /// Additionally store secrets.
+    Operator,
+    /// Additionally manage identities and approve capabilities.
+    Admin,
+}
+
+impl ToSql for Role {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        match self {
+            Role::Agent => Ok(rusqlite::types::ToSqlOutput::from("Agent")),
+            Role::Operator => Ok(rusqlite::types::ToSqlOutput::from("Operator")),
+            Role::Admin => Ok(rusqlite::types::ToSqlOutput::from("Admin")),
+        }
+    }
+}
+
+impl FromSql for Role {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        match value.as_str() {
+            Ok("Agent") => Ok(Role::Agent),
+            Ok("Operator") => Ok(Role::Operator),
+            Ok("Admin") => Ok(Role::Admin),
+            _ => Err(rusqlite::types::FromSqlError::InvalidType),
+        }
+    }
+}
+
+impl FromStr for Role {
+    type Err = SealboxError;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "agent" => Ok(Role::Agent),
+            "operator" => Ok(Role::Operator),
+            "admin" => Ok(Role::Admin),
+            other => Err(SealboxError::InvalidRole(other.to_string())),
+        }
+    }
+}
+
+impl std::fmt::Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Role::Agent => "Agent",
+            Role::Operator => "Operator",
+            Role::Admin => "Admin",
+        })
+    }
+}
+
+/// A named caller. Its credential is stored only as a hash; the plaintext exists exactly once,
+/// in the response that created it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Identity {
+    pub id: Uuid,
+    pub name: String,
+    pub role: Role,
+    #[serde(skip)]
+    pub token_hash: Vec<u8>,
+    pub created_at: i64,
+    /// Set rather than deleting the row, so audit records naming this identity stay meaningful.
+    pub revoked_at: Option<i64>,
+}
+
+impl Identity {
+    /// Build an identity and return it alongside the one and only copy of its plaintext token.
+    ///
+    /// The token is 256 bits from a CSPRNG. It carries a `sealbox_` prefix so that a leaked one
+    /// is recognisable to a secret scanner and to a human reading a config file.
+    pub(crate) fn new(name: String, role: Role) -> Result<(Self, String)> {
+        let mut bytes = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
+        let token = format!("sealbox_{}", hex_encode(&bytes));
+
+        let identity = Self {
+            id: Uuid::new_v4(),
+            name,
+            role,
+            token_hash: hash_token(&token),
+            created_at: time::OffsetDateTime::now_utc().unix_timestamp(),
+            revoked_at: None,
+        };
+        Ok((identity, token))
+    }
+
+    pub fn is_revoked(&self) -> bool {
+        self.revoked_at.is_some()
+    }
+}
+
+/// SHA-256 of a token. Not a password KDF: the input is 256 random bits, so guessing is already
+/// impossible and a deliberately slow hash would only add latency to every request. Lookup is by
+/// hash, which is a single indexed query rather than a scan comparing candidates.
+pub(crate) fn hash_token(token: &str) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(token.as_bytes()).to_vec()
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+pub(crate) trait IdentityRepo: Send + Sync {
+    /// Store a new identity. The caller holds the only copy of the plaintext token.
+    fn create(&self, identity: &Identity) -> Result<()>;
+    /// Resolve a presented token to a live identity. Returns `None` for unknown or revoked.
+    fn find_by_token(&self, token: &str) -> Result<Option<Identity>>;
+    fn list(&self) -> Result<Vec<Identity>>;
+    fn revoke(&self, name: &str) -> Result<()>;
+    /// Whether any identity exists at all. The bootstrap path turns on this.
+    fn any_exists(&self) -> Result<bool>;
+}
+
+/// One recorded attempt. The identity is stored by name rather than by reference so the record
+/// stays readable after that identity is revoked.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditRecord {
+    pub id: i64,
+    pub at: i64,
+    /// `None` for an attempt that never authenticated.
+    pub identity: Option<String>,
+    pub action: String,
+    pub resource: Option<String>,
+    pub outcome: AuditOutcome,
+    /// A short message. Never a secret value, a credential, or key material.
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AuditOutcome {
+    Allowed,
+    Unauthenticated,
+    Forbidden,
+    Failed,
+}
+
+impl ToSql for AuditOutcome {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        match self {
+            AuditOutcome::Allowed => Ok(rusqlite::types::ToSqlOutput::from("Allowed")),
+            AuditOutcome::Unauthenticated => {
+                Ok(rusqlite::types::ToSqlOutput::from("Unauthenticated"))
+            }
+            AuditOutcome::Forbidden => Ok(rusqlite::types::ToSqlOutput::from("Forbidden")),
+            AuditOutcome::Failed => Ok(rusqlite::types::ToSqlOutput::from("Failed")),
+        }
+    }
+}
+
+impl FromSql for AuditOutcome {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        match value.as_str() {
+            Ok("Allowed") => Ok(AuditOutcome::Allowed),
+            Ok("Unauthenticated") => Ok(AuditOutcome::Unauthenticated),
+            Ok("Forbidden") => Ok(AuditOutcome::Forbidden),
+            Ok("Failed") => Ok(AuditOutcome::Failed),
+            _ => Err(rusqlite::types::FromSqlError::InvalidType),
+        }
+    }
+}
+
+/// What to select when reading the trail. All fields optional; an empty filter reads everything,
+/// most recent first.
+#[derive(Debug, Default, Clone)]
+pub struct AuditFilter {
+    pub identity: Option<String>,
+    pub action: Option<String>,
+    pub since: Option<i64>,
+    pub limit: Option<usize>,
+}
+
+/// Append-only by construction: there is no method here that updates or removes a record.
+pub(crate) trait AuditRepo: Send + Sync {
+    fn append(&self, record: &NewAuditRecord) -> Result<()>;
+    fn query(&self, filter: &AuditFilter) -> Result<Vec<AuditRecord>>;
+}
+
+/// A record before it has an id or a timestamp.
+#[derive(Debug, Clone)]
+pub struct NewAuditRecord {
+    pub identity: Option<String>,
+    pub action: String,
+    pub resource: Option<String>,
+    pub outcome: AuditOutcome,
+    pub detail: Option<String>,
 }
 
 pub(crate) trait SecretRepo: Send + Sync {
