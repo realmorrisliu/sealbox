@@ -20,12 +20,12 @@ Mechanical, and done before the repo refactor so the refactor does not have to m
 
 ## 3. Repo traits own their connection
 
-- [ ] 3.1 Give `SqliteSecretRepo`, `SqliteMasterKeyRepo`, and `SqliteHealthRepo` an `Arc<Mutex<Connection>>` field and a constructor
-- [ ] 3.2 Remove the `&Connection` / `&mut Connection` parameter from every method on `SecretRepo`, `MasterKeyRepo`, and `HealthRepo`
-- [ ] 3.3 Move locking and transaction handling inside the implementors; multi-statement work takes the lock once and opens one transaction
-- [ ] 3.4 Remove every `state.conn_pool.lock()` from `sealbox-server/src/api/handler/*` and from the readiness probe
-- [ ] 3.5 Remove `conn_pool` from `AppState` if nothing outside the repos still needs it
-- [ ] 3.6 Verify: build, test, clippy clean — no behavior change expected, so failing tests here mean a real mistake
+- [x] 3.1 Give `SqliteSecretRepo`, `SqliteMasterKeyRepo`, and `SqliteHealthRepo` an `Arc<Mutex<Connection>>` field and a constructor
+- [x] 3.2 Remove the `&Connection` / `&mut Connection` parameter from every method on `SecretRepo`, `MasterKeyRepo`, and `HealthRepo`
+- [x] 3.3 Move locking and transaction handling inside the implementors; multi-statement work takes the lock once and opens one transaction. The rekey transaction, previously assembled in the handler, becomes `SecretRepo::rekey_secrets` — which made `fetch_secrets_by_master_key` and `update_secret_master_key` dead, so both were removed along with their tests, replaced by two tests of `rekey_secrets` itself
+- [x] 3.4 Remove every `state.conn_pool.lock()` from `sealbox-server/src/api/handler/*` and from the readiness probe
+- [x] 3.5 Remove `conn_pool` from `AppState` if nothing outside the repos still needs it
+- [x] 3.6 Verify: build, test, clippy clean — no behavior change expected, so failing tests here mean a real mistake
 
 ## 4. Schema migration
 

@@ -29,8 +29,7 @@ use crate::{
 /// }
 /// ```
 pub(crate) async fn cleanup_expired(State(state): State<AppState>) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
-    let deleted_count = state.secret_repo.cleanup_expired_secrets(&conn)?;
+    let deleted_count = state.secret_repo.cleanup_expired_secrets()?;
     let cleaned_at = time::OffsetDateTime::now_utc().unix_timestamp();
 
     Ok(SealboxResponse::Json(json!({

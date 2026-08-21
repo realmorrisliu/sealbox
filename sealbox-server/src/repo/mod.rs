@@ -133,41 +133,31 @@ impl Secret {
 
 pub(crate) trait SecretRepo: Send + Sync {
     /// Get latest secret with atomic lazy cleanup
-    fn get_secret(&self, conn: &mut rusqlite::Connection, key: &str) -> Result<Secret>;
+    fn get_secret(&self, key: &str) -> Result<Secret>;
     /// Get specific version secret with atomic lazy cleanup
-    fn get_secret_by_version(
-        &self,
-        conn: &mut rusqlite::Connection,
-        key: &str,
-        version: i32,
-    ) -> Result<Secret>;
+    fn get_secret_by_version(&self, key: &str, version: i32) -> Result<Secret>;
     fn create_new_version(
         &self,
-        conn: &mut rusqlite::Connection,
         key: &str,
         data: &str,
         master_key: MasterKey,
         ttl: Option<i64>,
     ) -> Result<Secret>;
-    fn delete_secret_by_version(
-        &self,
-        conn: &rusqlite::Connection,
-        key: &str,
-        version: i32,
-    ) -> Result<()>;
+    fn delete_secret_by_version(&self, key: &str, version: i32) -> Result<()>;
 
-    /// Fetch all secrets using the given master_key_id.
-    fn fetch_secrets_by_master_key(
+    /// Rekey every secret under `old_master_key_id`, atomically. Returns the keys of secrets
+    /// that could not be rekeyed; if any fail, nothing is committed.
+    fn rekey_secrets(
         &self,
-        conn: &rusqlite::Connection,
-        master_key_id: &Uuid,
-    ) -> Result<Vec<Secret>>;
-    /// Update the master_key_id, encrypted_data_key, and updated_at fields for a list of secrets in a single transaction.
-    fn update_secret_master_key(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()>;
+        old_master_key_id: &Uuid,
+        old_private_key_pem: &str,
+        new_master_key_id: &Uuid,
+        new_public_key_pem: &str,
+    ) -> Result<Vec<String>>;
     /// Batch delete all expired secrets and return the count of deleted records.
-    fn cleanup_expired_secrets(&self, conn: &rusqlite::Connection) -> Result<usize>;
+    fn cleanup_expired_secrets(&self) -> Result<usize>;
     /// List all secrets with basic information (key, latest version, timestamps)
-    fn list_secrets(&self, conn: &rusqlite::Connection) -> Result<Vec<SecretInfo>>;
+    fn list_secrets(&self) -> Result<Vec<SecretInfo>>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,22 +218,18 @@ impl MasterKey {
 
 /// MasterKeyRepo trait for managing master_keys table
 pub(crate) trait MasterKeyRepo: Send + Sync {
-    fn create_master_key(&self, conn: &rusqlite::Connection, key: &MasterKey) -> Result<()>;
-    fn fetch_all_master_keys(&self, conn: &rusqlite::Connection) -> Result<Vec<MasterKey>>;
+    fn create_master_key(&self, key: &MasterKey) -> Result<()>;
+    fn fetch_all_master_keys(&self) -> Result<Vec<MasterKey>>;
 
     /// Fetch the PEM-encoded public key for a given master_key_id.
-    fn fetch_public_key(
-        &self,
-        conn: &rusqlite::Connection,
-        master_key_id: &Uuid,
-    ) -> Result<Option<String>>;
+    fn fetch_public_key(&self, master_key_id: &Uuid) -> Result<Option<String>>;
 
     /// Fetch a valid master key.
-    fn get_valid_master_key(&self, conn: &rusqlite::Connection) -> Result<MasterKey>;
+    fn get_valid_master_key(&self) -> Result<MasterKey>;
 }
 
 pub(crate) trait HealthRepo: Send + Sync {
-    fn check_health(&self, conn: &rusqlite::Connection) -> Result<bool>;
+    fn check_health(&self) -> Result<bool>;
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 use serde_rusqlite::*;
+use std::sync::{Arc, Mutex};
 use tracing::info;
 use uuid::Uuid;
 
@@ -8,7 +9,15 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct SqliteSecretRepo;
+pub(crate) struct SqliteSecretRepo {
+    conn: Arc<Mutex<rusqlite::Connection>>,
+}
+
+impl SqliteSecretRepo {
+    pub(crate) fn new(conn: Arc<Mutex<rusqlite::Connection>>) -> Self {
+        Self { conn }
+    }
+}
 
 impl SqliteSecretRepo {
     pub fn init_table(conn: &rusqlite::Connection) -> Result<()> {
@@ -97,7 +106,9 @@ impl SqliteSecretRepo {
 }
 
 impl SecretRepo for SqliteSecretRepo {
-    fn get_secret(&self, conn: &mut rusqlite::Connection, key: &str) -> Result<Secret> {
+    fn get_secret(&self, key: &str) -> Result<Secret> {
+        let mut guard = self.conn.lock()?;
+        let conn = &mut *guard;
         info!("get_secret: key={}", key);
 
         self.get_secret_with_query(
@@ -122,12 +133,9 @@ impl SecretRepo for SqliteSecretRepo {
         )
     }
 
-    fn get_secret_by_version(
-        &self,
-        conn: &mut rusqlite::Connection,
-        key: &str,
-        version: i32,
-    ) -> Result<Secret> {
+    fn get_secret_by_version(&self, key: &str, version: i32) -> Result<Secret> {
+        let mut guard = self.conn.lock()?;
+        let conn = &mut *guard;
         info!("get_secret_by_version: key={}, version={}", key, version);
 
         self.get_secret_with_query(
@@ -153,12 +161,13 @@ impl SecretRepo for SqliteSecretRepo {
 
     fn create_new_version(
         &self,
-        conn: &mut rusqlite::Connection,
         key: &str,
         data: &str,
         master_key: crate::repo::MasterKey,
         ttl: Option<i64>,
     ) -> Result<Secret> {
+        let mut guard = self.conn.lock()?;
+        let conn = &mut *guard;
         info!("create_new_version");
 
         let tx = conn.transaction()?;
@@ -204,12 +213,9 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(secret)
     }
 
-    fn delete_secret_by_version(
-        &self,
-        conn: &rusqlite::Connection,
-        key: &str,
-        version: i32,
-    ) -> Result<()> {
+    fn delete_secret_by_version(&self, key: &str, version: i32) -> Result<()> {
+        let guard = self.conn.lock()?;
+        let conn = &*guard;
         info!("delete_secret_by_version");
         let changed = conn.execute(
             "DELETE FROM secrets WHERE key = ?1 AND version = ?2",
@@ -221,54 +227,80 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(())
     }
 
-    fn fetch_secrets_by_master_key(
+    fn rekey_secrets(
         &self,
-        conn: &rusqlite::Connection,
-        master_key_id: &Uuid,
-    ) -> Result<Vec<Secret>> {
-        let mut stmt = conn.prepare(
-            "SELECT
-                namespace,
-                key,
-                version,
-                encrypted_data,
-                encrypted_data_key,
-                master_key_id,
-                created_at,
-                updated_at,
-                expires_at,
-                metadata
-            FROM secrets
-            WHERE master_key_id = ?1",
-        )?;
-        // Using query() and from_rows(), the most efficient way as shown in the official example
-        let rows = stmt.query([master_key_id])?;
-        let secrets: Vec<Secret> = from_rows::<Secret>(rows)
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| SealboxError::DatabaseError(e.to_string()))?;
-        Ok(secrets)
+        old_master_key_id: &Uuid,
+        old_private_key_pem: &str,
+        new_master_key_id: &Uuid,
+        new_public_key_pem: &str,
+    ) -> Result<Vec<String>> {
+        let mut guard = self.conn.lock()?;
+        let conn = &mut *guard;
+
+        let secrets: Vec<Secret> = {
+            let mut stmt = conn.prepare(
+                "SELECT
+                    namespace,
+                    key,
+                    version,
+                    encrypted_data,
+                    encrypted_data_key,
+                    master_key_id,
+                    created_at,
+                    updated_at,
+                    expires_at,
+                    metadata
+                FROM secrets
+                WHERE master_key_id = ?1",
+            )?;
+            let rows = stmt.query([old_master_key_id])?;
+            from_rows::<Secret>(rows)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| SealboxError::DatabaseError(e.to_string()))?
+        };
+
+        let mut failed_secret_keys = Vec::new();
+        let tx = conn.transaction()?;
+
+        for secret in secrets {
+            let secret_key = secret.key.clone();
+            match secret.rekey(
+                old_master_key_id,
+                old_private_key_pem,
+                new_master_key_id,
+                new_public_key_pem,
+            ) {
+                Ok(rekeyed) => {
+                    tx.execute(
+                        "UPDATE secrets SET
+                            encrypted_data_key = ?1,
+                            master_key_id = ?2,
+                            updated_at = ?3
+                         WHERE namespace = ?4 AND key = ?5 AND version = ?6",
+                        rusqlite::params![
+                            &rekeyed.encrypted_data_key,
+                            &rekeyed.master_key_id,
+                            &rekeyed.updated_at,
+                            &rekeyed.namespace,
+                            &rekeyed.key,
+                            &rekeyed.version,
+                        ],
+                    )?;
+                }
+                Err(err) => {
+                    failed_secret_keys.push(secret_key.clone());
+                    info!("Failed to rekey secret {}: {}", secret_key, err);
+                }
+            }
+        }
+
+        tx.commit()?;
+        Ok(failed_secret_keys)
     }
 
-    fn update_secret_master_key(&self, conn: &rusqlite::Connection, secret: &Secret) -> Result<()> {
-        conn.execute(
-            "UPDATE secrets SET
-                encrypted_data_key = ?1,
-                master_key_id = ?2,
-                updated_at = ?3
-             WHERE namespace = ?4 AND key = ?5 AND version = ?6",
-            rusqlite::params![
-                &secret.encrypted_data_key,
-                &secret.master_key_id,
-                &secret.updated_at,
-                &secret.namespace,
-                &secret.key,
-                &secret.version,
-            ],
-        )?;
-        Ok(())
-    }
-
-    fn cleanup_expired_secrets(&self, conn: &rusqlite::Connection) -> Result<usize> {
+    fn cleanup_expired_secrets(&self) -> Result<usize> {
+        let guard = self.conn.lock()?;
+        let conn = &*guard;
         info!("cleanup_expired_secrets");
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
         let deleted_count = conn.execute(
@@ -279,7 +311,9 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(deleted_count)
     }
 
-    fn list_secrets(&self, conn: &rusqlite::Connection) -> Result<Vec<crate::repo::SecretInfo>> {
+    fn list_secrets(&self) -> Result<Vec<crate::repo::SecretInfo>> {
+        let guard = self.conn.lock()?;
+        let conn = &*guard;
         info!("list_secrets");
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
 
@@ -323,6 +357,10 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().expect("Should create in-memory DB");
         SqliteSecretRepo::init_table(&conn).expect("Should initialize tables");
         conn
+    }
+
+    fn setup_test_repo() -> SqliteSecretRepo {
+        SqliteSecretRepo::new(Arc::new(Mutex::new(setup_test_db())))
     }
 
     fn create_test_master_key() -> MasterKey {
@@ -369,23 +407,19 @@ mod tests {
 
     #[test]
     fn test_create_and_get_secret() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
 
         let secret_key = "test-secret";
         let secret_data = "This is secret data";
 
         // Create secret
-        let mut conn_mut = conn;
         let created_secret = repo
-            .create_new_version(&mut conn_mut, secret_key, secret_data, master_key, None)
+            .create_new_version(secret_key, secret_data, master_key, None)
             .expect("Should create secret");
 
         // Get secret back
-        let retrieved_secret = repo
-            .get_secret(&mut conn_mut, secret_key)
-            .expect("Should retrieve secret");
+        let retrieved_secret = repo.get_secret(secret_key).expect("Should retrieve secret");
 
         assert_eq!(created_secret.key, retrieved_secret.key);
         assert_eq!(created_secret.version, retrieved_secret.version);
@@ -402,11 +436,9 @@ mod tests {
 
     #[test]
     fn test_get_secret_not_found() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
 
-        let mut conn = conn;
-        let result = repo.get_secret(&mut conn, "nonexistent-key");
+        let result = repo.get_secret("nonexistent-key");
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -417,33 +449,19 @@ mod tests {
 
     #[test]
     fn test_create_multiple_versions() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
 
         let secret_key = "test-secret";
 
         // Create first version
-        let mut conn_mut = conn;
         let secret_v1 = repo
-            .create_new_version(
-                &mut conn_mut,
-                secret_key,
-                "data version 1",
-                master_key.clone(),
-                None,
-            )
+            .create_new_version(secret_key, "data version 1", master_key.clone(), None)
             .expect("Should create version 1");
 
         // Create second version
         let secret_v2 = repo
-            .create_new_version(
-                &mut conn_mut,
-                secret_key,
-                "data version 2",
-                master_key,
-                None,
-            )
+            .create_new_version(secret_key, "data version 2", master_key, None)
             .expect("Should create version 2");
 
         assert_eq!(secret_v1.version, 1);
@@ -452,7 +470,7 @@ mod tests {
 
         // Get latest version (should be v2)
         let latest = repo
-            .get_secret(&mut conn_mut, secret_key)
+            .get_secret(secret_key)
             .expect("Should get latest version");
         assert_eq!(latest.version, 2);
         assert_eq!(latest.encrypted_data, secret_v2.encrypted_data);
@@ -460,37 +478,23 @@ mod tests {
 
     #[test]
     fn test_get_secret_by_version() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
 
         let secret_key = "test-secret";
 
         // Create multiple versions
-        let mut conn_mut = conn;
         let secret_v1 = repo
-            .create_new_version(
-                &mut conn_mut,
-                secret_key,
-                "data version 1",
-                master_key.clone(),
-                None,
-            )
+            .create_new_version(secret_key, "data version 1", master_key.clone(), None)
             .expect("Should create version 1");
 
         let _secret_v2 = repo
-            .create_new_version(
-                &mut conn_mut,
-                secret_key,
-                "data version 2",
-                master_key,
-                None,
-            )
+            .create_new_version(secret_key, "data version 2", master_key, None)
             .expect("Should create version 2");
 
         // Get specific version
         let retrieved_v1 = repo
-            .get_secret_by_version(&mut conn_mut, secret_key, 1)
+            .get_secret_by_version(secret_key, 1)
             .expect("Should get version 1");
 
         assert_eq!(retrieved_v1.version, 1);
@@ -499,11 +503,9 @@ mod tests {
 
     #[test]
     fn test_get_secret_by_version_not_found() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
 
-        let mut conn = conn;
-        let result = repo.get_secret_by_version(&mut conn, "nonexistent-key", 1);
+        let result = repo.get_secret_by_version("nonexistent-key", 1);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -514,45 +516,31 @@ mod tests {
 
     #[test]
     fn test_delete_secret_by_version() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
 
         let secret_key = "test-secret";
 
         // Create multiple versions
-        let mut conn_mut = conn;
         let _secret_v1 = repo
-            .create_new_version(
-                &mut conn_mut,
-                secret_key,
-                "data version 1",
-                master_key.clone(),
-                None,
-            )
+            .create_new_version(secret_key, "data version 1", master_key.clone(), None)
             .expect("Should create version 1");
 
         let secret_v2 = repo
-            .create_new_version(
-                &mut conn_mut,
-                secret_key,
-                "data version 2",
-                master_key,
-                None,
-            )
+            .create_new_version(secret_key, "data version 2", master_key, None)
             .expect("Should create version 2");
 
         // Delete version 1
-        repo.delete_secret_by_version(&conn_mut, secret_key, 1)
+        repo.delete_secret_by_version(secret_key, 1)
             .expect("Should delete version 1");
 
         // Version 1 should be gone
-        let result = repo.get_secret_by_version(&mut conn_mut, secret_key, 1);
+        let result = repo.get_secret_by_version(secret_key, 1);
         assert!(result.is_err());
 
         // Version 2 should still exist and be the latest
         let latest = repo
-            .get_secret(&mut conn_mut, secret_key)
+            .get_secret(secret_key)
             .expect("Should get latest version");
         assert_eq!(latest.version, 2);
         assert_eq!(latest.encrypted_data, secret_v2.encrypted_data);
@@ -560,10 +548,9 @@ mod tests {
 
     #[test]
     fn test_delete_secret_by_version_not_found() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
 
-        let result = repo.delete_secret_by_version(&conn, "nonexistent-key", 1);
+        let result = repo.delete_secret_by_version("nonexistent-key", 1);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -573,96 +560,15 @@ mod tests {
     }
 
     #[test]
-    fn test_fetch_secrets_by_master_key() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
-        let master_key1 = create_test_master_key();
-        let master_key2 = create_test_master_key();
-
-        // Create secrets with different master keys
-        let mut conn_mut = conn;
-        let _secret1 = repo
-            .create_new_version(&mut conn_mut, "secret1", "data1", master_key1.clone(), None)
-            .expect("Should create secret1");
-
-        let _secret2 = repo
-            .create_new_version(&mut conn_mut, "secret2", "data2", master_key1.clone(), None)
-            .expect("Should create secret2");
-
-        let _secret3 = repo
-            .create_new_version(&mut conn_mut, "secret3", "data3", master_key2.clone(), None)
-            .expect("Should create secret3");
-
-        // Fetch secrets by master key 1
-        let secrets_mk1 = repo
-            .fetch_secrets_by_master_key(&conn_mut, &master_key1.id)
-            .expect("Should fetch secrets for master key 1");
-
-        assert_eq!(secrets_mk1.len(), 2);
-        assert!(
-            secrets_mk1
-                .iter()
-                .all(|s| s.master_key_id == master_key1.id)
-        );
-
-        // Fetch secrets by master key 2
-        let secrets_mk2 = repo
-            .fetch_secrets_by_master_key(&conn_mut, &master_key2.id)
-            .expect("Should fetch secrets for master key 2");
-
-        assert_eq!(secrets_mk2.len(), 1);
-        assert_eq!(secrets_mk2[0].master_key_id, master_key2.id);
-    }
-
-    #[test]
-    fn test_update_secret_master_key() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
-        let master_key = create_test_master_key();
-
-        // Create a secret
-        let mut conn_mut = conn;
-        let mut secret = repo
-            .create_new_version(&mut conn_mut, "test-secret", "test-data", master_key, None)
-            .expect("Should create secret");
-
-        // Modify the secret
-        let new_master_key = create_test_master_key();
-        secret.master_key_id = new_master_key.id;
-        secret.encrypted_data_key = vec![1, 2, 3, 4]; // Dummy new encrypted key
-        secret.updated_at = time::OffsetDateTime::now_utc().unix_timestamp();
-
-        // Update in database
-        repo.update_secret_master_key(&conn_mut, &secret)
-            .expect("Should update secret");
-
-        // Verify the update
-        let updated_secret = repo
-            .get_secret(&mut conn_mut, "test-secret")
-            .expect("Should retrieve updated secret");
-
-        assert_eq!(updated_secret.master_key_id, new_master_key.id);
-        assert_eq!(updated_secret.encrypted_data_key, vec![1, 2, 3, 4]);
-    }
-
-    #[test]
     fn test_secret_with_ttl() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
 
         let ttl = Some(3600i64); // 1 hour
 
         // Create secret with TTL
-        let mut conn_mut = conn;
         let secret = repo
-            .create_new_version(
-                &mut conn_mut,
-                "ttl-secret",
-                "temporary-data",
-                master_key,
-                ttl,
-            )
+            .create_new_version("ttl-secret", "temporary-data", master_key, ttl)
             .expect("Should create secret with TTL");
 
         assert!(secret.expires_at.is_some());
@@ -671,22 +577,19 @@ mod tests {
 
         // Retrieve and verify TTL is preserved
         let retrieved = repo
-            .get_secret(&mut conn_mut, "ttl-secret")
+            .get_secret("ttl-secret")
             .expect("Should retrieve secret");
         assert_eq!(retrieved.expires_at, secret.expires_at);
     }
 
     #[test]
     fn test_expired_secret_not_retrievable() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
 
         // Create a secret that expires immediately (TTL = 1 second)
-        let mut conn_mut = conn;
         let _secret = repo
             .create_new_version(
-                &mut conn_mut,
                 "expired-secret",
                 "temporary-data",
                 master_key,
@@ -698,7 +601,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         // Try to retrieve the expired secret
-        let result = repo.get_secret(&mut conn_mut, "expired-secret");
+        let result = repo.get_secret("expired-secret");
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -709,15 +612,12 @@ mod tests {
 
     #[test]
     fn test_expired_secret_by_version_not_retrievable() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
 
         // Create a secret that expires immediately
-        let mut conn_mut = conn;
         let secret = repo
             .create_new_version(
-                &mut conn_mut,
                 "expired-secret-v",
                 "temporary-data",
                 master_key,
@@ -729,7 +629,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         // Try to retrieve the expired secret by version
-        let result = repo.get_secret_by_version(&mut conn_mut, "expired-secret-v", secret.version);
+        let result = repo.get_secret_by_version("expired-secret-v", secret.version);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -740,16 +640,12 @@ mod tests {
 
     #[test]
     fn test_cleanup_expired_secrets() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
-
-        let mut conn_mut = conn;
 
         // Create several secrets: some expired, some not
         let _expired1 = repo
             .create_new_version(
-                &mut conn_mut,
                 "expired1",
                 "data1",
                 master_key.clone(),
@@ -759,7 +655,6 @@ mod tests {
 
         let _expired2 = repo
             .create_new_version(
-                &mut conn_mut,
                 "expired2",
                 "data2",
                 master_key.clone(),
@@ -769,7 +664,6 @@ mod tests {
 
         let _permanent = repo
             .create_new_version(
-                &mut conn_mut,
                 "permanent",
                 "permanent-data",
                 master_key.clone(),
@@ -779,7 +673,6 @@ mod tests {
 
         let _long_lived = repo
             .create_new_version(
-                &mut conn_mut,
                 "long-lived",
                 "long-data",
                 master_key,
@@ -792,7 +685,7 @@ mod tests {
 
         // Run cleanup
         let deleted_count = repo
-            .cleanup_expired_secrets(&conn_mut)
+            .cleanup_expired_secrets()
             .expect("Should cleanup expired secrets");
 
         // Should have deleted 2 expired secrets
@@ -800,95 +693,77 @@ mod tests {
 
         // Verify that permanent and long-lived secrets are still retrievable
         let permanent = repo
-            .get_secret(&mut conn_mut, "permanent")
+            .get_secret("permanent")
             .expect("Permanent secret should still exist");
         assert_eq!(permanent.key, "permanent");
 
         let long_lived = repo
-            .get_secret(&mut conn_mut, "long-lived")
+            .get_secret("long-lived")
             .expect("Long-lived secret should still exist");
         assert_eq!(long_lived.key, "long-lived");
 
         // Verify expired secrets are gone
-        let expired1_result = repo.get_secret(&mut conn_mut, "expired1");
+        let expired1_result = repo.get_secret("expired1");
         assert!(expired1_result.is_err());
 
-        let expired2_result = repo.get_secret(&mut conn_mut, "expired2");
+        let expired2_result = repo.get_secret("expired2");
         assert!(expired2_result.is_err());
     }
 
     #[test]
     fn test_cleanup_no_expired_secrets() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
-
-        let mut conn_mut = conn;
 
         // Create only non-expired secrets
         let _permanent = repo
-            .create_new_version(&mut conn_mut, "permanent", "data", master_key.clone(), None)
+            .create_new_version("permanent", "data", master_key.clone(), None)
             .expect("Should create permanent secret");
 
         let _long_lived = repo
-            .create_new_version(
-                &mut conn_mut,
-                "long-lived",
-                "data",
-                master_key,
-                Some(3600i64),
-            )
+            .create_new_version("long-lived", "data", master_key, Some(3600i64))
             .expect("Should create long-lived secret");
 
         // Run cleanup
         let deleted_count = repo
-            .cleanup_expired_secrets(&conn_mut)
+            .cleanup_expired_secrets()
             .expect("Should cleanup expired secrets");
 
         // Should have deleted 0 secrets
         assert_eq!(deleted_count, 0);
 
         // All secrets should still be retrievable
-        repo.get_secret(&mut conn_mut, "permanent")
+        repo.get_secret("permanent")
             .expect("Permanent secret should still exist");
-        repo.get_secret(&mut conn_mut, "long-lived")
+        repo.get_secret("long-lived")
             .expect("Long-lived secret should still exist");
     }
 
     #[test]
     fn test_list_secrets() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
-
-        let mut conn_mut = conn;
 
         // Create several secrets
         let _secret1 = repo
-            .create_new_version(&mut conn_mut, "secret1", "data1", master_key.clone(), None)
+            .create_new_version("secret1", "data1", master_key.clone(), None)
             .expect("Should create secret1");
 
         let _secret2 = repo
-            .create_new_version(
-                &mut conn_mut,
-                "secret2",
-                "data2",
-                master_key.clone(),
-                Some(3600),
-            )
+            .create_new_version("secret2", "data2", master_key.clone(), Some(3600))
             .expect("Should create secret2 with TTL");
 
         let _secret3 = repo
-            .create_new_version(&mut conn_mut, "secret3", "data3", master_key.clone(), None)
+            .create_new_version("secret3", "data3", master_key.clone(), None)
             .expect("Should create secret3");
 
         // Create multiple versions of secret1
         let _secret1_v2 = repo
-            .create_new_version(&mut conn_mut, "secret1", "data1-v2", master_key, None)
+            .create_new_version("secret1", "data1-v2", master_key, None)
             .expect("Should create secret1 version 2");
 
         // List all secrets
-        let secret_list = repo.list_secrets(&conn_mut).expect("Should list secrets");
+        let secret_list = repo.list_secrets().expect("Should list secrets");
 
         // Should return 3 unique secrets (secret1, secret2, secret3)
         assert_eq!(secret_list.len(), 3);
@@ -917,16 +792,12 @@ mod tests {
 
     #[test]
     fn test_list_secrets_excludes_expired() {
-        let conn = setup_test_db();
-        let repo = SqliteSecretRepo;
+        let repo = setup_test_repo();
         let master_key = create_test_master_key();
-
-        let mut conn_mut = conn;
 
         // Create a secret that expires immediately
         let _expired_secret = repo
             .create_new_version(
-                &mut conn_mut,
                 "expired-secret",
                 "temporary-data",
                 master_key.clone(),
@@ -936,22 +807,70 @@ mod tests {
 
         // Create a permanent secret
         let _permanent_secret = repo
-            .create_new_version(
-                &mut conn_mut,
-                "permanent-secret",
-                "permanent-data",
-                master_key,
-                None,
-            )
+            .create_new_version("permanent-secret", "permanent-data", master_key, None)
             .expect("Should create permanent secret");
 
         // Wait for the secret to expire
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         // List secrets should only return the permanent one
-        let secret_list = repo.list_secrets(&conn_mut).expect("Should list secrets");
+        let secret_list = repo.list_secrets().expect("Should list secrets");
 
         assert_eq!(secret_list.len(), 1);
         assert_eq!(secret_list[0].key, "permanent-secret");
+    }
+    #[test]
+    fn test_rekey_secrets_moves_every_secret_to_the_new_key() {
+        let repo = setup_test_repo();
+
+        let (old_private, old_public) = generate_key_pair().expect("Should generate old key pair");
+        let old_key = MasterKey::new(old_public).expect("Should create old master key");
+        let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
+        let new_key = MasterKey::new(new_public).expect("Should create new master key");
+
+        repo.create_new_version("s1", "d1", old_key.clone(), None)
+            .expect("Should create s1");
+        repo.create_new_version("s2", "d2", old_key.clone(), None)
+            .expect("Should create s2");
+
+        let failed = repo
+            .rekey_secrets(&old_key.id, &old_private, &new_key.id, &new_key.public_key)
+            .expect("Should rekey");
+
+        assert!(failed.is_empty(), "no secret should fail to rekey");
+        for key in ["s1", "s2"] {
+            let secret = repo.get_secret(key).expect("Should read secret");
+            assert_eq!(secret.master_key_id, new_key.id);
+        }
+    }
+
+    #[test]
+    fn test_rekey_secrets_with_wrong_private_key_changes_nothing() {
+        let repo = setup_test_repo();
+
+        let (_, old_public) = generate_key_pair().expect("Should generate old key pair");
+        let old_key = MasterKey::new(old_public).expect("Should create old master key");
+        let (unrelated_private, _) = generate_key_pair().expect("Should generate unrelated pair");
+        let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
+        let new_key = MasterKey::new(new_public).expect("Should create new master key");
+
+        repo.create_new_version("s1", "d1", old_key.clone(), None)
+            .expect("Should create s1");
+
+        let failed = repo
+            .rekey_secrets(
+                &old_key.id,
+                &unrelated_private,
+                &new_key.id,
+                &new_key.public_key,
+            )
+            .expect("Should report failures rather than error");
+
+        assert_eq!(failed, vec!["s1".to_string()]);
+        let secret = repo.get_secret("s1").expect("Should read secret");
+        assert_eq!(
+            secret.master_key_id, old_key.id,
+            "a failed rekey must leave the secret on its original master key"
+        );
     }
 }

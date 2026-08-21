@@ -13,7 +13,6 @@ use crate::{
 #[derive(Clone)]
 pub(crate) struct AppState {
     pub(crate) config: Arc<SealboxConfig>,
-    pub(crate) conn_pool: Arc<Mutex<rusqlite::Connection>>,
     pub(crate) health_repo: Arc<dyn HealthRepo>,
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
     pub(crate) master_key_repo: Arc<dyn MasterKeyRepo>,
@@ -26,12 +25,15 @@ impl AppState {
         SqliteSecretRepo::init_table(&conn)?;
         SqliteMasterKeyRepo::init_table(&conn)?;
 
+        // One connection, shared by the repositories. Nothing above this layer holds it:
+        // a database lock has no business in an HTTP handler.
+        let conn = Arc::new(Mutex::new(conn));
+
         let state = Self {
             config: Arc::new(config.clone()),
-            conn_pool: Arc::new(Mutex::new(conn)),
-            health_repo: Arc::new(SqliteHealthRepo {}),
-            secret_repo: Arc::new(SqliteSecretRepo {}),
-            master_key_repo: Arc::new(SqliteMasterKeyRepo {}),
+            health_repo: Arc::new(SqliteHealthRepo::new(conn.clone())),
+            secret_repo: Arc::new(SqliteSecretRepo::new(conn.clone())),
+            master_key_repo: Arc::new(SqliteMasterKeyRepo::new(conn)),
         };
 
         // Perform startup cleanup of expired secrets
@@ -43,8 +45,7 @@ impl AppState {
     /// Clean up expired secrets during application startup
     fn startup_cleanup(&self) -> Result<()> {
         info!("Performing startup cleanup of expired secrets...");
-        let conn = self.conn_pool.lock()?;
-        let deleted_count = self.secret_repo.cleanup_expired_secrets(&conn)?;
+        let deleted_count = self.secret_repo.cleanup_expired_secrets()?;
         if deleted_count > 0 {
             info!(
                 "Startup cleanup completed: removed {} expired secrets",

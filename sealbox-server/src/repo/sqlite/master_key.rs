@@ -1,4 +1,5 @@
 use rusqlite::OptionalExtension;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use crate::{
@@ -7,7 +8,15 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct SqliteMasterKeyRepo;
+pub(crate) struct SqliteMasterKeyRepo {
+    conn: Arc<Mutex<rusqlite::Connection>>,
+}
+
+impl SqliteMasterKeyRepo {
+    pub(crate) fn new(conn: Arc<Mutex<rusqlite::Connection>>) -> Self {
+        Self { conn }
+    }
+}
 
 impl SqliteMasterKeyRepo {
     pub fn init_table(conn: &rusqlite::Connection) -> Result<()> {
@@ -29,7 +38,9 @@ impl SqliteMasterKeyRepo {
 }
 
 impl MasterKeyRepo for SqliteMasterKeyRepo {
-    fn create_master_key(&self, conn: &rusqlite::Connection, key: &MasterKey) -> Result<()> {
+    fn create_master_key(&self, key: &MasterKey) -> Result<()> {
+        let guard = self.conn.lock()?;
+        let conn = &*guard;
         conn.execute(
             "INSERT INTO master_keys (
                 id,
@@ -51,11 +62,9 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
         Ok(())
     }
 
-    fn fetch_public_key(
-        &self,
-        conn: &rusqlite::Connection,
-        master_key_id: &Uuid,
-    ) -> Result<Option<String>> {
+    fn fetch_public_key(&self, master_key_id: &Uuid) -> Result<Option<String>> {
+        let guard = self.conn.lock()?;
+        let conn = &*guard;
         let mut stmt = conn.prepare("SELECT public_key FROM master_keys WHERE id = ?1 LIMIT 1")?;
         let public_key = stmt
             .query_one([master_key_id], |row| row.get(0))
@@ -63,7 +72,9 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
         Ok(public_key)
     }
 
-    fn get_valid_master_key(&self, conn: &rusqlite::Connection) -> Result<MasterKey> {
+    fn get_valid_master_key(&self) -> Result<MasterKey> {
+        let guard = self.conn.lock()?;
+        let conn = &*guard;
         let mut stmt = conn.prepare("SELECT * FROM master_keys WHERE status = ?1 LIMIT 1")?;
         let master_key = stmt
             .query_one([MasterKeyStatus::Active], |row| {
@@ -85,7 +96,9 @@ impl MasterKeyRepo for SqliteMasterKeyRepo {
         }
     }
 
-    fn fetch_all_master_keys(&self, conn: &rusqlite::Connection) -> Result<Vec<MasterKey>> {
+    fn fetch_all_master_keys(&self) -> Result<Vec<MasterKey>> {
+        let guard = self.conn.lock()?;
+        let conn = &*guard;
         let mut stmt =
             conn.prepare("SELECT id, created_at, status, description, metadata FROM master_keys")?;
         let master_key_iter = stmt.query_map([], |row| {

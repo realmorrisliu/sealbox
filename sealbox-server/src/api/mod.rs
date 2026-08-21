@@ -103,12 +103,7 @@ async fn liveness_probe() -> SealboxResponse {
 /// Readiness probe - check if service is ready to receive traffic
 /// Checks database connection and other critical dependencies for Kubernetes readiness probe
 async fn readiness_probe(State(state): State<AppState>) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock().map_err(|e| {
-        error!("{}", e);
-        SealboxError::DatabaseError("Database connection unavailable".to_string())
-    })?;
-
-    state.health_repo.check_health(&conn).map_err(|e| {
+    state.health_repo.check_health().map_err(|e| {
         error!("{}", e);
         SealboxError::DatabaseError("Database health check failed".to_string())
     })?;

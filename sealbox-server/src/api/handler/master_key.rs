@@ -1,7 +1,6 @@
 use axum::extract::{Json, State};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::error;
 use uuid::Uuid;
 
 use crate::{
@@ -19,8 +18,7 @@ pub(crate) struct RekeyPayload {
 
 // GET /{version}/master-key
 pub(crate) async fn list(State(state): State<AppState>) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
-    let master_keys = state.master_key_repo.fetch_all_master_keys(&conn)?;
+    let master_keys = state.master_key_repo.fetch_all_master_keys()?;
     Ok(SealboxResponse::Json(json!(master_keys)))
 }
 
@@ -33,43 +31,17 @@ pub(crate) async fn rekey(
     let old_master_key_id = payload.old_master_key_id;
     let old_private_key_pem = payload.old_private_key_pem;
 
-    let mut conn = state.conn_pool.lock()?;
-
     let new_public_key_pem = state
         .master_key_repo
-        .fetch_public_key(&conn, &new_master_key_id)?
+        .fetch_public_key(&new_master_key_id)?
         .ok_or(SealboxError::MasterKeyNotFound(new_master_key_id))?;
 
-    let secrets = state
-        .secret_repo
-        .fetch_secrets_by_master_key(&conn, &old_master_key_id)?;
-
-    let mut failed_secret_keys = Vec::new();
-
-    let tx = conn.transaction()?;
-
-    for secret in secrets {
-        let secret_key = secret.key.clone();
-
-        match secret.rekey(
-            &old_master_key_id,
-            &old_private_key_pem,
-            &new_master_key_id,
-            &new_public_key_pem,
-        ) {
-            Ok(rekeyed_secret) => {
-                state
-                    .secret_repo
-                    .update_secret_master_key(&tx, &rekeyed_secret)?;
-            }
-            Err(err) => {
-                failed_secret_keys.push(secret_key.clone());
-                error!("Failed to rekey for secret {}: {}", secret_key, err);
-            }
-        }
-    }
-
-    tx.commit()?;
+    let failed_secret_keys = state.secret_repo.rekey_secrets(
+        &old_master_key_id,
+        &old_private_key_pem,
+        &new_master_key_id,
+        &new_public_key_pem,
+    )?;
 
     if !failed_secret_keys.is_empty() {
         return Ok(SealboxResponse::Json(json!({
@@ -93,11 +65,8 @@ pub(crate) async fn create(
     State(state): State<AppState>,
     Json(payload): Json<CreateMasterKeyPayload>,
 ) -> Result<SealboxResponse> {
-    let conn = state.conn_pool.lock()?;
     let master_key = MasterKey::new(payload.public_key)?;
-    state
-        .master_key_repo
-        .create_master_key(&conn, &master_key)?;
+    state.master_key_repo.create_master_key(&master_key)?;
     Ok(SealboxResponse::Json(json!(master_key)))
 }
 
@@ -118,11 +87,11 @@ mod tests {
         crate::repo::SqliteMasterKeyRepo::init_table(&conn).expect("Should init master_keys table");
         crate::repo::SqliteSecretRepo::init_table(&conn).expect("Should init secrets table");
 
+        let conn = Arc::new(Mutex::new(conn));
         AppState {
-            conn_pool: Arc::new(Mutex::new(conn)),
-            master_key_repo: Arc::new(SqliteMasterKeyRepo),
-            secret_repo: Arc::new(SqliteSecretRepo),
-            health_repo: Arc::new(SqliteHealthRepo),
+            master_key_repo: Arc::new(SqliteMasterKeyRepo::new(conn.clone())),
+            secret_repo: Arc::new(SqliteSecretRepo::new(conn.clone())),
+            health_repo: Arc::new(SqliteHealthRepo::new(conn)),
             config: Arc::new(SealboxConfig::default()),
         }
     }
