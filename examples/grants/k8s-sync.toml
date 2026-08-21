@@ -1,0 +1,21 @@
+# Push secrets into a Kubernetes Secret that workloads already read via envFrom.
+#
+# Nothing changes on the workload side: no sidecar, no CSI driver, no operator, and no sealbox
+# credential ever reaches a Pod. Only the source of the values changes.
+
+[k8s-sync]
+adapter = "kubernetes-secret"
+runner  = "prod-cluster"          # in-cluster; uses its own ServiceAccount, no kubeconfig stored
+
+config = { namespace = "utopia-system-{env}", name = "utopia-runtime-secret-bridge" }
+
+# What a human reviews. The adapter cannot touch anything not listed here,
+# and cannot do anything to the cluster except write this Secret.
+secrets = {
+  DATABASE_URL          = "utopia/{env}/database-url",
+  OSS_ENDPOINT          = "utopia/{env}/oss-endpoint",
+  OSS_BUCKET            = "utopia/{env}/oss-bucket",
+  CONTENT_ACCESS_SECRET = "utopia/{env}/content-access-secret",
+}
+
+# sealbox run k8s-sync env=prod

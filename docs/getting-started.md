@@ -1,184 +1,151 @@
-# Getting Started with Sealbox
+# Getting Started
 
-This guide will walk you through setting up and using Sealbox for secure secret management.
+> **This describes the target setup. It is not implemented yet** — see the status note in
+> [`README.md`](../README.md). Written down now because the ceremony below is part of the design,
+> not an afterthought.
 
-## Prerequisites
+Setting sealbox up takes about half an hour, once. There are four steps and each exists for a
+reason; none of them is boilerplate.
 
-- Rust 1.85+ (for building from source)
-- A Unix-like system (Linux, macOS)
-
-## Step 1: Build Sealbox
-
-```bash
-# Clone the repository
-git clone https://github.com/realmorrisliu/sealbox.git
-cd sealbox
-
-# Build both server and CLI
-cargo build --release
-```
-
-After building, you'll have:
-- `./target/release/sealbox-server` - The server binary
-- `./target/release/sealbox-cli` - The CLI tool
-
-## Step 2: Start the Server
-
-Create a directory for your Sealbox data and start the server:
+## 1. Bring the server up
 
 ```bash
-# Create data directory
-mkdir -p /var/lib/sealbox
+fly launch
+fly volumes create sealbox_data --size 1
 
-# Set environment variables
-export STORE_PATH=/var/lib/sealbox/sealbox.db
-export AUTH_TOKEN=your-secure-token-here
-export LISTEN_ADDR=127.0.0.1:8080
-
-# Start the server
-./target/release/sealbox-server
+# You generate the bootstrap token. It must never pass through logs.
+fly secrets set SEALBOX_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
+fly deploy
 ```
 
-The server will output:
-```
-Sealbox server starting...
-Listening on 127.0.0.1:8080
-Database: /var/lib/sealbox/sealbox.db
-```
-
-## Step 3: Set Up the CLI
-
-Initialize the CLI configuration with command-line parameters:
+The bootstrap token is accepted **only while zero identities exist**, **only within 30 minutes of
+server start**, and **exactly once**; the use is audited. Unset it immediately afterwards:
 
 ```bash
-# Initialize with all parameters (recommended)
-./target/release/sealbox-cli config init \
-    --url http://localhost:8080 \
-    --token your-secure-token-here \
-    --public-key ~/.config/sealbox/public_key.pem \
-    --private-key ~/.config/sealbox/private_key.pem \
-    --output table
-
-# Or initialize interactively (will prompt for missing values)
-./target/release/sealbox-cli config init
+fly secrets unset SEALBOX_BOOTSTRAP_TOKEN
 ```
 
-This creates `~/.config/sealbox/config.toml` with your settings.
+> **Why not print it in the logs?** Logs get shipped, aggregated, retained, and read by people who
+> should not be able to claim your server. This is the same reason GitLab and Grafana take their
+> initial credential from the environment.
 
-## Step 4: Generate Your Key Pair
-
-Generate your RSA key pair for end-to-end encryption:
+## 2. Become admin, and back up the master key
 
 ```bash
-# Generate your private/public key pair
-./target/release/sealbox-cli key generate
+sealbox init --server https://sealbox.example.dev --bootstrap-token <value>
 ```
 
-The keys will be automatically saved to:
-- `~/.config/sealbox/private_key.pem` (permissions set to 600)
-- `~/.config/sealbox/public_key.pem`
+This runs one ceremony with several parts:
 
-## Step 5: Register Your Public Key
+1. The CLI generates a **recovery keypair locally**. The public half is uploaded; the private half
+   is displayed **once**.
+2. The server generates its master key and stores it encrypted under your recovery public key.
+   **The master key itself is never displayed, logged, or returned by any endpoint.**
+3. You must **type the recovery key back** before initialisation completes.
+4. A browser opens; you register your passkey.
 
-Register your public key with the server:
+> **The re-entry is not ceremony for its own sake.** An unverified backup is reliably not a backup
+> — it is a transcription error nobody discovers until the day it matters. This is why 1Password
+> makes you print an Emergency Kit and hardware wallets make you re-enter the seed phrase.
+
+Store the recovery key where you store nothing else — a password manager, or paper. It is what
+stands between a lost server and lost credentials. Since it is also a master key the server does
+not hold ([ADR 0001](adr/0001-broker-over-e2ee.md)), it decrypts the database directly, and works
+even if every passkey is lost. **Authentication and encryption fail independently, by design.**
+
+## 3. Put a runner in your cluster
 
 ```bash
-# Register using your configuration
-./target/release/sealbox-cli key register
+sealbox identity create prod-cluster --role runner   # → join token, 15 minutes, single use
 
-# Verify the registration
-./target/release/sealbox-cli key status
+kubectl -n sealbox create secret generic sealbox-join \
+  --from-literal=token=<join-token>
+kubectl apply -f runner-deployment.yaml
 ```
 
-## Step 6: Store Your First Secret
+On first start the runner generates **its own keypair**, registers the public half using the join
+token, and authenticates by signature thereafter. The join token expires in fifteen minutes, so
+**the Secret you just created becomes worthless within the hour** — which is what makes this one
+manual step acceptable.
 
-Now you can securely store secrets:
+The chicken-and-egg has to be broken somewhere. It is broken here, deliberately, visibly, and with
+a short fuse.
+
+The runner needs **no inbound port, no Ingress, and no public endpoint** — it dials out. Its
+ServiceAccount is its entire authority over the cluster; scope it to exactly what your grants
+need, and add a second runner with a narrower ServiceAccount rather than reaching for a
+permissions system inside sealbox.
+
+## 4. Move your credentials in
 
 ```bash
-# Store a database password
-./target/release/sealbox-cli secret set db_password "my-super-secret-password"
-
-# Store an API key with TTL (expires in 1 hour)
-./target/release/sealbox-cli secret set api_key "sk-1234567890" --ttl 3600
+sealbox admin                          # one passkey prompt for the whole session
+> set app/database-url                 # value on stdin, never on a command line
+> set app/oss-endpoint
+> set pg/prod-admin-password
+> exit                                 # the session lives in memory and dies with the process
 ```
 
-## Step 7: Retrieve Secrets
+Then delete the originals:
 
 ```bash
-# Get the database password
-./target/release/sealbox-cli secret get db_password
-
-# List all your secrets
-./target/release/sealbox-cli secret list
+rm ~/.config/app/secrets.env
 ```
 
-## Understanding the Security Model
+No import command is needed for bulk work — a shell loop inside one admin session does it:
 
-Sealbox uses **server-side envelope encryption** with **client-side decryption**:
-
-1. **Your private key never leaves your machine** - Generated and stored locally
-2. **CLI sends plaintext secrets** to the server over HTTPS
-3. **Server encrypts using envelope encryption**:
-   - Random AES-256-GCM key encrypts your secret
-   - Your RSA public key encrypts the AES key
-4. **Server stores encrypted data** - Cannot decrypt without your private key
-5. **Only you can decrypt** secrets when retrieving them using your private key
-
-**Key Point**: While secrets are sent as plaintext to the server, only you can decrypt the stored encrypted data.
-
-## TTL (Time-To-Live) Features
-
-Sealbox supports automatic expiration of secrets using TTL:
-
-### How TTL Works
-- **Set TTL**: Specify expiration time in seconds when storing secrets
-- **Lazy Cleanup**: Expired secrets are deleted when you try to access them
-- **Startup Cleanup**: Server removes expired secrets when it starts
-- **Manual Cleanup**: Use admin API to batch-remove expired secrets
-
-### TTL Examples
 ```bash
-# Store a temporary API token (expires in 1 hour)
-./target/release/sealbox-cli secret set api_token "temp-token-123" --ttl 3600
-
-# Store a session key (expires in 30 minutes)
-./target/release/sealbox-cli secret set session_key "session-abc" --ttl 1800
-
-# Permanent secret (no TTL)
-./target/release/sealbox-cli secret set permanent_key "never-expires"
+sealbox admin --exec 'for f in ~/creds/*; do set app/$(basename $f) < $f; done'
 ```
 
-### TTL Behavior Notes
-- **Not Real-Time**: Expired secrets aren't deleted immediately when they expire
-- **Access-Triggered**: Deletion happens when you try to retrieve the expired secret
-- **Automatic**: No manual intervention needed for cleanup
-- **Storage Efficient**: Expired data is eventually removed from disk
+## 5. Grant the first capability
 
-## Next Steps
+Have an agent draft it by imitating [`examples/grants/`](../examples/grants/):
 
-- [CLI Reference](cli-reference.md) - Complete command documentation
-- [Configuration](configuration.md) - Advanced configuration options
-- [Security Guide](security.md) - Security best practices
-- [API Reference](api-reference.md) - REST API documentation
+```toml
+[k8s-sync]
+adapter = "kubernetes-secret"
+runner  = "prod-cluster"
+config  = { namespace = "production", name = "app-runtime-secrets" }
+secrets = { DATABASE_URL = "app/database-url", OSS_ENDPOINT = "app/oss-endpoint" }
+```
 
-## Troubleshooting
+```bash
+sealbox grant add ./grants/k8s-sync.toml
+```
 
-### Server won't start
-- Check that the `STORE_PATH` directory exists and is writable
-- Ensure the port in `LISTEN_ADDR` is not already in use
-- Verify environment variables are set correctly
+A browser opens — on your laptop, or scan the link with your phone. **What you approve is the
+declaration above, not a script.** The page is rendered by the server, so an agent cannot show you
+one grant and submit another.
 
-### CLI can't connect to server
-- **Network Proxy Issues**: If you're using Surge, ClashX, or other proxy software, disable it for localhost connections or add localhost to bypass list
-- Verify the server is running: `curl -H "Authorization: Bearer your-token" http://localhost:8080/v1/master-key`
-- Check the URL and token in your configuration: `./target/release/sealbox-cli config show`
+Approving from a phone is worth doing: it puts the approval on a device the agent has no access
+to at all.
 
-### Configuration Issues
-- Use environment variables if needed: `SEALBOX_URL`, `SEALBOX_TOKEN`
-- Config file location: `~/.config/sealbox/config.toml`
-- Re-initialize if needed: `./target/release/sealbox-cli config init --force`
+## From then on
 
-### TTL-Related Issues
-- **Secret disappeared**: It may have expired, check if you set a TTL
-- **Unexpected cleanup**: Server cleans expired secrets on startup
-- **Storage not shrinking**: Use manual cleanup: `curl -X DELETE -H "Authorization: Bearer $TOKEN" $URL/v1/admin/cleanup-expired`
+```bash
+# Agents, daily
+sealbox run k8s-sync ns=production
+sealbox rotate app/database-url --via pg-provision --from-output host=... user=app
+
+# You, occasionally
+sealbox grant add ./grants/new-thing.toml
+sealbox audit --since 24h
+sealbox identity revoke agent-laptop
+```
+
+## Recovering from total loss
+
+```bash
+fly launch                    # new instance, same domain
+sealbox recovery-restore      # supply the recovery key; decrypts the master key
+litestream restore            # bring back the database
+```
+
+Passkeys still work because WebAuthn binds to the domain, and the runner reconnects on its own.
+
+## Next
+
+- [CLI reference](cli-reference.md) — the full command surface
+- [Configuration](configuration.md) — server, runner, and CLI settings
+- [Design](agent-native-design.md) — why any of this is shaped the way it is

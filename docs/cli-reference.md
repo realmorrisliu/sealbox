@@ -1,386 +1,243 @@
 # CLI Reference
 
-Complete reference for the Sealbox command-line interface.
+> **This describes the target command surface. It is not implemented yet** — see the status note
+> in [`README.md`](../README.md).
 
-## Global Options
+One binary, `sealbox`, used by humans, agents, and the runner alike. What differs is the identity
+it authenticates as.
 
-All commands support these global options:
+**There is no command that prints a secret's value.** That is not an omission.
 
-- `--config <path>` - Path to configuration file (default: `~/.config/sealbox/config.toml`)
-- `--output <format>` - Output format: `table`, `json`, `yaml` (default: `table`)
-- `--help` - Show help information
-- `--version` - Show version information
+## Command surface at a glance
 
-## Configuration Commands
+| Command | admin | operator | agent | runner |
+|---|:--:|:--:|:--:|:--:|
+| `run`, `grants`, `ls`, `audit` | ✓ | ✓ | ✓ | |
+| `rotate` (via an approved grant) | ✓ | ✓ | ✓ | |
+| `set`, `gen` | ✓ | ✓ | | |
+| `grant add/rm`, `identity *` | ✓ | | | |
+| `runner` | | | | ✓ |
 
-### `config init`
+Admin commands require a **passkey approval**, not a stored token ([ADR 0009](adr/0009-admin-authenticates-with-passkeys.md)).
 
-Initialize CLI configuration interactively or with command-line parameters.
+---
 
-```bash
-sealbox-cli config init [OPTIONS]
-```
+## Setup
 
-**Options:**
-- `--url <url>` - Server URL
-- `--token <token>` - Authentication token
-- `--public-key <path>` - Public key file path
-- `--private-key <path>` - Private key file path
-- `--output <format>` - Output format: `table`, `json`, `yaml`
-- `--force` - Overwrite existing configuration file
+### `sealbox init`
 
-**Examples:**
-```bash
-# Initialize with all parameters
-sealbox-cli config init \
-    --url http://localhost:8080 \
-    --token your-token \
-    --public-key ~/.config/sealbox/public_key.pem \
-    --private-key ~/.config/sealbox/private_key.pem \
-    --output table
-
-# Initialize interactively (prompts for missing values)
-sealbox-cli config init
-
-# Force overwrite existing configuration
-sealbox-cli config init --force
-```
-
-Creates `~/.config/sealbox/config.toml` with your settings.
-
-### `config show`
-
-Display current configuration.
+One-time initialisation of a fresh server: generates the recovery keypair locally, has the server
+generate its master key, forces recovery-key verification, and registers the first passkey.
 
 ```bash
-sealbox-cli config show
+sealbox init --server https://sealbox.example.dev --bootstrap-token <value>
 ```
 
-## Key Management Commands
+| Flag | Meaning |
+|---|---|
+| `--server <url>` | Server URL; stored in the local config |
+| `--bootstrap-token <value>` | The value injected at deploy time. Single use, 30-minute window, zero-identity only. |
 
-### `key generate`
+### `sealbox admin`
 
-Generate a new RSA key pair for encryption.
+Opens an interactive session after **one** passkey authentication. The session lives in process
+memory and is never written to disk; it dies with the process.
 
 ```bash
-sealbox-cli key generate [OPTIONS]
+sealbox admin
+> set app/database-url
+> grant add ./grants/k8s-sync.toml
+> exit
+
+sealbox admin --exec 'set app/token'      # non-interactive, one authentication
 ```
 
-**Options:**
-- `--key-size <bits>` - RSA key size (default: 2048)
-- `--force` - Overwrite existing keys
+Without this, importing fifty credentials would mean fifty fingerprints — and intolerable security
+gets bypassed.
 
-**Example:**
-```bash
-sealbox-cli key generate --key-size 4096
-```
+---
 
-### `key register`
+## Secrets
 
-Register your public key with the Sealbox server.
+### `sealbox set <name>`
 
-```bash
-sealbox-cli key register [OPTIONS]
-```
-
-**Options:**
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
-
-**Example:**
-```bash
-sealbox-cli key register --url http://localhost:8080 --token my-token
-```
-
-### `key list`
-
-List all registered public keys on the server.
+Stores a value read from **stdin** — never from a command-line argument, which would put it in
+shell history and process listings.
 
 ```bash
-sealbox-cli key list [OPTIONS]
+sealbox set app/database-url                 # prompts, input hidden
+sealbox set k8s/dockerconfig < config.json
 ```
 
-**Options:**
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
+### `sealbox gen <name>`
 
-### `key status`
-
-Show the status of your local keys and server registration.
+Generates a value **on the server** and stores it. The plaintext never crosses the network.
 
 ```bash
-sealbox-cli key status
+sealbox gen app/session-key --type password --length 32
+sealbox gen app/hmac --type hex
 ```
 
-### `key rotate`
+| Flag | Values |
+|---|---|
+| `--type` | `password`, `hex` |
+| `--length <n>` | Length in characters or bytes depending on type |
+| `--ttl <seconds>` | Optional expiry |
 
-Rotate to a new key pair (advanced operation).
+### `sealbox ls [prefix]`
+
+Lists names and metadata. **Never values.**
 
 ```bash
-sealbox-cli key rotate [OPTIONS]
+sealbox ls app/
+sealbox ls --uses pg/prod-admin-password     # which grants may use this secret
 ```
 
-**Options:**
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
+`--uses` answers the question no other secret manager can: *everything this credential can do
+here*. The answer is the set of grants declaring it.
 
-## Secret Management Commands
+### `sealbox rm <name> [--version N]`
 
-### `secret set`
+Deletes a secret, or one version of it.
 
-Store a secret with the given key.
+---
+
+## Grants
+
+### `sealbox grant add <file>`
+
+Submits a grant for approval. Opens a browser; the server renders what is being approved, and a
+passkey signs it.
 
 ```bash
-sealbox-cli secret set <key> <value> [OPTIONS]
+sealbox grant add ./grants/k8s-sync.toml
 ```
 
-**Arguments:**
-- `<key>` - Secret identifier
-- `<value>` - Secret value (use `-` to read from stdin)
+The script body, if any, is **ingested and stored**, never referenced by path — otherwise a grant
+approved once could have its file edited afterwards, and what was reviewed would differ from what
+runs.
 
-**Options:**
-- `--ttl <seconds>` - Time-to-live in seconds (expires after creation time)
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
+### `sealbox grants` / `sealbox grant show <name>` / `sealbox grant rm <name>`
 
-**TTL Behavior:**
-- Expired secrets are automatically deleted when accessed (lazy cleanup)
-- Server also cleans expired secrets on startup
-- Use admin cleanup endpoint for immediate batch removal
+Lists what you may run, shows one grant's declaration, removes one. `rm` is an admin operation.
 
-**Examples:**
-```bash
-# Store a simple secret (permanent)
-sealbox-cli secret set db_password "my-secret-password"
+### Grant file format
 
-# Store with TTL (expires in 1 hour = 3600 seconds)
-sealbox-cli secret set temp_token "abc123" --ttl 3600
-
-# Store session data (expires in 30 minutes)
-sealbox-cli secret set session_data "user-session-123" --ttl 1800
-
-# Store short-lived API key (expires in 5 minutes)
-sealbox-cli secret set quick_key "temp-key-456" --ttl 300
-
-# Read secret from stdin
-echo "my-secret" | sealbox-cli secret set api_key -
+```toml
+[k8s-sync]
+adapter = "kubernetes-secret"          # or: script = """ ... """
+runner  = "prod-cluster"
+config  = { namespace = "production", name = "app-runtime-secrets" }
+secrets = { DATABASE_URL = "app/database-url", OSS_ENDPOINT = "app/oss-endpoint" }
+then    = ["k8s-restart", "verify-health"]     # optional linear chain, stop on failure
 ```
 
-### `secret get`
+| Field | Meaning |
+|---|---|
+| `adapter` | A built-in implementation. Mutually exclusive with `script`. |
+| `script` | Shell body, for anything adapters do not cover. Stored, not referenced. |
+| `runner` | Which runner executes this. |
+| `config` | Adapter-specific settings. |
+| `secrets` | Name-to-secret mapping. **This is what a human reviews.** |
+| `then` | Grants to run on success, in order. No retries, no branching ([ADR 0011](adr/0011-rotation-uses-dual-credentials-and-a-linear-chain.md)). |
 
-Retrieve and decrypt a secret.
+Parameters written `{name}` are substituted from `run` arguments **into argv, never through a
+shell** — so `{ns}` = `x; curl evil.com` is merely an odd argument.
 
-```bash
-sealbox-cli secret get <key> [OPTIONS]
-```
+Built-in adapters: `kubernetes-secret`, `postgres-role`.
 
-**Arguments:**
-- `<key>` - Secret identifier
+---
 
-**Options:**
-- `--version <version>` - Specific version to retrieve (default: latest)
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
+## Execution
 
-**TTL Behavior:**
-- If the secret has expired, it will be automatically deleted and you'll get a "Secret not found" error
-- This is the lazy cleanup mechanism in action
+### `sealbox run <grant> [key=value ...]`
 
-**Examples:**
-```bash
-# Get latest version
-sealbox-cli secret get db_password
-
-# Get specific version
-sealbox-cli secret get db_password --version 2
-
-# Expired secret will return "Secret not found"
-sealbox-cli secret get expired_token
-```
-
-### `secret list`
-
-List all your secrets (metadata only, no values).
+Submits a job, waits, prints the result.
 
 ```bash
-sealbox-cli secret list [OPTIONS]
+sealbox run k8s-sync ns=production
+sealbox run k8s-restart ns=production deploy=api
 ```
 
-**Options:**
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
+The CLI receives an exit code and output — **never plaintext**. Execution happens on the runner
+the grant declares.
 
-### `secret delete`
+### `sealbox rotate <secret> --via <grant> [--from-output] [key=value ...]`
 
-Delete a secret or specific version.
+Replaces a secret's value, committing **only if the grant succeeds**. A failed upstream push
+leaves the old value current.
 
 ```bash
-sealbox-cli secret delete <key> [OPTIONS]
+sealbox rotate app/db-password --via pg-set-password
+sealbox rotate app/database-url --via pg-provision --from-output host=pgm-x user=app db=app
 ```
 
-**Arguments:**
-- `<key>` - Secret identifier
+| | Value handed to the grant | Value stored |
+|---|---|---|
+| default | server-generated, as `$SEALBOX_NEW` | the generated value |
+| `--from-output` | server-generated, as `$SEALBOX_NEW` | the grant's stdout |
 
-**Options:**
-- `--version <version>` - Specific version to delete (default: all versions)
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
+`--from-output` is how composed values are handled — a `DATABASE_URL` with a percent-encoded
+password, or a credential only an upstream can issue. The two switches are orthogonal: sealbox
+always generates, the grant decides what is worth storing.
 
-**Examples:**
-```bash
-# Delete all versions
-sealbox-cli secret delete old_password
+### `sealbox runner --name <name>`
 
-# Delete specific version
-sealbox-cli secret delete old_password --version 1
-```
-
-### `secret import`
-
-Import secrets from a file.
+Runs the executor. Long-polls for jobs, receives plaintext for the grants it is given, executes,
+reports back. Outbound connections only.
 
 ```bash
-sealbox-cli secret import [OPTIONS]
+sealbox runner --name prod-cluster        # a Deployment in your cluster
+sealbox runner --name laptop              # for grants targeting your own machine
 ```
 
-**Options:**
-- `--file <path>` - JSON file containing secrets
-- `--format <format>` - Input format: `json` (default)
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
+Running something locally means running a local runner. There is exactly one execution path, so
+there is exactly one security model.
 
-**Input File Format (JSON):**
-```json
-{
-  "secrets": {
-    "db_password": "secret-value-1",
-    "api_key": "secret-value-2"
-  }
-}
-```
+---
 
-**Example:**
-```bash
-sealbox-cli secret import --file secrets.json
-```
+## Identities
 
-### `secret export`
-
-Export secrets to a file (requires local decryption).
+### `sealbox identity create <name> --role <role>`
 
 ```bash
-sealbox-cli secret export [OPTIONS]
+sealbox identity create alice --role operator      # → single-use invite, 24h, bound to alice
+sealbox identity create prod-cluster --role runner # → join token, 15 min, single use
+sealbox identity create claude-code --role agent   # → bearer token
 ```
 
-**Options:**
-- `--file <path>` - Output file path
-- `--format <format>` - Output format: `json` (default)
-- `--url <url>` - Server URL (overrides config)
-- `--token <token>` - Authentication token (overrides config)
+Humans get an **invite link** and register their own passkey; the link grants only the right to
+register, carries no data access, and is fully audited. Runners get a **join token** they exchange
+for a self-generated keypair. Agents get a bearer token, because they have no fingers.
 
-## TTL and Administration
+### `sealbox identity list` / `sealbox identity revoke <name>`
 
-### TTL (Time-To-Live) Overview
+Revocation is immediate and affects nobody else. That is what identities are for.
 
-TTL allows secrets to automatically expire and be deleted:
+---
 
-**How it works:**
-- Set TTL in seconds when storing secrets with `--ttl <seconds>`
-- Expired secrets are deleted when accessed (lazy cleanup)
-- Server cleans expired secrets on startup
-- Manual cleanup available via admin API
+## Audit and recovery
 
-**Use cases:**
-- **Temporary tokens**: API keys that should expire quickly
-- **Session data**: User sessions with automatic timeout
-- **One-time secrets**: Passwords that should be short-lived
-- **Development**: Temporary configurations for testing
-
-### Manual Cleanup (Admin)
-
-While the CLI doesn't have a direct admin command, you can manually trigger cleanup:
+### `sealbox audit`
 
 ```bash
-# Using curl to trigger manual cleanup
-curl -X DELETE \
-  -H "Authorization: Bearer your-token" \
-  http://localhost:8080/v1/admin/cleanup-expired
-
-# Response shows cleanup statistics
-{
-  "deleted_count": 15,
-  "cleaned_at": 1640995200
-}
+sealbox audit --since 24h
+sealbox audit --identity claude-code
+sealbox audit --grant k8s-sync
 ```
 
-## Legacy Commands
+Every attempt is recorded, successful or not: who, when, which grant, which secrets, what outcome.
 
-### `master-key create`
+### `sealbox recovery-export` / `sealbox recovery-restore`
 
-Legacy command for key generation and registration in one step.
+Exports the encrypted recovery blob — safe to store anywhere, because it is encrypted to a key the
+server does not hold. `recovery-restore` rebuilds a server's master key from it given the recovery
+key.
 
-```bash
-sealbox-cli master-key create [OPTIONS]
-```
+---
 
-**Options:**
-- `--url <url>` - Server URL
-- `--token <token>` - Authentication token
-- `--public-key-path <path>` - Public key file path
-- `--private-key-path <path>` - Private key file path
+## Configuration
 
-## Output Formats
-
-### Table Format (Default)
-
-Human-readable table output:
-```
-┌─────────────┬─────────┬─────────────────────┐
-│ Key         │ Version │ Created             │
-├─────────────┼─────────┼─────────────────────┤
-│ db_password │ 1       │ 2024-01-15 10:30:45 │
-│ api_key     │ 2       │ 2024-01-15 11:15:20 │
-└─────────────┴─────────┴─────────────────────┘
-```
-
-### JSON Format
-
-Machine-readable JSON output:
-```json
-{
-  "secrets": [
-    {
-      "key": "db_password",
-      "version": 1,
-      "created": "2024-01-15T10:30:45Z"
-    }
-  ]
-}
-```
-
-### YAML Format
-
-YAML output:
-```yaml
-secrets:
-  - key: db_password
-    version: 1
-    created: 2024-01-15T10:30:45Z
-```
-
-## Environment Variables
-
-CLI commands can be configured using environment variables:
-
-- `SEALBOX_URL` - Server URL
-- `SEALBOX_TOKEN` - Authentication token
-- `SEALBOX_CONFIG` - Configuration file path
-- `SEALBOX_OUTPUT` - Default output format
-
-## Exit Codes
-
-- `0` - Success
-- `1` - General error
-- `2` - Authentication error
-- `3` - Network/connection error
-- `4` - File/configuration error
+Server URL and identity token live in `~/.config/sealbox/config.toml`; see
+[Configuration](configuration.md). Admin operations do not read a credential from that file,
+because none exists.
