@@ -33,8 +33,9 @@ pub(crate) async fn rekey(
 
     let new_public_key_pem = state
         .master_key_repo
-        .fetch_public_key(&new_master_key_id)?
-        .ok_or(SealboxError::MasterKeyNotFound(new_master_key_id))?;
+        .fetch_master_key(&new_master_key_id)?
+        .ok_or(SealboxError::MasterKeyNotFound(new_master_key_id))?
+        .public_key;
 
     let failed_secret_keys = state.secret_repo.rekey_secrets(
         &old_master_key_id,

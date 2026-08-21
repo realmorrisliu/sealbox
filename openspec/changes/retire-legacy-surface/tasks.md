@@ -37,11 +37,11 @@ Mechanical, and done before the repo refactor so the refactor does not have to m
 
 ## 5. Server-held master key
 
-- [ ] 5.1 Add `SEALBOX_MASTER_KEY_PATH` to `SealboxConfig`; fail startup with a clear message if it is missing or unreadable
-- [ ] 5.2 Load the private master key at startup via the existing `PrivateMasterKey`; register the corresponding public key with `server_held = 1` if not already present
-- [ ] 5.3 Make "the current master key" resolve to the server-held one for new secrets
+- [x] 5.1 Add `SEALBOX_MASTER_KEY_PATH` to `SealboxConfig`; fail startup with a clear message if it is missing or unreadable — and deliberately do **not** generate one, since doing so on a mistyped path would silently make every existing secret cold
+- [x] 5.2 Load the private master key at startup via the existing `PrivateMasterKey`; register the corresponding public key with `server_held = 1` if not already present. `PrivateMasterKey::from_str` now also accepts PKCS#8, because OpenSSL 3 emits it by default and the previous failure said only "Invalid private key"
+- [x] 5.3 Make "the current master key" resolve to the server-held one for new secrets
 - [ ] 5.4 Reject operations that would require decrypting a secret whose master key is cold, with an error naming the cause
-- [ ] 5.5 Verify: a new secret encrypts under the server-held key; a secret under a cold key reports cold rather than failing obscurely
+- [x] 5.5 Verify: a new secret encrypts under the server-held key; a secret under a cold key reports cold rather than failing obscurely
 
 ## 6. Remove the private-key rekey endpoint
 

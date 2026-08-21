@@ -18,8 +18,17 @@ pub enum SealboxError {
     #[error("Missing valid master key")]
     MissingValidMasterKey,
 
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+
     #[error("Master key not found: {0}")]
     MasterKeyNotFound(Uuid),
+
+    #[error(
+        "Master key {0} is cold: the server does not hold its private half and cannot decrypt \
+         secrets encrypted under it"
+    )]
+    MasterKeyNotServerHeld(Uuid),
 
     #[error("Master key mismatch for {0}: expected {1}, got {2}")]
     MasterKeyMismatch(String, String, String),
@@ -48,10 +57,14 @@ impl IntoResponse for SealboxError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
             SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
             SealboxError::MissingValidMasterKey => {
                 (StatusCode::PRECONDITION_REQUIRED, errorfmt(&self))
             }
             SealboxError::MasterKeyNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::MasterKeyNotServerHeld(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, errorfmt(&self))
+            }
             SealboxError::MasterKeyMismatch(_, _, _) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
             }

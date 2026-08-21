@@ -193,23 +193,33 @@ pub struct MasterKey {
     pub status: MasterKeyStatus,     // Status: Active/Retired/Disabled
     pub description: Option<String>, // Optional description
     pub metadata: Option<String>,    // Optional metadata
+    /// Whether the server holds this key's private half. Secrets encrypted under a key with
+    /// `server_held = false` are *cold*: the server cannot decrypt them under any
+    /// circumstances, including rekey (ADR 0001).
+    pub server_held: bool,
 }
 
 impl MasterKey {
+    /// A key registered by a client: the server has only the public half, so secrets under it
+    /// are cold.
     pub(crate) fn new(public_key: String) -> Result<Self> {
-        let id = Uuid::new_v4();
-        let created_at = time::OffsetDateTime::now_utc().unix_timestamp();
-        let status = MasterKeyStatus::Active;
-        let description = None;
-        let metadata = None;
+        Self::with_server_held(public_key, false)
+    }
 
+    /// A key whose private half the server holds, making secrets under it broker-serviceable.
+    pub(crate) fn server_held(public_key: String) -> Result<Self> {
+        Self::with_server_held(public_key, true)
+    }
+
+    fn with_server_held(public_key: String, server_held: bool) -> Result<Self> {
         Ok(MasterKey {
-            id,
+            id: Uuid::new_v4(),
             public_key,
-            created_at,
-            status,
-            description,
-            metadata,
+            created_at: time::OffsetDateTime::now_utc().unix_timestamp(),
+            status: MasterKeyStatus::Active,
+            description: None,
+            metadata: None,
+            server_held,
         })
     }
 }
@@ -219,11 +229,15 @@ pub(crate) trait MasterKeyRepo: Send + Sync {
     fn create_master_key(&self, key: &MasterKey) -> Result<()>;
     fn fetch_all_master_keys(&self) -> Result<Vec<MasterKey>>;
 
-    /// Fetch the PEM-encoded public key for a given master_key_id.
-    fn fetch_public_key(&self, master_key_id: &Uuid) -> Result<Option<String>>;
+    /// Fetch a master key by id, including whether the server holds its private half.
+    fn fetch_master_key(&self, master_key_id: &Uuid) -> Result<Option<MasterKey>>;
 
-    /// Fetch a valid master key.
+    /// The current key new secrets are encrypted under. Always server-held.
     fn get_valid_master_key(&self) -> Result<MasterKey>;
+
+    /// Register the server's own master key if it is not already present. Idempotent, and
+    /// matched on the public key so a restart does not create a duplicate.
+    fn ensure_server_held(&self, public_key_pem: &str) -> Result<MasterKey>;
 }
 
 pub(crate) trait HealthRepo: Send + Sync {
