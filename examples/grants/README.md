@@ -1,5 +1,8 @@
 # Example grants
 
+> Agents: read [`skills/sealbox/SKILL.md`](../../skills/sealbox/SKILL.md) first. It is the shorter
+> path to writing a correct grant.
+
 These are the template library. There is no `--from-template` flag and no scaffolding command —
 an agent asked to write a new grant reads these and writes a correct one by imitation, which costs
 no code and stays current by being real.
@@ -20,7 +23,7 @@ written it cannot reach anything else.
 Everything a given secret can be used for is the set of grants declaring it:
 
 ```console
-$ sealbox ls --uses pg/prod-admin-password
+$ sealbox-cli secret uses pg/prod-admin-password
 pg-provision
 rotate-db
 ```

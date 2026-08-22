@@ -23,4 +23,4 @@ printf 'https://%s@api.exotic.example/v1' "$SEALBOX_NEW"
 
 command = ["{script}", "{account}"]
 
-# sealbox rotate exotic/api-url --via exotic-provider-key --from-output account=prod
+# sealbox-cli rotate exotic/api-url --via exotic-provider-key --from-output account=prod

@@ -83,7 +83,7 @@ never in an agent's context.**
 |---|---|---|
 | Generated | `sealbox gen pg/app-password` | Server RNG. Encrypted immediately; never sent anywhere. |
 | Supplied | `sealbox set openai/api-key` | Human, on stdin. Never on a command line, never in shell history. |
-| Produced | `sealbox rotate <secret> --via <grant> --from-output` | The server generates the raw value and injects it as `$SEALBOX_NEW`; the grant makes some upstream accept it and prints the composed form to store. |
+| Produced | `sealbox-cli rotate <secret> --via <grant> --from-output` | The server generates the raw value and injects it as `$SEALBOX_NEW`; the grant makes some upstream accept it and prints the composed form to store. |
 
 The third covers everything the first two cannot: a `DATABASE_URL` with a percent-encoded
 password, an AWS key that only AWS can issue, a credential that must be registered upstream in
@@ -95,7 +95,7 @@ sealbox (ADR 0007).
 Only through a grant, and only on a runner:
 
 ```
-agent$ sealbox run k8s-sync
+agent$ sealbox-cli run k8s-sync
 ```
 
 1. CLI authenticates with its identity token and submits a **job**.
@@ -144,7 +144,7 @@ prunes resources carrying its own labels, which is already why the GitHub bridge
 ### 4. It gets replaced
 
 ```
-sealbox rotate utopia/prod/db-password --via pg-set-password
+sealbox-cli rotate utopia/prod/db-password --via pg-set-password
 ```
 
 Server generates a new value → a runner executes the grant with `$SEALBOX_NEW` → **the new value
@@ -202,10 +202,10 @@ cluster; rotation means a browser plus a protected workflow dispatch.
 ```bash
 # once, by a human
 sealbox set utopia/prod/database-url                # stdin
-sealbox grant add ./grants/k8s-sync.toml              # the gate
+sealbox-cli grant add ./grants/k8s-sync.toml              # the gate
 
 # thereafter, by anyone or any agent
-sealbox run k8s-sync
+sealbox-cli run k8s-sync
 ```
 
 ```toml
@@ -236,10 +236,10 @@ ship, or rotate, and the chicken-and-egg of keeping it as a GitHub secret is gon
 ### Provisioning a new service, by an agent
 
 ```bash
-sealbox rotate pg/newapp/database-url --via pg-provision --from-output \
+sealbox-cli rotate pg/newapp/database-url --via pg-provision --from-output \
     host=pgm-xxx user=newapp db=newapp
-sealbox run k8s-sync    ns=utopia-system
-sealbox run k8s-restart ns=utopia-system deploy=newapp
+sealbox-cli run k8s-sync    ns=utopia-system
+sealbox-cli run k8s-restart ns=utopia-system deploy=newapp
 ```
 
 ```toml
@@ -307,7 +307,7 @@ re-entry is deliberate: an unverified backup is not a backup.
 **You put a runner in the cluster.**
 
 ```bash
-sealbox identity create prod-cluster --role runner   # → join token, 15 min, single use
+sealbox-cli identity create prod-cluster --role runner   # → join token, 15 min, single use
 kubectl -n sealbox create secret generic sealbox-join --from-literal=token=<token>
 kubectl apply -f runner-deployment.yaml
 ```
@@ -325,8 +325,8 @@ topology. Join tokens are the right balance.)*
 **You move your credentials in.**
 
 ```bash
-sealbox secret set utopia/prod/database-url   # value on stdin
-sealbox secret set pg/prod-admin-password
+sealbox-cli secret set utopia/prod/database-url   # value on stdin
+sealbox-cli secret set pg/prod-admin-password
 rm -rf ~/.utopia-secrets
 ```
 
@@ -340,16 +340,16 @@ Success criterion #1 met.
 ### Act II — Every day
 
 **You grant the first capability.** An agent drafts it by imitating `examples/grants/`; you run
-`sealbox grant add`, a browser (or your phone) opens, and you approve nine lines of declaration
+`sealbox-cli grant add`, a browser (or your phone) opens, and you approve nine lines of declaration
 — rendered by the server, so an agent cannot show one thing and submit another.
 
-**An agent works.** `sealbox run k8s-sync` — the CLI submits a job, the
+**An agent works.** `sealbox-cli run k8s-sync` — the CLI submits a job, the
 runner claims it, plaintext exists only in the cluster, the agent gets an exit code.
 
 **You rotate a database password.**
 
 ```bash
-sealbox rotate utopia/prod/db-password --via rotate-utopia-db
+sealbox-cli rotate utopia/prod/db-password --via rotate-utopia-db
 ```
 
 This is the gap that a naive design gets wrong: changing the password is one third of the job,
@@ -359,7 +359,7 @@ and the third that breaks production on its own. The `postgres-role` adapter the
 
 ### Act III — Working with others, and when things break
 
-**A colleague joins.** `sealbox identity create alice --role operator` produces a single-use
+**A colleague joins.** `sealbox-cli identity create alice --role operator` produces a single-use
 invite, valid 24 hours, **bound to that named identity**. The link is an entry point, not a
 credential: it grants only the right to register a passkey, carries no data access, is fully
 audited, and is revocable instantly. Intercepted, it yields "register as alice" — and alice
@@ -375,8 +375,8 @@ for a human to approve; do not go looking for plaintext.
 **Something goes wrong.**
 
 ```bash
-sealbox audit --since 24h
-sealbox ls --uses pg/prod-admin-password
+sealbox-cli audit --since 24h
+sealbox-cli secret uses pg/prod-admin-password
   → pg-provision
   → rotate-utopia-db
 ```
@@ -384,7 +384,7 @@ sealbox ls --uses pg/prod-admin-password
 Two lines: everything that credential can do in this system. In GitHub Secrets the answer is
 "anything".
 
-**You revoke.** `sealbox identity revoke agent-laptop` — immediate, and nobody else is affected.
+**You revoke.** `sealbox-cli identity revoke agent-laptop` — immediate, and nobody else is affected.
 That is what identities are for.
 
 **You recover.** New Fly instance on the same domain, restore the server master key from the recovery blob with
@@ -479,8 +479,8 @@ provisions a new service end to end without learning a single password.**
 5. **`jobs` queue and `sealbox runner`** — one table, claim-and-report, a timeout that marks
    abandoned jobs failed. **No automatic retries**: grants are not necessarily idempotent, and
    silently re-running a `CREATE USER` or a deployment is worse than failing.
-6. **`sealbox run <grant> [args]`** — submit a job, wait, print the result.
-7. **`sealbox rotate <secret> --via <grant> [--from-output]`**, committing only on grant success.
+6. **`sealbox-cli run <grant> [args]`** — submit a job, wait, print the result.
+7. **`sealbox-cli rotate <secret> --via <grant> [--from-output]`**, committing only on grant success.
 8. **`audit` table and `sealbox audit`.**
 9. **Passkey authentication for every admin operation** (ADR 0009) — a server-rendered approval
    page, no admin credential on disk, and a `sealbox admin <command>` session that lives in the

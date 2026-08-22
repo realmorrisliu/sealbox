@@ -172,8 +172,8 @@ the server stored cannot be influenced that way, and the signature is bound to i
 
 ```bash
 # Agents, daily
-sealbox run k8s-sync ns=production
-sealbox rotate app/database-url --via pg-provision --from-output host=... user=app
+sealbox-cli run k8s-sync ns=production
+sealbox-cli rotate app/database-url --via pg-provision --from-output host=... user=app
 
 # You, occasionally — the first is a browser prompt, the last needs your passkey
 sealbox-cli grant add ./grants/new-thing.toml
@@ -193,6 +193,7 @@ Passkeys still work because WebAuthn binds to the domain, and the runner reconne
 
 ## Next
 
+- [Agent skill](../skills/sealbox/SKILL.md) — copy it into your agent's skills directory
 - [CLI reference](cli-reference.md) — the full command surface
 - [Configuration](configuration.md) — server, runner, and CLI settings
 - [Design](agent-native-design.md) — why any of this is shaped the way it is

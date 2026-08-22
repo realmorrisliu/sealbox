@@ -9,11 +9,12 @@
 
 > ### ⚠️ Status
 >
-> Sealbox is being rebuilt around the design in [`docs/agent-native-design.md`](docs/agent-native-design.md).
-> **The documentation describes the target system; the code does not implement it yet.** The
-> commands below are the intended interface, not a working install. The previous generation — a
-> single-token secret store with a React UI — is still what compiles, and is being removed rather
-> than extended.
+> Sealbox has been rebuilt around the design in [`docs/agent-native-design.md`](docs/agent-native-design.md),
+> and the previous generation — a single-token store with a React UI — is gone. Secrets, grants,
+> jobs, the runner, adapters, rotation, the audit trail, and passkey approval all work. **Not yet
+> built:** hosted deployment on Fly.io, the recovery-keypair ceremony, and runner join tokens; a
+> runner's token is long-lived today. There is no migration from the old generation — delete the
+> database and start again ([ADR 0012](docs/adr/0012-no-backward-compatibility-before-first-release.md)).
 
 ## Why
 
@@ -31,7 +32,7 @@ A **grant** is a permitted use of secrets — which secrets, what is done with t
 The relationship reads best backwards:
 
 ```console
-$ sealbox ls --uses pg/prod-admin-password
+$ sealbox-cli secret uses pg/prod-admin-password
 pg-provision
 rotate-utopia-db
 ```
@@ -62,14 +63,14 @@ inbound port. The CLI is a remote control.
 
 ```bash
 # A human grants a capability — approved with a passkey, in a browser or on a phone
-sealbox grant add ./grants/k8s-sync.toml
+sealbox-cli grant add ./grants/k8s-sync.toml
 
 # An agent uses it — and learns nothing
-sealbox run k8s-sync ns=production
-sealbox rotate pg/app/database-url --via pg-provision --from-output host=... user=app
+sealbox-cli run k8s-sync ns=production
+sealbox-cli rotate pg/app/database-url --via pg-provision --from-output host=... user=app
 
 # Afterwards
-sealbox audit --since 24h
+sealbox-cli audit --since 24h
 ```
 
 ```toml
@@ -100,14 +101,25 @@ access could `delete ns production`.
 Every decision is recorded with its reasoning in [`docs/adr/`](docs/adr/) — including the ones
 that were reversed.
 
+## Using it from an agent
+
+Integration is a **skill plus the CLI, not an MCP server** ([ADR 0002](docs/adr/0002-cli-and-skill-not-mcp.md)).
+Copy [`skills/sealbox/SKILL.md`](skills/sealbox/SKILL.md) into your agent's skills directory —
+`.claude/skills/sealbox/` for Claude Code — and give the agent an identity with the `agent` role.
+
+It tells the agent the two things it cannot infer: that no command returns a value, so a plan must
+never depend on reading one; and that a grant is drafted by the agent and signed by a human, so
+submitting one and stopping is the finished job, not a failure.
+
 ## Documentation
 
 | | |
 |---|---|
+| [Agent skill](skills/sealbox/SKILL.md) | What to give an agent |
 | [Design](docs/agent-native-design.md) | Topology, secret lifecycle, security boundary, MVP |
 | [Decisions](docs/adr/) | 12 ADRs, each with what was rejected and why |
 | [Glossary](CONTEXT.md) | The vocabulary, and the synonyms to avoid |
-| [Getting started](docs/getting-started.md) | The intended setup, once it exists |
+| [Getting started](docs/getting-started.md) | Setting one up, step by step |
 | [CLI reference](docs/cli-reference.md) | Command surface |
 | [Configuration](docs/configuration.md) | Server, runner, and CLI configuration |
 

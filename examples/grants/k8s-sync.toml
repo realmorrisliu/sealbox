@@ -22,4 +22,4 @@ secrets = {
   CONTENT_ACCESS_SECRET = "utopia/prod/content-access-secret",
 }
 
-# sealbox run k8s-sync
+# sealbox-cli run k8s-sync

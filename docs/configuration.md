@@ -95,7 +95,7 @@ dbs:
 ```
 
 The master key is backed up **once, at initialisation**, as an encrypted recovery blob — not by
-copying the file. See [`sealbox init`](cli-reference.md#sealbox-init) and
+copying the file. See [`sealbox init`](cli-reference.md#sealbox-cli-init) and
 [ADR 0010](adr/0010-recovery-via-keypair-not-a-copied-key.md).
 
 ## Runner
