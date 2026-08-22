@@ -23,6 +23,25 @@ The system SHALL NOT make any secret available to a grant that the grant does no
 - **WHEN** a grant's implementation attempts to use a secret it did not declare
 - **THEN** that secret is not available to it
 
+### Requirement: Declared secret names are literal
+
+A declared secret SHALL be named literally. The system SHALL reject a grant whose declared secret
+name contains a parameter placeholder.
+
+Parameters supplied at invocation MAY appear in the implementation's arguments, but SHALL NOT
+determine which secrets are available to it.
+
+#### Scenario: A parameterised secret name is refused
+
+- **WHEN** a grant is created declaring a secret whose name contains a placeholder
+- **THEN** the system refuses it, so that no caller-supplied value can change which credential
+  the grant reaches
+
+#### Scenario: Two environments are two grants
+
+- **WHEN** the same operation is needed against two sets of secrets
+- **THEN** each is a separate grant naming its secrets literally, and each is approved separately
+
 ### Requirement: A secret's authority can be enumerated
 
 The system SHALL be able to report every grant that declares a given secret.

@@ -18,7 +18,7 @@ use tracing::{error, info_span};
 use crate::{
     api::{
         auth::{authenticate_and_audit, require_admin, require_agent, require_operator},
-        handler::{admin, audit, identity, master_key, secret},
+        handler::{admin, audit, grant, identity, master_key, secret},
         state::AppState,
     },
     config::SealboxConfig,
@@ -73,13 +73,17 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
     // the outermost router, after every auth layer.
     let agent_routes = Router::new()
         .route("/v1/secrets", get(secret::list))
-        .route("/v1/secrets/{secret_key}", get(secret::get))
+        // Wildcard: secret names are hierarchical (`utopia/prod/database-url`), so the
+        // path segment has to swallow slashes.
+        .route("/v1/secrets/{*secret_key}", get(secret::get))
         .route("/v1/audit", get(audit::list))
+        .route("/v1/grants", get(grant::list))
+        .route("/v1/grants/{name}", get(grant::show))
         .route_layer(from_fn(require_agent));
 
     let operator_routes = Router::new()
         .route(
-            "/v1/secrets/{secret_key}",
+            "/v1/secrets/{*secret_key}",
             put(secret::save).delete(secret::delete),
         )
         .route_layer(from_fn(require_operator));
@@ -100,6 +104,8 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             "/v1/identities/{name}",
             axum::routing::delete(identity::revoke),
         )
+        .route("/v1/grants", axum::routing::post(grant::create))
+        .route("/v1/grants/{name}", axum::routing::delete(grant::remove))
         .route_layer(from_fn(require_admin));
 
     Ok(Router::new()

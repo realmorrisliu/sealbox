@@ -599,3 +599,355 @@ async fn a_listing_carries_no_values() {
         );
     }
 }
+
+// ---------------------------------------------------------------- grants
+
+impl TestServer {
+    /// A stored secret, so grants that declare it validate.
+    async fn secret(&self, admin: &str, name: &str) {
+        let response = self
+            .send(
+                build("PUT", &format!("/v1/secrets/{name}"), Some(admin))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"generate":{"type":"hex","length":16}}"#))
+                    .unwrap(),
+            )
+            .await;
+        assert!(response.status().is_success(), "creating secret {name}");
+    }
+
+    async fn add_grant(&self, token: &str, body: serde_json::Value) -> http::Response<Body> {
+        self.send(
+            post("/v1/grants", Some(token))
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+    }
+}
+
+fn adapter_grant(name: &str, secret: &str) -> serde_json::Value {
+    serde_json::json!({
+        "name": name,
+        "runner": "prod-cluster",
+        "adapter": "kubernetes-secret",
+        "config": { "namespace": "prod" },
+        "secrets": { "DATABASE_URL": secret },
+    })
+}
+
+#[tokio::test]
+async fn a_grant_round_trips() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "app-db-url").await;
+
+    let response = server
+        .add_grant(&admin, adapter_grant("k8s-sync", "app-db-url"))
+        .await;
+    assert!(response.status().is_success());
+
+    let response = server.send(get("/v1/grants/k8s-sync", Some(&admin))).await;
+    let grant = server.json(response).await;
+    assert_eq!(grant["name"], "k8s-sync");
+    assert_eq!(grant["secrets"]["DATABASE_URL"], "app-db-url");
+    assert_eq!(grant["created_by"], "root", "who approved it is recorded");
+
+    let response = server.send(get("/v1/grants", Some(&admin))).await;
+    let body = server.json(response).await;
+    assert_eq!(body["grants"].as_array().unwrap().len(), 1);
+
+    let response = server
+        .send(
+            build("DELETE", "/v1/grants/k8s-sync", Some(&admin))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success());
+    assert_eq!(
+        server
+            .send(get("/v1/grants/k8s-sync", Some(&admin)))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn an_agent_may_read_grants_but_not_create_them() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let agent = server.identity(&admin, "bot", "agent").await;
+    server.secret(&admin, "app-db-url").await;
+
+    let response = server
+        .add_grant(&agent, adapter_grant("sneaky", "app-db-url"))
+        .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "an agent cannot approve its own capability"
+    );
+
+    // But it must be able to see what it may invoke, and to draft a proposal.
+    server
+        .add_grant(&admin, adapter_grant("k8s-sync", "app-db-url"))
+        .await;
+    let response = server.send(get("/v1/grants", Some(&agent))).await;
+    assert!(response.status().is_success());
+    let body = server.json(response).await;
+    assert_eq!(body["grants"][0]["name"], "k8s-sync");
+}
+
+#[tokio::test]
+async fn a_grant_declaring_a_missing_secret_is_refused() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let response = server
+        .add_grant(&admin, adapter_grant("k8s-sync", "not-a-secret"))
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = server.json(response).await.to_string();
+    assert!(
+        body.contains("not-a-secret"),
+        "the error must name the missing secret: {body}"
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_adapter_is_refused_at_creation() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "app-db-url").await;
+
+    let mut grant = adapter_grant("k8s-sync", "app-db-url");
+    grant["adapter"] = serde_json::json!("does-not-exist");
+    let response = server.add_grant(&admin, grant).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = server.json(response).await.to_string();
+    assert!(
+        body.contains("kubernetes-secret"),
+        "the error must list what is known so the author can correct it: {body}"
+    );
+}
+
+#[tokio::test]
+async fn an_implementation_is_exactly_one_of_adapter_or_script() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "app-db-url").await;
+
+    let both = serde_json::json!({
+        "name": "both", "runner": "r", "secrets": {},
+        "adapter": "kubernetes-secret",
+        "script": "#!/bin/sh\ntrue", "command": ["x"],
+    });
+    assert_eq!(
+        server.add_grant(&admin, both).await.status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    let neither = serde_json::json!({ "name": "neither", "runner": "r", "secrets": {} });
+    assert_eq!(
+        server.add_grant(&admin, neither).await.status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    let script_without_command =
+        serde_json::json!({ "name": "s", "runner": "r", "secrets": {}, "script": "true" });
+    assert_eq!(
+        server
+            .add_grant(&admin, script_without_command)
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST,
+        "a script needs the argv it is invoked with"
+    );
+}
+
+#[tokio::test]
+async fn a_script_is_stored_with_the_grant() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let body = "#!/usr/bin/env bash\nprintf %s \"$SEALBOX_NEW\"\n";
+    let grant = serde_json::json!({
+        "name": "custom", "runner": "r", "secrets": {},
+        "script": body, "command": ["{script}", "{arg}"],
+    });
+    assert!(server.add_grant(&admin, grant).await.status().is_success());
+
+    let response = server.send(get("/v1/grants/custom", Some(&admin))).await;
+    let shown = server.json(response).await;
+    assert_eq!(
+        shown["implementation"]["script"], body,
+        "what was approved is what is stored — never a path resolved later"
+    );
+}
+
+#[tokio::test]
+async fn a_chain_is_validated() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "app-db-url").await;
+
+    // Chaining to something that does not exist.
+    let mut dangling = adapter_grant("a", "app-db-url");
+    dangling["then"] = serde_json::json!(["nowhere"]);
+    let response = server.add_grant(&admin, dangling).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(server.json(response).await.to_string().contains("nowhere"));
+
+    // A cycle. Immutability means it takes a removal and a recreation to build one.
+    server
+        .add_grant(&admin, adapter_grant("b", "app-db-url"))
+        .await;
+    let mut a = adapter_grant("a", "app-db-url");
+    a["then"] = serde_json::json!(["b"]);
+    assert!(server.add_grant(&admin, a).await.status().is_success());
+
+    server
+        .send(
+            build("DELETE", "/v1/grants/b", Some(&admin))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    let mut b = adapter_grant("b", "app-db-url");
+    b["then"] = serde_json::json!(["a"]);
+    let response = server.add_grant(&admin, b).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "a -> b -> a would never terminate"
+    );
+    assert!(
+        server
+            .json(response)
+            .await
+            .to_string()
+            .contains("terminate")
+    );
+}
+
+#[tokio::test]
+async fn a_duplicate_name_is_refused_and_the_original_survives() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "app-db-url").await;
+    server.secret(&admin, "other").await;
+
+    server
+        .add_grant(&admin, adapter_grant("k8s-sync", "app-db-url"))
+        .await;
+
+    let mut replacement = adapter_grant("k8s-sync", "other");
+    replacement["secrets"] = serde_json::json!({ "OTHER": "other" });
+    let response = server.add_grant(&admin, replacement).await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+
+    let response = server.send(get("/v1/grants/k8s-sync", Some(&admin))).await;
+    let grant = server.json(response).await;
+    assert_eq!(
+        grant["secrets"]["DATABASE_URL"], "app-db-url",
+        "the original must be untouched — a silent replacement is how a capability widens"
+    );
+}
+
+#[tokio::test]
+async fn uses_enumerates_what_a_credential_can_do() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "pg-admin").await;
+    server.secret(&admin, "unused").await;
+
+    for name in ["pg-provision", "rotate-db"] {
+        let mut grant = adapter_grant(name, "pg-admin");
+        grant["adapter"] = serde_json::json!("postgres-role");
+        grant["secrets"] = serde_json::json!({ "admin": "pg-admin" });
+        assert!(server.add_grant(&admin, grant).await.status().is_success());
+    }
+
+    let response = server
+        .send(get("/v1/secrets?uses=pg-admin", Some(&admin)))
+        .await;
+    let body = server.json(response).await;
+    let mut used_by: Vec<String> = body["used_by"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    used_by.sort();
+    assert_eq!(used_by, vec!["pg-provision", "rotate-db"]);
+
+    let response = server
+        .send(get("/v1/secrets?uses=unused", Some(&admin)))
+        .await;
+    let body = server.json(response).await;
+    assert_eq!(
+        body["used_by"].as_array().unwrap().len(),
+        0,
+        "a secret nothing uses is an empty answer, not an error"
+    );
+}
+
+#[tokio::test]
+async fn secret_names_are_hierarchical() {
+    // Every example in the design uses paths — `utopia/prod/database-url`,
+    // `pg/prod-admin-password`. A route matching a single segment would silently make those
+    // unusable, which is how this was found.
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let name = "utopia/prod/database-url";
+
+    let response = server
+        .send(
+            build("PUT", &format!("/v1/secrets/{name}"), Some(&admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"secret":"postgresql://u:p@h/d"}"#))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "a layered name must store");
+    assert_eq!(server.json(response).await["key"], name);
+
+    let response = server.send(get("/v1/secrets", Some(&admin))).await;
+    let body = server.json(response).await;
+    assert_eq!(body["secrets"][0]["key"], name);
+
+    // And a grant can declare it.
+    let mut grant = adapter_grant("sync", name);
+    grant["secrets"] = serde_json::json!({ "DATABASE_URL": name });
+    assert!(server.add_grant(&admin, grant).await.status().is_success());
+
+    let response = server
+        .send(get(&format!("/v1/secrets?uses={name}"), Some(&admin)))
+        .await;
+    let body = server.json(response).await;
+    assert_eq!(body["used_by"][0], "sync");
+}
+
+#[tokio::test]
+async fn a_parameterised_secret_name_is_refused() {
+    // `secrets = { DB = "app/{env}/url" }` reads harmlessly, but the parameter is supplied by
+    // the caller — so the grant would reach whichever credential the caller names, and the
+    // declaration would stop being the boundary.
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "app/prod/url").await;
+
+    let mut grant = adapter_grant("sync", "app/prod/url");
+    grant["secrets"] = serde_json::json!({ "DATABASE_URL": "app/{env}/url" });
+    let response = server.add_grant(&admin, grant).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = server.json(response).await.to_string();
+    assert!(
+        body.contains("literally"),
+        "the error must explain why, not just refuse: {body}"
+    );
+}

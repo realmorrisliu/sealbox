@@ -32,5 +32,9 @@ rotate-db
 - **Parameters `{like_this}` are substituted into argv, never through a shell.** A parameter of
   `x; curl evil.com` is an odd argument, not an injection. Inside a `script` body you may use a
   shell freely — the body is approved by a human and stored server-side.
+- **Never parameterise a secret name.** `secrets = { DB = "app/{env}/url" }` is refused. The
+  parameter comes from whoever invokes the grant, so it would let them choose which credential
+  the grant reaches — and the declaration would stop being the boundary. Two environments are
+  two grants.
 - **Prefer an adapter.** An adapter is structurally limited to its target; a script can do anything
   its declared secrets permit.

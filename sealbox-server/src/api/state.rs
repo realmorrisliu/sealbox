@@ -11,9 +11,9 @@ use crate::{
     crypto::master_key::PrivateMasterKey,
     error::{Result, SealboxError},
     repo::{
-        AuditRepo, HealthRepo, IdentityRepo, MasterKeyRepo, MasterKeyStatus, SecretRepo,
-        SqliteAuditRepo, SqliteHealthRepo, SqliteIdentityRepo, SqliteMasterKeyRepo,
-        SqliteSecretRepo, create_db_connection,
+        AuditRepo, GrantRepo, HealthRepo, IdentityRepo, MasterKeyRepo, MasterKeyStatus, SecretRepo,
+        SqliteAuditRepo, SqliteGrantRepo, SqliteHealthRepo, SqliteIdentityRepo,
+        SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
     },
 };
 
@@ -25,6 +25,7 @@ pub(crate) struct AppState {
     pub(crate) master_key_repo: Arc<dyn MasterKeyRepo>,
     pub(crate) identity_repo: Arc<dyn IdentityRepo>,
     pub(crate) audit_repo: Arc<dyn AuditRepo>,
+    pub(crate) grant_repo: Arc<dyn GrantRepo>,
     /// When the bootstrap token stops being accepted. Stored as a deadline rather than a start
     /// time so it is directly assertable, and so a token left in the environment after use —
     /// the normal outcome — stops being useful on its own.
@@ -42,6 +43,7 @@ impl AppState {
         SqliteMasterKeyRepo::init_table(&conn)?;
         SqliteIdentityRepo::init_table(&conn)?;
         SqliteAuditRepo::init_table(&conn)?;
+        SqliteGrantRepo::init_table(&conn)?;
 
         // One connection, shared by the repositories. Nothing above this layer holds it:
         // a database lock has no business in an HTTP handler.
@@ -53,7 +55,8 @@ impl AppState {
             secret_repo: Arc::new(SqliteSecretRepo::new(conn.clone())),
             master_key_repo: Arc::new(SqliteMasterKeyRepo::new(conn.clone())),
             identity_repo: Arc::new(SqliteIdentityRepo::new(conn.clone())),
-            audit_repo: Arc::new(SqliteAuditRepo::new(conn)),
+            audit_repo: Arc::new(SqliteAuditRepo::new(conn.clone())),
+            grant_repo: Arc::new(SqliteGrantRepo::new(conn)),
             server_keys: Arc::new(HashMap::new()),
             bootstrap_deadline: Instant::now() + config.bootstrap_window,
         };

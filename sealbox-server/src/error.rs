@@ -27,6 +27,12 @@ pub enum SealboxError {
     #[error("Identity not found: {0}")]
     IdentityNotFound(String),
 
+    #[error("Grant already exists: {0}")]
+    GrantAlreadyExists(String),
+
+    #[error("Grant not found: {0}")]
+    GrantNotFound(String),
+
     #[error("Invalid request: {0}")]
     InvalidRequest(String),
 
@@ -74,6 +80,8 @@ impl IntoResponse for SealboxError {
             SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::IdentityAlreadyExists(_) => (StatusCode::CONFLICT, errorfmt(&self)),
             SealboxError::IdentityNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::GrantAlreadyExists(_) => (StatusCode::CONFLICT, errorfmt(&self)),
+            SealboxError::GrantNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
             SealboxError::InvalidRole(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
             SealboxError::Forbidden => (StatusCode::FORBIDDEN, errorfmt(&self)),

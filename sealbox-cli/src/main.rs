@@ -3,7 +3,8 @@ mod config;
 mod output;
 
 use crate::commands::{
-    audit_commands, config_commands, identity_commands, key_commands, secret_commands,
+    audit_commands, config_commands, grant_commands, identity_commands, key_commands,
+    secret_commands,
 };
 use crate::config::{Config, OutputFormat};
 use anyhow::Result;
@@ -76,6 +77,11 @@ enum Commands {
         #[command(subcommand)]
         command: SecretCommands,
     },
+    /// Manage grants: the permitted uses of secrets
+    Grant {
+        #[command(subcommand)]
+        command: GrantCommands,
+    },
     /// Manage identities: who may call this server, and with what authority
     Identity {
         #[command(subcommand)]
@@ -103,6 +109,27 @@ enum Commands {
         token: String,
         /// Name for the first admin identity
         #[arg(long, default_value = "admin")]
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GrantCommands {
+    /// Approve a grant from a TOML file. Requires the admin role.
+    Add {
+        /// Path to the grant file
+        file: String,
+    },
+    /// List grants. Any identity may see what it can invoke.
+    List,
+    /// Show one grant, including the secrets it declares
+    Show {
+        /// Grant name
+        name: String,
+    },
+    /// Remove a grant. There is no update — add the replacement instead.
+    Rm {
+        /// Grant name
         name: String,
     },
 }
@@ -233,8 +260,13 @@ enum SecretCommands {
         #[arg(long)]
         version: i32,
     },
-    /// List all secret keys (requires server support)
+    /// List all secret keys. Metadata only — never values.
     List,
+    /// Which grants may use a secret: everything that credential can do here
+    Uses {
+        /// Secret key name
+        key: String,
+    },
     /// View secret version history
     History {
         /// Secret key name
@@ -290,6 +322,7 @@ async fn main() -> Result<()> {
         Commands::Config { command } => config_commands::handle_command(command, &mut config).await,
         Commands::Key { command } => key_commands::handle_command(command, &config).await,
         Commands::Secret { command } => secret_commands::handle_command(command, &config).await,
+        Commands::Grant { command } => grant_commands::handle_command(command, &config).await,
         Commands::Identity { command } => identity_commands::handle_command(command, &config).await,
         Commands::Audit {
             identity,

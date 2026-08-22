@@ -1,8 +1,9 @@
 # CLI Reference
 
-> **Partly implemented.** `identity`, `audit`, `bootstrap`, and the secret commands exist and are
-> documented below as they actually behave. `grant`, `run`, `rotate`, `runner`, and `admin`
-> describe the target and do not exist yet. See [`README.md`](../README.md).
+> **Partly implemented.** `identity`, `audit`, `bootstrap`, the secret commands, and `grant` all
+> exist and are documented below as they actually behave. `run`, `rotate`, `runner`, and `admin`
+> describe the target and do not exist yet — a grant can be approved but not yet executed. See
+> [`README.md`](../README.md).
 
 One binary, `sealbox`, used by humans, agents, and the runner alike. What differs is the identity
 it authenticates as.
@@ -129,6 +130,66 @@ Keys, versions, and timestamps. Never values. Expired secrets are omitted.
 Returns ciphertext for the client to decrypt with its own private key. The target design has no
 command that yields a value at all — a secret is used through a grant, on a runner. This remains
 only because nothing else can consume a secret until runners exist.
+
+---
+
+## Grants *(implemented, except execution)*
+
+A grant is a permitted use of secrets: which ones, what is done with them, and where it runs.
+
+### `sealbox-cli grant add <file>`
+
+Approves a grant from a TOML file. Requires the admin role. The file is parsed locally, so a
+malformed one fails with the file in hand.
+
+```toml
+[k8s-sync]
+adapter = "kubernetes-secret"
+runner  = "prod-cluster"
+config  = { namespace = "utopia-system", name = "utopia-runtime-secret-bridge" }
+secrets = { DATABASE_URL = "utopia/prod/database-url" }
+```
+
+| Field | Meaning |
+|---|---|
+| `adapter` + `config` | A built-in implementation. Mutually exclusive with `script`. |
+| `script` + `command` | The escape hatch. The body is **stored**, never referenced by path. `command` is the argv. |
+| `runner` | Which runner executes it. |
+| `secrets` | Injected name → secret name. **This is what you are approving.** |
+| `then` | Grants to run on success, in order. Linear, stop-on-failure. |
+
+The command prints the declaration before submitting, secrets first — sealbox confines the
+implementation to exactly those, so that line is the security-relevant part. Judging a shell
+script is a hard cognitive task and that kind of review decays into a glance; judging one line
+does not.
+
+**Secret names are literal, never parameterised.** `"app/{env}/url"` is refused: the parameter
+would come from whoever invokes the grant, letting them choose which credential it reaches. Two
+environments are two grants — which also makes approving production its own deliberate act.
+
+Everything checkable is checked now, while you are here to fix it: the secrets exist, the
+adapter is known, the chain resolves and does not cycle.
+
+### `sealbox-cli grant list` / `grant show <name>` / `grant rm <name>`
+
+Any identity may list and show — an agent needs to see what it may invoke, and to draft a
+proposal. Only an admin may add or remove.
+
+**There is no update.** Changing a grant means removing it and adding the replacement, which puts
+the new declaration in front of a human exactly as the first one was. An update endpoint would be
+the natural place for a capability to widen quietly: a `secrets` list gaining one entry is a
+one-line diff that reads like nothing.
+
+### `sealbox-cli secret uses <key>`
+
+```console
+$ sealbox-cli secret uses pg/prod-admin-password
+pg-provision
+rotate-utopia-db
+```
+
+**Two lines: everything that credential can do in this system.** In Vault, 1Password, or GitHub
+Secrets the answer is "anything, to anyone holding it".
 
 ---
 

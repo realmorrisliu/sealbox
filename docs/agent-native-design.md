@@ -95,7 +95,7 @@ sealbox (ADR 0007).
 Only through a grant, and only on a runner:
 
 ```
-agent$ sealbox run k8s-sync ns=utopia-system
+agent$ sealbox run k8s-sync
 ```
 
 1. CLI authenticates with its identity token and submits a **job**.
@@ -198,7 +198,7 @@ sealbox set utopia/prod/database-url                # stdin
 sealbox grant add ./grants/k8s-sync.toml              # the gate
 
 # thereafter, by anyone or any agent
-sealbox run k8s-sync ns=utopia-system
+sealbox run k8s-sync
 ```
 
 ```toml
@@ -206,12 +206,14 @@ sealbox run k8s-sync ns=utopia-system
 [k8s-sync]
 adapter = "kubernetes-secret"   # built in — no script to write, and no script to review
 runner  = "prod-cluster"        # executes in the cluster, using its own ServiceAccount
-config  = { namespace = "utopia-system-{env}", name = "utopia-runtime-secret-bridge" }
+config  = { namespace = "utopia-system", name = "utopia-runtime-secret-bridge" }
+# Literal, never parameterised: a placeholder would let the caller choose which credential this
+# grant reaches. Two environments are two grants.
 secrets = {
-  DATABASE_URL          = "utopia/{env}/database-url",
-  OSS_ENDPOINT          = "utopia/{env}/oss-endpoint",
-  OSS_BUCKET            = "utopia/{env}/oss-bucket",
-  CONTENT_ACCESS_SECRET = "utopia/{env}/content-access-secret"
+  DATABASE_URL          = "utopia/prod/database-url",
+  OSS_ENDPOINT          = "utopia/prod/oss-endpoint",
+  OSS_BUCKET            = "utopia/prod/oss-bucket",
+  CONTENT_ACCESS_SECRET = "utopia/prod/content-access-secret"
 }
 ```
 
@@ -331,7 +333,7 @@ Success criterion #1 met.
 `sealbox grant add`, a browser (or your phone) opens, and you approve nine lines of declaration
 — rendered by the server, so an agent cannot show one thing and submit another.
 
-**An agent works.** `sealbox run k8s-sync ns=utopia-system env=prod` — the CLI submits a job, the
+**An agent works.** `sealbox run k8s-sync` — the CLI submits a job, the
 runner claims it, plaintext exists only in the cluster, the agent gets an exit code.
 
 **You rotate a database password.**

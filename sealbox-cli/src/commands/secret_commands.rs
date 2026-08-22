@@ -21,6 +21,9 @@ pub async fn handle_command(command: SecretCommands, config: &Config) -> Result<
             delete_secret(config, &output, key, version).await
         }
         SecretCommands::List => list_secrets(config, &output).await,
+        SecretCommands::Uses { key } => {
+            crate::commands::grant_commands::uses(config, &output, key).await
+        }
         SecretCommands::History { key } => get_secret_history(config, &output, key).await,
         SecretCommands::Import { file, format } => {
             import_secrets(config, &output, file, format).await

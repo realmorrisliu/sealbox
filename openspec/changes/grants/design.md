@@ -54,6 +54,11 @@ Cycle detection walks the graph from the new grant and refuses if it reaches a g
 the path. A depth limit would be cheaper and would also catch cycles, but it would refuse a long
 legitimate chain with a message about depth — describing the symptom rather than the mistake.
 
+Worth noting how a cycle can arise at all: immutability plus creation-time validation means a
+new grant can only chain to grants that already exist, and those cannot be edited to point back.
+A cycle therefore requires `rm` followed by `add` — create B, create A chaining to B, remove B,
+recreate B chaining to A. Rare, but reachable, and the check is cheap at this scale.
+
 Chains are linear and stop on failure ([ADR 0011](../../../docs/adr/0011-rotation-uses-dual-credentials-and-a-linear-chain.md)):
 no retries, no branching, no parallelism. That constraint lives in the runner; what lives here is
 refusing a shape the runner could not safely execute.

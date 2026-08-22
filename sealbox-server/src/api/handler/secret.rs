@@ -131,6 +131,12 @@ pub(crate) async fn delete(
     Ok(SealboxResponse::Ok)
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct ListSecretsQueryParams {
+    /// When set, return the grants that may use this secret instead of the secret list.
+    uses: Option<String>,
+}
+
 /// API handler function for listing all secrets
 ///
 /// # Arguments
@@ -151,7 +157,27 @@ pub(crate) async fn delete(
 /// # Security Notes
 ///
 /// Returns only metadata about secrets, not the encrypted content. Automatically filters out expired secrets.
-pub(crate) async fn list(State(state): State<AppState>) -> Result<SealboxResponse> {
+pub(crate) async fn list(
+    State(state): State<AppState>,
+    Query(query): Query<ListSecretsQueryParams>,
+) -> Result<SealboxResponse> {
+    // `?uses=` answers the question no other secret manager can: everything this credential can
+    // do here. A filter over grants rather than a maintained reverse index — there will be tens
+    // of grants, and an index that disagreed with the grants themselves would be worse than a
+    // scan for an answer people act on.
+    if let Some(secret) = query.uses {
+        let grants: Vec<String> = state
+            .grant_repo
+            .list()?
+            .into_iter()
+            .filter(|g| g.declares(&secret))
+            .map(|g| g.name)
+            .collect();
+        return Ok(SealboxResponse::Json(
+            json!({ "secret": secret, "used_by": grants }),
+        ));
+    }
+
     let secrets = state.secret_repo.list_secrets()?;
     Ok(SealboxResponse::Json(json!({ "secrets": secrets })))
 }

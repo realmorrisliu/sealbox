@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use rusqlite::{ToSql, types::FromSql};
@@ -13,8 +14,8 @@ use crate::{
 };
 
 pub(crate) use self::sqlite::{
-    SqliteAuditRepo, SqliteHealthRepo, SqliteIdentityRepo, SqliteMasterKeyRepo, SqliteSecretRepo,
-    create_db_connection,
+    SqliteAuditRepo, SqliteGrantRepo, SqliteHealthRepo, SqliteIdentityRepo, SqliteMasterKeyRepo,
+    SqliteSecretRepo, create_db_connection,
 };
 
 mod sqlite;
@@ -400,6 +401,63 @@ impl SecretValue {
             SecretValue::Generated(spec) => Ok(std::borrow::Cow::Owned(spec.generate()?)),
         }
     }
+}
+
+/// Adapters are compiled in, not looked up (ADR 0007), so the known set is a constant. A grant
+/// naming something else is refused at creation rather than at execution — where nobody would
+/// be present to fix it.
+pub const KNOWN_ADAPTERS: &[&str] = &["kubernetes-secret", "postgres-role"];
+
+/// How a grant does its work. Modelled as an enum so that "both an adapter and a script" and
+/// "neither" are unrepresentable rather than merely invalid.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Implementation {
+    /// A built-in, structurally limited to what its class of target system needs.
+    Adapter {
+        adapter: String,
+        #[serde(default)]
+        config: serde_json::Value,
+    },
+    /// The escape hatch. The body is stored here, never referenced by path: a grant pointing at
+    /// a file could be approved once and the file edited afterwards, so what was reviewed and
+    /// what runs would differ.
+    Script {
+        script: String,
+        /// argv. Agent-supplied parameters are substituted into elements, never through a shell.
+        command: Vec<String>,
+    },
+}
+
+/// A permitted use of secrets: which ones, what is done with them, and where it runs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Grant {
+    pub name: String,
+    pub implementation: Implementation,
+    /// Which runner executes this. Not resolved here — the runner does not exist yet.
+    pub runner: String,
+    /// Injected name to secret name. **This is what a human reviews**, and the only secrets the
+    /// implementation can reach.
+    pub secrets: BTreeMap<String, String>,
+    /// Grants to run after this one succeeds, in order. Linear, stop-on-failure (ADR 0011).
+    #[serde(default)]
+    pub then: Vec<String>,
+    pub created_at: i64,
+    /// The identity that approved it. Kept for the audit question "who allowed this".
+    pub created_by: String,
+}
+
+impl Grant {
+    pub fn declares(&self, secret: &str) -> bool {
+        self.secrets.values().any(|s| s == secret)
+    }
+}
+
+pub(crate) trait GrantRepo: Send + Sync {
+    fn create(&self, grant: &Grant) -> Result<()>;
+    fn get(&self, name: &str) -> Result<Option<Grant>>;
+    fn list(&self) -> Result<Vec<Grant>>;
+    fn remove(&self, name: &str) -> Result<()>;
 }
 
 pub(crate) trait SecretRepo: Send + Sync {
