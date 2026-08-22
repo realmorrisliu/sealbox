@@ -42,6 +42,13 @@ pub struct PostgresRoleConfig {
     /// stable across rotations and can be approved once — grants are immutable, so a configured
     /// role name would mean a new grant for every rotation.
     pub role_prefix: String,
+    /// The role that creates objects in this database — the one migrations run as.
+    ///
+    /// Required, and deliberately not inferred from the connecting account. Default privileges
+    /// attach to whoever *creates* an object, so Postgres can only record "when `owner` creates a
+    /// table, grant to this role". Guessing wrong is silent: the role is provisioned, everything
+    /// reports success, and it cannot see a single table anyone migrates in afterwards.
+    pub owner: String,
     /// Drawn from `POSTGRES_PRIVILEGES`.
     pub privileges: Vec<String>,
     /// The schema privileges apply to.
@@ -74,6 +81,7 @@ pub fn validate_config(adapter: &str, config: &serde_json::Value) -> Result<()> 
             require_non_empty(adapter, "host", &parsed.host)?;
             require_non_empty(adapter, "database", &parsed.database)?;
             require_non_empty(adapter, "role_prefix", &parsed.role_prefix)?;
+            require_non_empty(adapter, "owner", &parsed.owner)?;
 
             if parsed.privileges.is_empty() {
                 return Err(SealboxError::InvalidRequest(format!(
@@ -90,16 +98,17 @@ pub fn validate_config(adapter: &str, config: &serde_json::Value) -> Result<()> 
                     )));
                 }
             }
-            // A role prefix reaches SQL, so it may only look like an identifier.
-            if !parsed
-                .role_prefix
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
-            {
-                return Err(SealboxError::InvalidRequest(format!(
-                    "adapter `{adapter}`: role_prefix may contain only letters, digits, and \
-                     underscores"
-                )));
+            // Both reach SQL as identifiers, so they may only look like identifiers.
+            for (field, value) in [
+                ("role_prefix", &parsed.role_prefix),
+                ("owner", &parsed.owner),
+            ] {
+                if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                    return Err(SealboxError::InvalidRequest(format!(
+                        "adapter `{adapter}`: {field} may contain only letters, digits, and \
+                         underscores"
+                    )));
+                }
             }
             Ok(())
         }
@@ -143,7 +152,7 @@ mod tests {
     #[test]
     fn a_privilege_outside_the_closed_set_is_refused() {
         let config = json!({
-            "host": "db", "database": "app", "role_prefix": "app",
+            "host": "db", "database": "app", "role_prefix": "app", "owner": "migrator",
             "privileges": ["SELECT", "DROP"],
         });
         let err = validate_config("postgres-role", &config)
@@ -172,7 +181,7 @@ mod tests {
         // The prefix reaches SQL as an identifier, so it may only look like one.
         let config = json!({
             "host": "db", "database": "app",
-            "role_prefix": "app\"; DROP TABLE users; --",
+            "role_prefix": "app\"; DROP TABLE users; --", "owner": "migrator",
             "privileges": ["CONNECT"],
         });
         assert!(validate_config("postgres-role", &config).is_err());
@@ -191,7 +200,7 @@ mod tests {
             validate_config(
                 "postgres-role",
                 &json!({
-                    "host": "db.internal", "database": "app", "role_prefix": "app",
+                    "host": "db.internal", "database": "app", "role_prefix": "app", "owner": "migrator",
                     "privileges": ["CONNECT", "SELECT", "INSERT"],
                 })
             )

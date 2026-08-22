@@ -957,7 +957,7 @@ async fn uses_enumerates_what_a_credential_can_do() {
         grant["adapter"] = serde_json::json!("postgres-role");
         grant["config"] = serde_json::json!({
             "host": "db.internal", "database": "app",
-            "role_prefix": "app", "privileges": ["CONNECT", "SELECT"],
+            "role_prefix": "app", "owner": "migrator", "privileges": ["CONNECT", "SELECT"],
         });
         grant["secrets"] = serde_json::json!({ "admin": "pg-admin" });
         assert!(server.add_grant(&admin, grant).await.status().is_success());
@@ -1649,7 +1649,7 @@ async fn a_privilege_outside_the_closed_set_is_refused_at_approval() {
     grant["adapter"] = serde_json::json!("postgres-role");
     grant["secrets"] = serde_json::json!({ "admin": "pg/admin" });
     grant["config"] = serde_json::json!({
-        "host": "db", "database": "app", "role_prefix": "app",
+        "host": "db", "database": "app", "role_prefix": "app", "owner": "migrator",
         "privileges": ["SELECT", "DROP"],
     });
 
@@ -1673,7 +1673,7 @@ async fn a_valid_adapter_grant_is_approved() {
     grant["adapter"] = serde_json::json!("postgres-role");
     grant["secrets"] = serde_json::json!({ "admin": "pg/admin" });
     grant["config"] = serde_json::json!({
-        "host": "db.internal", "database": "app", "role_prefix": "app",
+        "host": "db.internal", "database": "app", "role_prefix": "app", "owner": "migrator",
         "privileges": ["CONNECT", "SELECT", "INSERT", "UPDATE", "DELETE"],
     });
 

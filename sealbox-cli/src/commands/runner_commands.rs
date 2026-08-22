@@ -469,13 +469,23 @@ mod adapters {
 
     /// The statements that create a role and grant it what the grant declared.
     ///
-    /// Extracted so it can be tested without a database: both bugs this has had were in the SQL
+    /// Extracted so it can be tested without a database: every bug this has had was in the SQL
     /// itself, not in running it.
     ///
     /// The password reaches psql as a variable and is quoted by psql itself (`:'pw'`), so it is
     /// never concatenated in here. Privileges are constants validated at approval — but they are
     /// not interchangeable: CONNECT is a database privilege and USAGE a schema one, and Postgres
     /// rejects either against a table, so each goes only in the statement that accepts it.
+    ///
+    /// **Two forms of table grant, not one.** `ON ALL TABLES` covers the tables that exist at this
+    /// moment and nothing created afterwards, so a role provisioned into an empty database — the
+    /// ordinary order, before migrations run — would end up able to see nothing at all. Default
+    /// privileges cover what the owner creates later. Both are issued so that a role provisioned
+    /// before migrations and one provisioned after end up identical.
+    ///
+    /// Sequences come with a write privilege: inserting into a table whose key comes from a
+    /// `serial` fails with *permission denied for sequence* otherwise, which is an error about an
+    /// object the grant never mentioned.
     ///
     /// One transaction, because Postgres makes DDL transactional and a rotation that failed
     /// half-way would otherwise leave a role that can log in and do nothing.
@@ -491,22 +501,36 @@ mod adapters {
                 _ => None,
             })
             .collect();
+        let writes = table_privileges
+            .iter()
+            .any(|p| matches!(*p, "INSERT" | "UPDATE" | "DELETE"));
 
+        let schema = &config.schema;
+        let owner = &config.owner;
         let mut sql = format!(
             "BEGIN; \
              CREATE ROLE {role} LOGIN PASSWORD :'pw'; \
              GRANT CONNECT ON DATABASE {db} TO {role}; \
              GRANT USAGE ON SCHEMA {schema} TO {role};",
             db = config.database,
-            schema = config.schema,
         );
+
         if !table_privileges.is_empty() {
+            let privileges = table_privileges.join(", ");
             sql.push_str(&format!(
-                " GRANT {} ON ALL TABLES IN SCHEMA {schema} TO {role};",
-                table_privileges.join(", "),
-                schema = config.schema,
+                " GRANT {privileges} ON ALL TABLES IN SCHEMA {schema} TO {role}; \
+                  ALTER DEFAULT PRIVILEGES FOR ROLE {owner} IN SCHEMA {schema} \
+                    GRANT {privileges} ON TABLES TO {role};"
             ));
         }
+        if writes {
+            sql.push_str(&format!(
+                " GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {schema} TO {role}; \
+                  ALTER DEFAULT PRIVILEGES FOR ROLE {owner} IN SCHEMA {schema} \
+                    GRANT USAGE, SELECT ON SEQUENCES TO {role};"
+            ));
+        }
+
         sql.push_str(" COMMIT;");
         sql
     }
@@ -559,9 +583,81 @@ mod tests {
     fn pg_config(privileges: &[&str]) -> sealbox_server::repo::adapter::PostgresRoleConfig {
         serde_json::from_value(serde_json::json!({
             "host": "db", "database": "app", "role_prefix": "app_svc",
-            "privileges": privileges,
+            "owner": "migrator", "privileges": privileges,
         }))
         .expect("Should parse")
+    }
+
+    #[test]
+    fn a_role_reaches_the_tables_that_come_after_it() {
+        use super::adapters::provision_sql;
+
+        // `ON ALL TABLES` covers what exists at this moment and nothing created later, so a role
+        // provisioned into an empty database — the ordinary order, before migrations run — would
+        // see nothing at all. Both forms are issued so that provisioning before and after
+        // migrations end up identical.
+        let sql = provision_sql("app_svc_1", &pg_config(&["CONNECT", "SELECT", "INSERT"]));
+
+        assert!(
+            sql.contains("GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA public TO app_svc_1"),
+            "what already exists: {sql}"
+        );
+        assert!(
+            sql.contains(
+                "ALTER DEFAULT PRIVILEGES FOR ROLE migrator IN SCHEMA public \
+                 GRANT SELECT, INSERT ON TABLES TO app_svc_1"
+            ),
+            "what the owner creates later: {sql}"
+        );
+    }
+
+    #[test]
+    fn a_write_privilege_brings_the_sequences_it_needs() {
+        use super::adapters::provision_sql;
+
+        // Inserting into a table whose key comes from a `serial` fails with "permission denied
+        // for sequence" otherwise — an error about an object the grant never mentioned.
+        let writes = provision_sql("app_svc_1", &pg_config(&["SELECT", "INSERT"]));
+        assert!(
+            writes.contains("ON ALL SEQUENCES IN SCHEMA public TO app_svc_1"),
+            "{writes}"
+        );
+        assert!(
+            writes.contains("GRANT USAGE, SELECT ON SEQUENCES TO app_svc_1"),
+            "{writes}"
+        );
+
+        // A read-only role has nothing to draw from one.
+        let reads = provision_sql("app_svc_1", &pg_config(&["CONNECT", "SELECT"]));
+        assert!(!reads.contains("SEQUENCE"), "{reads}");
+    }
+
+    #[test]
+    fn an_owner_that_could_carry_sql_is_refused() {
+        use sealbox_server::repo::adapter::validate_config;
+
+        let config = serde_json::json!({
+            "host": "db", "database": "app", "role_prefix": "app",
+            "owner": "migrator; DROP TABLE users; --",
+            "privileges": ["SELECT"],
+        });
+        let err = validate_config("postgres-role", &config)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("owner"), "{err}");
+    }
+
+    #[test]
+    fn a_grant_naming_no_owner_is_refused() {
+        use sealbox_server::repo::adapter::validate_config;
+
+        // Without one, the role is provisioned, everything reports success, and it cannot see a
+        // single table anyone migrates in afterwards.
+        let config = serde_json::json!({
+            "host": "db", "database": "app", "role_prefix": "app",
+            "privileges": ["SELECT"],
+        });
+        assert!(validate_config("postgres-role", &config).is_err());
     }
 
     #[test]
