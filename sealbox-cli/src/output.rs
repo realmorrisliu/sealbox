@@ -1,7 +1,7 @@
 use crate::config::OutputFormat;
 use anyhow::Result;
 use comfy_table::{Table, presets::UTF8_FULL};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 pub struct OutputManager {
     format: OutputFormat,
@@ -24,57 +24,6 @@ impl OutputManager {
             }
             OutputFormat::Table => {
                 self.print_as_table(value)?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn print_secret(
-        &self,
-        key: &str,
-        value: &str,
-        version: Option<i32>,
-        ttl: Option<i64>,
-    ) -> Result<()> {
-        match self.format {
-            OutputFormat::Json => {
-                let mut obj = json!({
-                    "key": key,
-                    "value": value,
-                });
-                if let Some(v) = version {
-                    obj["version"] = json!(v);
-                }
-                if let Some(t) = ttl {
-                    obj["ttl"] = json!(t);
-                }
-                println!("{}", serde_json::to_string_pretty(&obj)?);
-            }
-            OutputFormat::Yaml => {
-                println!("key: {key}");
-                println!("value: {value}");
-                if let Some(v) = version {
-                    println!("version: {v}");
-                }
-                if let Some(t) = ttl {
-                    println!("ttl: {t}");
-                }
-            }
-            OutputFormat::Table => {
-                let mut table = Table::new();
-                table.load_style(UTF8_FULL);
-                table.set_header(vec!["Property", "Value"]);
-
-                table.add_row(vec!["Key", key]);
-                table.add_row(vec!["Value", value]);
-                if let Some(v) = version {
-                    table.add_row(vec!["Version", &v.to_string()]);
-                }
-                if let Some(t) = ttl {
-                    table.add_row(vec!["TTL", &t.to_string()]);
-                }
-
-                println!("{table}");
             }
         }
         Ok(())
@@ -198,10 +147,6 @@ impl OutputManager {
         println!("✅ {message}");
     }
 
-    pub fn print_error(&self, message: &str) {
-        eprintln!("❌ {message}");
-    }
-
     pub fn print_warning(&self, message: &str) {
         println!("⚠️  {message}");
     }
@@ -223,17 +168,6 @@ mod tests {
 
         // This test mainly verifies no panic occurs, actual output needs manual verification
         assert!(output.print_value(&value).is_ok());
-    }
-
-    #[test]
-    fn test_print_secret() {
-        let output = OutputManager::new(OutputFormat::Table);
-
-        assert!(
-            output
-                .print_secret("test-key", "test-value", Some(1), Some(3600))
-                .is_ok()
-        );
     }
 
     #[test]

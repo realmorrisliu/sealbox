@@ -154,11 +154,22 @@ made a mistake than to have a reason, and a weak credential looks exactly like a
 
 Keys, versions, and timestamps. Never values. Expired secrets are omitted.
 
-### `sealbox-cli secret get <key> [--version N]` *(being replaced)*
+### `sealbox-cli secret show <key> [--version N]`
 
-Returns ciphertext for the client to decrypt with its own private key. The target design has no
-command that yields a value at all — a secret is used through a grant, on a runner. This remains
-only because nothing else can consume a secret until runners exist.
+Metadata for one secret: that it exists, its version, when it last changed, what it expires at,
+and which master key it is under. **Never the value, and never the ciphertext.**
+
+This used to be `secret get`, which returned the ciphertext for the client to decrypt with a local
+master key. Nothing needed it — the runner receives plaintext, and rekey happens server-side —
+while any agent could carry away the ciphertext of every secret in the store and keep it against
+the day a master key leaks. There is deliberately no parameter and no role that brings it back: a
+way to get it is a way for something to be misconfigured into getting it.
+
+A **cold** secret — one under a master key the server does not hold — is read offline instead,
+from a copy of the database and that key, with no server involved. That is the only thing that
+works at the moment a cold secret is actually wanted, which is when the server is gone. **That
+tool does not exist yet**, so a cold secret written today cannot be read back; see
+[Setup and recovery](#setup-and-recovery-target).
 
 ---
 

@@ -281,8 +281,9 @@ enum SecretCommands {
         #[arg(long)]
         ttl: Option<i64>,
     },
-    /// Get secret
-    Get {
+    /// Show a secret's metadata: that it exists, its version, and when it last changed. Never
+    /// its value, and never its ciphertext.
+    Show {
         /// Secret key name
         key: String,
         /// Specific version number
@@ -303,30 +304,6 @@ enum SecretCommands {
     Uses {
         /// Secret key name
         key: String,
-    },
-    /// View secret version history
-    History {
-        /// Secret key name
-        key: String,
-    },
-    /// Import secrets from file
-    Import {
-        /// Input file path
-        file: String,
-        /// File format
-        #[arg(long, default_value = "json")]
-        format: String,
-    },
-    /// Export secrets to file
-    Export {
-        /// Output file path
-        file: String,
-        /// Key pattern matching
-        #[arg(long)]
-        keys: Option<String>,
-        /// Output format
-        #[arg(long, default_value = "json")]
-        format: String,
     },
 }
 

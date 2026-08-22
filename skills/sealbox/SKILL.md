@@ -66,6 +66,7 @@ declaring it:
 
 ```bash
 sealbox-cli secret list                 # names and metadata, never values
+sealbox-cli secret show app/database-url # one secret's metadata: version, when it changed
 sealbox-cli secret uses pg/prod-admin-password
 sealbox-cli grant show k8s-sync
 sealbox-cli audit --since 24h
@@ -75,7 +76,7 @@ sealbox-cli audit --since 24h
 
 | You will hit | Why |
 |---|---|
-| No command returns a value | The point of the system. Move the work to a grant. `secret get` is not a counterexample: it returns ciphertext, and decrypting it needs a master key held by a human, not by you. |
+| No command returns a value | The point of the system. Move the work to a grant. `secret show` gives you metadata — that it exists, its version, when it changed — and nothing else. |
 | `secrets = { DB = "app/{env}/url" }` is refused | The parameter comes from whoever invokes the grant, so it would let the caller choose which credential the grant reaches. Two environments are two grants. |
 | A submitted grant does not exist yet | A human signs for it on a page the server renders. Your terminal output is written by you, so it cannot be what they approve. |
 | Admin commands refuse your token | Identities, master keys, and removing grants need a passkey. Ask the human to run `sealbox-cli admin <command>`. |
