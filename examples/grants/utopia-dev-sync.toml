@@ -1,0 +1,26 @@
+# Put the credentials where the workload reads them.
+#
+# This is what replaces GitHub Environment Secrets plus the Action that copied them into the
+# cluster. Both disappear: the value goes from sealbox to the namespace directly, and GitHub never
+# holds a credential at all.
+
+[utopia-dev-sync]
+adapter = "kubernetes-secret"
+runner  = "prod-cluster"
+
+# The line to read. Everything this can reach is here — and nothing else, however the adapter is
+# implemented.
+#
+# MIGRATION_DATABASE_URL is in the same Secret so that a Helm `pre-upgrade` hook can read it. That
+# is what keeps migrations out of CI: nothing in GitHub needs either URL.
+[utopia-dev-sync.secrets]
+DATABASE_URL           = "utopia/dev/database-url"
+MIGRATION_DATABASE_URL = "utopia/dev/migration-url"
+
+[utopia-dev-sync.config]
+namespace = "utopia-dev"
+name      = "utopia-runtime"
+
+# sealbox-cli run utopia-dev-sync
+#
+# Usually not run by hand: utopia-dev-runtime chains to it after a rotation.

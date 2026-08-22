@@ -8,27 +8,28 @@
 adapter = "postgres-role"
 runner  = "prod-cluster"          # in-cluster, so it can reach an RDS that is not on the internet
 
-# Structured parameters only. There is no field here that takes SQL, and that is deliberate: it
-# is what keeps this adapter unable to do what a script could.
-config = {
-  host       = "pgm-xxx.rds.aliyuncs.com",
-  database   = "utopia",
-  role_prefix = "utopia_app",
-  # The role migrations run as. Required, and not guessed from the admin connection: default
-  # privileges attach to whoever *creates* an object, so Postgres can only record "when `owner`
-  # creates a table, grant to this role". Name the wrong one and everything reports success while
-  # the role cannot see a single table anyone migrates in afterwards.
-  owner      = "utopia_migrator",
-  privileges = ["CONNECT", "SELECT", "INSERT", "UPDATE", "DELETE"],
-}
-
 # The admin connection URL this adapter uses to create the new role.
 #
 # It must be a member of `owner`, because `ALTER DEFAULT PRIVILEGES FOR ROLE` requires it. On a
-# managed instance whose privileged account is not a true superuser, that is one `GRANT
-# utopia_migrator TO <admin>` — done once, by hand. If it is missing, the whole provisioning
-# transaction rolls back and nothing is left half-made.
-secrets = { admin = "pg/prod-admin-url" }
+# managed instance whose privileged account is not a true superuser, that is one
+# `GRANT utopia_migrator TO <admin>`, done once by hand. Without it the whole provisioning
+# transaction rolls back, leaving nothing half-made.
+[pg-provision.secrets]
+admin = "pg/prod-admin-url"
+
+# Structured parameters only. There is no field here that takes SQL, and that is deliberate: it is
+# what keeps this adapter unable to do what a script could.
+[pg-provision.config]
+host        = "pgm-xxx.rds.aliyuncs.com"
+database    = "utopia"
+role_prefix = "utopia_app"
+privileges  = ["CONNECT", "SELECT", "INSERT", "UPDATE", "DELETE"]
+
+# The role migrations run as. Required, and not guessed from the admin connection: default
+# privileges attach to whoever *creates* an object, so Postgres can only record "when `owner`
+# creates a table, grant to this role". Name the wrong one and everything reports success while
+# the role cannot see a single table anyone migrates in afterwards.
+owner       = "utopia_migrator"
 
 # sealbox-cli rotate utopia/prod/database-url --via pg-provision --from-output
 #

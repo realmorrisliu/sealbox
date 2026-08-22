@@ -1,0 +1,47 @@
+# Create the role migrations run as. Once per database, and a script because an adapter cannot.
+#
+# `postgres-role` has a closed privilege set — CONNECT, SELECT, INSERT, UPDATE, DELETE, USAGE —
+# and creating an owner needs CREATE, which is not in it. That is the boundary working as
+# intended: the closed set is what makes the adapter structurally unable to do what a script can,
+# so the moment you need more, you are asking for a script and a human should see it.
+#
+# This is the escape hatch of ADR 0007. If you find yourself writing a second one of these, that
+# is the signal to build an adapter — not before.
+
+[utopia-dev-owner]
+runner = "prod-cluster"
+
+# The admin connection. On Alibaba Cloud RDS this is the 高权限账号, which holds
+# `pg_rds_superuser` — enough to create roles, and deliberately not a real superuser.
+secrets = { admin = "pg/rds-dev-admin-url" }
+
+command = ["bash", "/dev/stdin"]
+script = """
+set -euo pipefail
+
+# The password comes from sealbox and is never seen by the caller, the agent, or you.
+psql "$admin" -v pw="$SEALBOX_NEW" -v ON_ERROR_STOP=1 -f - <<'SQL'
+BEGIN;
+CREATE ROLE utopia_migrator LOGIN PASSWORD :'pw';
+GRANT CONNECT ON DATABASE "utopia-system-dev" TO utopia_migrator;
+GRANT CREATE, USAGE ON SCHEMA public TO utopia_migrator;
+
+-- The admin has to be a member of the owner before `ALTER DEFAULT PRIVILEGES FOR ROLE
+-- utopia_migrator` will be accepted, and that is what utopia-dev-runtime does next.
+GRANT utopia_migrator TO CURRENT_USER;
+COMMIT;
+SQL
+
+# Compose the URL here rather than in sealbox: percent-encoding a password is provider-shaped
+# work, and `python3 -c` is the shortest correct way to do it.
+python3 - <<'PY'
+import os, urllib.parse
+pw = urllib.parse.quote(os.environ["SEALBOX_NEW"], safe="")
+print(f"postgresql://utopia_migrator:{pw}@pgm-xxx.rds.aliyuncs.com:5432/utopia-system-dev")
+PY
+"""
+
+# sealbox-cli rotate utopia/dev/migration-url --via utopia-dev-owner --from-output
+#
+# `--from-output` stores what the script printed — the composed URL — rather than the raw
+# password, because what the migrator needs is a connection string.
