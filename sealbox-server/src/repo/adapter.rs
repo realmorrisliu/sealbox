@@ -208,3 +208,123 @@ mod tests {
         );
     }
 }
+
+/// The worked examples are the template library: an agent asked for a grant it has not written
+/// before reads them and imitates one. So they have to be correct in the way a grant is correct,
+/// not merely plausible — and that is what these check.
+///
+/// They earn their place. Four of the seven were **not valid TOML** when this was written: a
+/// multi-line `config = { … }` is an inline table spread over several lines, which the spec does
+/// not allow. Two more parsed and were still wrong, because moving `config` into a sub-table
+/// silently swallowed the `secrets` and `then` lines that followed it — the declaration a human
+/// is supposed to read, quietly absorbed into the configuration.
+#[cfg(test)]
+mod examples {
+    use super::*;
+
+    fn examples() -> Vec<(String, toml::Value)> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root")
+            .join("examples/grants");
+
+        let mut found = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("examples/grants should exist") {
+            let path = entry.expect("Should read the entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .expect("a file name")
+                .to_string();
+            let text = std::fs::read_to_string(&path).expect("Should read the example");
+            let parsed: toml::Value =
+                toml::from_str(&text).unwrap_or_else(|e| panic!("{name} is not valid TOML: {e}"));
+            found.push((name, parsed));
+        }
+        assert!(!found.is_empty(), "there should be examples to check");
+        found
+    }
+
+    #[test]
+    fn every_example_is_a_grant() {
+        for (file, parsed) in examples() {
+            let table = parsed.as_table().expect("a table");
+            assert_eq!(table.len(), 1, "{file}: one grant per file");
+
+            let (name, body) = table.iter().next().expect("the grant");
+            let body = body
+                .as_table()
+                .unwrap_or_else(|| panic!("{file}: `{name}` should be a table"));
+
+            assert!(body.contains_key("runner"), "{file}: needs a runner");
+            assert!(
+                body.contains_key("secrets") || body.contains_key("files"),
+                "{file}: a grant declares what it may use"
+            );
+            assert!(
+                body.contains_key("adapter") != body.contains_key("script"),
+                "{file}: exactly one of `adapter` or `script` — `{name}` has {}",
+                if body.contains_key("adapter") {
+                    "both"
+                } else {
+                    "neither"
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn every_adapter_example_would_be_accepted_at_approval() {
+        for (file, parsed) in examples() {
+            let (name, body) = parsed
+                .as_table()
+                .and_then(|t| t.iter().next())
+                .expect("the grant");
+            let body = body.as_table().expect("a table");
+
+            let Some(adapter) = body.get("adapter").and_then(|a| a.as_str()) else {
+                continue;
+            };
+            let config = body
+                .get("config")
+                .cloned()
+                .unwrap_or(toml::Value::Table(Default::default()));
+            let config: serde_json::Value =
+                serde_json::to_value(config).expect("Should convert to JSON");
+
+            // The same call `grant add` makes. An example that would be refused is worse than no
+            // example: it is a template that produces a refusal.
+            validate_config(adapter, &config)
+                .unwrap_or_else(|e| panic!("{file}: `{name}` would be refused: {e}"));
+        }
+    }
+
+    #[test]
+    fn no_example_parameterises_a_secret_name() {
+        // The rule is enforced server-side, but an example carrying one would teach the shape.
+        for (file, parsed) in examples() {
+            let body = parsed
+                .as_table()
+                .and_then(|t| t.values().next())
+                .and_then(|v| v.as_table())
+                .expect("the grant");
+
+            for source in ["secrets", "files"] {
+                let Some(map) = body.get(source).and_then(|s| s.as_table()) else {
+                    continue;
+                };
+                for (injected, secret) in map {
+                    let secret = secret.as_str().unwrap_or_default();
+                    assert!(
+                        !secret.contains('{'),
+                        "{file}: `{injected}` names `{secret}`, and a parameter there would let \
+                         whoever invokes the grant choose which credential it reaches"
+                    );
+                }
+            }
+        }
+    }
+}

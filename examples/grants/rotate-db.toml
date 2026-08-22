@@ -11,12 +11,22 @@
 [rotate-db]
 adapter = "postgres-role"
 runner  = "prod-cluster"
-secrets = { admin = "pg/prod-admin-password" }
 
 # create new role -> sync -> restart -> VERIFY -> drop old role
+#
 # The verify step is the one people skip, and the one that stops a working credential being
 # deleted in favour of a broken one.
 then = ["k8s-sync", "k8s-restart", "verify-health"]
+
+[rotate-db.secrets]
+admin = "pg/prod-admin-password"
+
+[rotate-db.config]
+host        = "pgm-xxx.rds.aliyuncs.com"
+database    = "utopia"
+role_prefix = "utopia_app"
+owner       = "utopia_migrator"
+privileges  = ["CONNECT", "SELECT", "INSERT", "UPDATE", "DELETE"]
 
 # sealbox-cli rotate utopia/prod/db-password --via rotate-db
 #
