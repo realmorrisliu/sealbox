@@ -1,4 +1,12 @@
-## MODIFIED Requirements
+## REMOVED Requirements
+
+### Requirement: Creating a grant requires the admin role
+
+**Reason**: Submitting a grant creates nothing now — it stages an approval — so gating the
+submission bought nothing and cost a second ceremony for one decision. What is privileged is the
+approval, and that is a signature rather than a role.
+
+## ADDED Requirements
 
 ### Requirement: Creating a grant requires an approval, not a role
 

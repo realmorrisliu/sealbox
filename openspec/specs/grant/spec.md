@@ -55,24 +55,6 @@ The system SHALL be able to report every grant that declares a given secret.
 - **WHEN** the grants using a secret that no grant declares are requested
 - **THEN** the system returns an empty result rather than an error
 
-### Requirement: Creating a grant requires the admin role
-
-The system SHALL permit only an identity with the admin role to create, modify, or remove a
-grant.
-
-An identity with a lesser role SHALL be able to list grants and see their declarations, so that
-it can tell what it may invoke and draft a proposal for a human.
-
-#### Scenario: An agent cannot approve its own capability
-
-- **WHEN** an identity without the admin role attempts to create a grant
-- **THEN** the system refuses it as forbidden, and no grant is created
-
-#### Scenario: An agent can see what exists
-
-- **WHEN** an identity without the admin role lists grants
-- **THEN** the system returns them, including the secrets each declares
-
 ### Requirement: An implementation is stored, never referenced
 
 When a grant's implementation is a script, the system SHALL store the script's content.
@@ -148,4 +130,36 @@ uses to refer to it.
 
 - **WHEN** a grant is created with a name already in use
 - **THEN** the system refuses it rather than replacing the existing grant
+
+### Requirement: Creating a grant requires an approval, not a role
+
+Any authenticated identity SHALL be able to submit a grant for approval. Submitting SHALL create
+nothing.
+
+The system SHALL create the grant only when a human has approved it by signing for it, and SHALL
+permit only an identity with the admin role to remove one.
+
+An identity with a lesser role SHALL be able to list grants and see their declarations, so that it
+can tell what it may invoke and draft a proposal for a human.
+
+#### Scenario: An agent drafts, and nothing exists yet
+
+- **WHEN** an identity without the admin role submits a grant
+- **THEN** the system stages it for approval and no grant exists
+
+#### Scenario: An agent cannot approve its own capability
+
+- **WHEN** an identity attempts to approve a staged grant without a signature from a registered
+  admin authenticator
+- **THEN** the system refuses it, and no grant is created
+
+#### Scenario: An agent cannot remove one either
+
+- **WHEN** an identity without the admin role attempts to remove a grant
+- **THEN** the system refuses it as forbidden
+
+#### Scenario: An agent can see what exists
+
+- **WHEN** an identity without the admin role lists grants
+- **THEN** the system returns them, including the secrets each declares
 
