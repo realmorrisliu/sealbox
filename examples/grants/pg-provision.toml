@@ -8,10 +8,23 @@
 adapter = "postgres-role"
 runner  = "prod-cluster"          # in-cluster, so it can reach an RDS that is not on the internet
 
-secrets = { admin = "pg/prod-admin-password" }
+# Structured parameters only. There is no field here that takes SQL, and that is deliberate: it
+# is what keeps this adapter unable to do what a script could.
+config = {
+  host       = "pgm-xxx.rds.aliyuncs.com",
+  database   = "utopia",
+  role_prefix = "utopia_app",
+  privileges = ["CONNECT", "SELECT", "INSERT", "UPDATE", "DELETE"],
+}
 
-# sealbox rotate pg/newapp/database-url --via pg-provision --from-output \
-#     host=pgm-xxx user=newapp db=newapp
+# The admin connection URL this adapter uses to create the new role.
+secrets = { admin = "pg/prod-admin-url" }
+
+# sealbox-cli rotate utopia/prod/database-url --via pg-provision --from-output
+#
+# Creates utopia_app_2 with the new password, leaves utopia_app_1 working, and emits the new
+# connection URL. Dropping the old role is a separate grant, run once something has verified the
+# new one works.
 #
 # --from-output stores what the adapter printed (the composed URL) rather than the raw generated
 # password. Percent-encoding is the adapter's problem, not yours.

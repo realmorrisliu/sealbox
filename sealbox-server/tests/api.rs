@@ -1503,3 +1503,69 @@ async fn an_agent_cannot_rotate() {
         "an agent may run a grant that reads secrets; changing one is a different thing"
     );
 }
+
+// ---------------------------------------------------------------- adapters
+
+#[tokio::test]
+async fn adapter_configuration_is_validated_at_approval() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "app/db").await;
+
+    // A typo that would otherwise silently write to the `default` namespace.
+    let mut typo = adapter_grant("sync", "app/db");
+    typo["config"] = serde_json::json!({ "namspace": "prod", "name": "app" });
+    let response = server.add_grant(&admin, typo).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(server.json(response).await.to_string().contains("namspace"));
+
+    // A missing required setting, named.
+    let mut incomplete = adapter_grant("sync", "app/db");
+    incomplete["config"] = serde_json::json!({ "namespace": "prod" });
+    let response = server.add_grant(&admin, incomplete).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(server.json(response).await.to_string().contains("name"));
+}
+
+#[tokio::test]
+async fn a_privilege_outside_the_closed_set_is_refused_at_approval() {
+    // An open set would have to be interpolated into SQL, and a field interpolated into SQL is
+    // a field that can carry SQL.
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "pg/admin").await;
+
+    let mut grant = adapter_grant("provision", "pg/admin");
+    grant["adapter"] = serde_json::json!("postgres-role");
+    grant["secrets"] = serde_json::json!({ "admin": "pg/admin" });
+    grant["config"] = serde_json::json!({
+        "host": "db", "database": "app", "role_prefix": "app",
+        "privileges": ["SELECT", "DROP"],
+    });
+
+    let response = server.add_grant(&admin, grant).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = server.json(response).await.to_string();
+    assert!(
+        body.contains("DROP"),
+        "names the offending privilege: {body}"
+    );
+    assert!(body.contains("CONNECT"), "and lists the permitted: {body}");
+}
+
+#[tokio::test]
+async fn a_valid_adapter_grant_is_approved() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "pg/admin").await;
+
+    let mut grant = adapter_grant("provision", "pg/admin");
+    grant["adapter"] = serde_json::json!("postgres-role");
+    grant["secrets"] = serde_json::json!({ "admin": "pg/admin" });
+    grant["config"] = serde_json::json!({
+        "host": "db.internal", "database": "app", "role_prefix": "app",
+        "privileges": ["CONNECT", "SELECT", "INSERT", "UPDATE", "DELETE"],
+    });
+
+    assert!(server.add_grant(&admin, grant).await.status().is_success());
+}

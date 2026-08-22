@@ -146,6 +146,10 @@ spec:
 
 **No Service, no Ingress, no inbound port.** The runner dials out.
 
+**The image must carry `kubectl` and `psql`** if grants use the built-in adapters — they shell
+out rather than linking client libraries, and `kubectl` picks up the ServiceAccount on its own
+inside a cluster. A missing tool fails the job with a message saying so.
+
 `sealbox-join` is the one Secret you create by hand — and it stops being useful fifteen minutes
 later, which is what makes that acceptable.
 

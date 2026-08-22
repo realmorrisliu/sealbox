@@ -18,6 +18,7 @@ pub(crate) use self::sqlite::{
     SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
 };
 
+pub mod adapter;
 mod sqlite;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -124,13 +124,16 @@ fn validate_secret_names_are_literal(grant: &Grant) -> Result<()> {
 }
 
 fn validate_adapter(grant: &Grant) -> Result<()> {
-    if let Implementation::Adapter { adapter, .. } = &grant.implementation
-        && !KNOWN_ADAPTERS.contains(&adapter.as_str())
-    {
-        return Err(SealboxError::InvalidRequest(format!(
-            "unknown adapter `{adapter}`. Known adapters: {}",
-            KNOWN_ADAPTERS.join(", ")
-        )));
+    if let Implementation::Adapter { adapter, config } = &grant.implementation {
+        if !KNOWN_ADAPTERS.contains(&adapter.as_str()) {
+            return Err(SealboxError::InvalidRequest(format!(
+                "unknown adapter `{adapter}`. Known adapters: {}",
+                KNOWN_ADAPTERS.join(", ")
+            )));
+        }
+        // The configuration is checked here rather than at execution, because a human is here
+        // and can fix it. At three in the morning, mid-rotation, nobody is.
+        crate::repo::adapter::validate_config(adapter, config)?;
     }
     Ok(())
 }

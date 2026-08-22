@@ -196,10 +196,15 @@ fn execute(job: ClaimedJob) -> Result<(i32, String, String)> {
             substitutions.insert("script".to_string(), path.to_string_lossy().into_owned());
             command
         }
-        Implementation::Adapter { adapter, .. } => {
-            anyhow::bail!(
-                "adapter '{adapter}' is not implemented yet — grants using a script run today"
-            )
+        Implementation::Adapter { adapter, config } => {
+            // Adapters return their own outcome: they build a fixed argv and run it themselves,
+            // because what makes them safe is that the verb and resource kind are in code here,
+            // not in configuration.
+            return match adapter.as_str() {
+                "kubernetes-secret" => adapters::kubernetes_secret(&config, &substitutions, &env),
+                "postgres-role" => adapters::postgres_role(&config, &job.secrets),
+                other => anyhow::bail!("unknown adapter '{other}'"),
+            };
         }
     };
 
@@ -246,9 +251,224 @@ fn write_private(path: &std::path::Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// The built-in implementations.
+///
+/// Each builds its argv here, in code. Configuration supplies values that become arguments —
+/// a namespace, a database — and never the verb or the resource kind. That is the whole
+/// difference from a script: a script holding a kubeconfig could `delete ns prod`; the
+/// `kubernetes-secret` adapter can write one Secret and nothing else (ADR 0007).
+mod adapters {
+    use anyhow::{Context, Result};
+    use sealbox_server::repo::adapter::{KubernetesSecretConfig, PostgresRoleConfig};
+    use std::collections::BTreeMap;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    /// Write the grant's declared secrets into one named Secret, using the runner's own
+    /// ServiceAccount — which `kubectl` picks up on its own inside a cluster.
+    pub fn kubernetes_secret(
+        config: &serde_json::Value,
+        substitutions: &BTreeMap<String, String>,
+        env: &[(String, String)],
+    ) -> Result<(i32, String, String)> {
+        let config: KubernetesSecretConfig = serde_json::from_value(config.clone())
+            .context("kubernetes-secret configuration is invalid")?;
+
+        let env_file = substitutions
+            .get("SEALBOX_ENVFILE")
+            .context("kubernetes-secret needs the grant to declare at least one secret")?;
+
+        // Render, then apply. `create --dry-run=client -o yaml | apply -f -` replaces the
+        // Secret's contents, so removing a secret from the grant removes it from the cluster —
+        // a merge would leave the old key behind and the removal would appear to have worked.
+        //
+        // The pipe is a real pipe between two processes, not a shell: nothing here is parsed
+        // by anything that could find a metacharacter in it.
+        let rendered = Command::new("kubectl")
+            .args([
+                "create",
+                "secret",
+                "generic",
+                &config.name,
+                "--namespace",
+                &config.namespace,
+                "--from-env-file",
+                env_file,
+                "--dry-run=client",
+                "-o",
+                "yaml",
+            ])
+            .envs(env.iter().cloned())
+            .output()
+            .context(
+                "failed to run `kubectl` — the runner's image must carry it, since this adapter \
+                 uses the runner's own ServiceAccount",
+            )?;
+
+        if !rendered.status.success() {
+            return Ok((
+                rendered.status.code().unwrap_or(-1),
+                String::new(),
+                String::from_utf8_lossy(&rendered.stderr).into_owned(),
+            ));
+        }
+
+        let mut apply = Command::new("kubectl")
+            .args(["apply", "--namespace", &config.namespace, "-f", "-"])
+            .envs(env.iter().cloned())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to run `kubectl apply`")?;
+        apply
+            .stdin
+            .as_mut()
+            .context("kubectl apply took no stdin")?
+            .write_all(&rendered.stdout)
+            .context("failed to send the manifest to kubectl")?;
+        let out = apply.wait_with_output().context("kubectl apply failed")?;
+
+        Ok((
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        ))
+    }
+
+    /// Create a role with the new value as its password and emit a connection URL.
+    ///
+    /// Creates rather than alters (ADR 0011): changing an existing role's password has a window
+    /// in which the database and the cluster disagree, and every request in it fails. The old
+    /// role is left for a later grant to drop, after something has verified the new one works.
+    pub fn postgres_role(
+        config: &serde_json::Value,
+        secrets: &BTreeMap<String, String>,
+    ) -> Result<(i32, String, String)> {
+        let config: PostgresRoleConfig = serde_json::from_value(config.clone())
+            .context("postgres-role configuration is invalid")?;
+        let password = secrets
+            .get("SEALBOX_NEW")
+            .context("postgres-role is a rotation adapter: run it with `rotate`, not `run`")?;
+        let admin = secrets
+            .get("admin")
+            .context("postgres-role needs the grant to declare an `admin` connection URL")?;
+
+        let existing = psql(
+            admin,
+            &[
+                "-tAc",
+                &format!(
+                    "SELECT rolname FROM pg_roles WHERE rolname LIKE '{}\\_%'",
+                    config.role_prefix
+                ),
+            ],
+        )?;
+        let role = next_role_name(&config.role_prefix, &existing);
+
+        // The password reaches psql as a variable and is quoted by psql itself (`:'pw'`), so it
+        // is never concatenated into SQL. The privileges are constants validated at approval.
+        let privileges = config.privileges.join(", ");
+        let sql = format!(
+            "CREATE ROLE {role} LOGIN PASSWORD :'pw'; \
+             GRANT CONNECT ON DATABASE {db} TO {role}; \
+             GRANT USAGE ON SCHEMA {schema} TO {role}; \
+             GRANT {privileges} ON ALL TABLES IN SCHEMA {schema} TO {role};",
+            db = config.database,
+            schema = config.schema,
+        );
+        let stderr = psql_write(admin, password, &sql)?;
+
+        let mut url = reqwest::Url::parse(&format!(
+            "postgresql://{}:{}/{}",
+            config.host, config.port, config.database
+        ))
+        .context("could not build a connection URL")?;
+        url.set_username(&role)
+            .ok()
+            .context("could not set the role on the URL")?;
+        // `Url` percent-encodes the password, so whatever characters it contains, the URL parses.
+        url.set_password(Some(password))
+            .ok()
+            .context("could not set the password on the URL")?;
+
+        // stdout is the value and nothing else: this adapter is meant for `rotate --from-output`.
+        Ok((0, url.to_string(), stderr))
+    }
+
+    /// `<prefix>_<n>`, picking the next serial. A prefix rather than a configured name, so the
+    /// grant stays stable across rotations and can be approved once.
+    pub fn next_role_name(prefix: &str, existing: &str) -> String {
+        let highest = existing
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix(&format!("{prefix}_")))
+            .filter_map(|serial| serial.parse::<u32>().ok())
+            .max()
+            .unwrap_or(0);
+        format!("{prefix}_{}", highest + 1)
+    }
+
+    fn psql(connection: &str, args: &[&str]) -> Result<String> {
+        let out = Command::new("psql")
+            .arg(connection)
+            .args(args)
+            .output()
+            .context("failed to run `psql` — the runner's image must carry it")?;
+        if !out.status.success() {
+            anyhow::bail!("psql failed: {}", String::from_utf8_lossy(&out.stderr));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    }
+
+    fn psql_write(connection: &str, password: &str, sql: &str) -> Result<String> {
+        let out = Command::new("psql")
+            .arg(connection)
+            .args(["-v", &format!("pw={password}"), "-c", sql])
+            .output()
+            .context("failed to run `psql` — the runner's image must carry it")?;
+        if !out.status.success() {
+            anyhow::bail!("psql failed: {}", String::from_utf8_lossy(&out.stderr));
+        }
+        Ok(String::from_utf8_lossy(&out.stderr).into_owned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn role_names_take_the_next_serial() {
+        use super::adapters::next_role_name;
+
+        // Nothing yet.
+        assert_eq!(next_role_name("app", ""), "app_1");
+        // Picks the highest, not the count — a gap must not cause a reuse.
+        assert_eq!(next_role_name("app", "app_1\napp_3\n"), "app_4");
+        // Unrelated roles are ignored, including ones that merely start the same way.
+        assert_eq!(
+            next_role_name("app", "app_1\nappserver_9\npostgres\n"),
+            "app_2"
+        );
+    }
+
+    #[test]
+    fn a_password_is_percent_encoded_into_the_url() {
+        // A generated password is alphanumeric, but a captured or supplied one need not be, and
+        // a URL that does not parse is a credential that silently does not work.
+        let mut url = reqwest::Url::parse("postgresql://db.internal:5432/app").unwrap();
+        url.set_username("app_2").unwrap();
+        url.set_password(Some("p@ss:w/rd?#")).unwrap();
+
+        let rendered = url.to_string();
+        assert!(
+            !rendered.contains("p@ss:w/rd?#"),
+            "raw password must not survive"
+        );
+        let reparsed = reqwest::Url::parse(&rendered).unwrap();
+        assert_eq!(reparsed.password().unwrap(), "p%40ss%3Aw%2Frd%3F%23");
+        assert_eq!(reparsed.username(), "app_2");
+    }
 
     #[test]
     fn substitution_is_whole_token_and_never_reparsed() {

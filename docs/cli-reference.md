@@ -390,7 +390,54 @@ then    = ["k8s-restart", "verify-health"]     # optional linear chain, stop on 
 Parameters written `{name}` are substituted from `run` arguments **into argv, never through a
 shell** — so `{ns}` = `x; curl evil.com` is merely an odd argument.
 
-Built-in adapters: `kubernetes-secret`, `postgres-role`.
+### Built-in adapters
+
+An adapter is not shorthand for a script. **A script can do anything its declared secrets permit;
+an adapter cannot.** A script holding a kubeconfig could `delete ns prod`; `kubernetes-secret`
+can write one Secret and nothing else. That is why its configuration is structured parameters —
+a field taking a command, a query, a verb, or a resource kind would turn it back into a script
+with extra steps.
+
+Configuration is validated **at approval**, while you are there to fix it — an unknown field is
+refused rather than ignored.
+
+#### `kubernetes-secret`
+
+```toml
+adapter = "kubernetes-secret"
+config  = { namespace = "utopia-system", name = "utopia-runtime-secret-bridge" }
+```
+
+Writes the grant's declared secrets into that one Secret, using the runner's own ServiceAccount.
+The contents are **replaced, not merged**, so removing a secret from the grant removes it from
+the cluster.
+
+#### `postgres-role`
+
+```toml
+adapter = "postgres-role"
+config  = {
+  host = "db.internal", database = "app", role_prefix = "app",
+  privileges = ["CONNECT", "SELECT", "INSERT", "UPDATE", "DELETE"],
+}
+secrets = { admin = "pg/prod-admin-url" }
+```
+
+**Creates a role; never alters or drops one.** Changing an existing role's password has a window
+in which the database and the cluster disagree, and every request in it fails. Roles are named
+`app_1`, `app_2`, … so the grant stays stable across rotations and can be approved once. Dropping
+the predecessor is a separate grant, run after something has verified the new one works
+([ADR 0011](adr/0011-rotation-uses-dual-credentials-and-a-linear-chain.md)).
+
+Privileges come from a closed set — `CONNECT`, `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `USAGE` —
+matched against constants and never concatenated from input. Anything beyond them is a script.
+
+Emits a connection URL with the password percent-encoded, and nothing else, so it is used with
+`rotate --from-output`.
+
+**The runner's image must carry `kubectl` and `psql`.** Both adapters shell out rather than
+linking a client: a Kubernetes client crate is a large dependency tree for one call, and the
+security property comes from the adapter constructing the argv, not from the transport.
 
 ---
 
