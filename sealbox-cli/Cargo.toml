@@ -2,6 +2,7 @@
 name = "sealbox-cli"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 
 [dependencies]
 sealbox-server = { path = "../sealbox-server" }
@@ -19,9 +20,9 @@ tabled = "0.21"
 rpassword = "7.5"
 aes-gcm = { workspace = true }
 base64 = { workspace = true }
-comfy-table = "8.0"
+comfy-table = "7"
+tempfile = { workspace = true }
 uuid = { workspace = true }
 rand = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }

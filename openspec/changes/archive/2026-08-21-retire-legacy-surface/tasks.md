@@ -1,0 +1,71 @@
+## 1. Pure deletions (no behavior depends on these)
+
+Ordered first because each is independently verifiable and none blocks the others.
+
+- [x] 1.1 Delete the `sealbox-web` directory, remove it from the workspace members in `Cargo.toml`, and drop the pnpm workspace files
+- [x] 1.2 Remove any `sealbox-web` steps, caches, or path filters from `.github/workflows/` — none existed; `sealbox-web` was never a workspace member nor referenced by CI
+- [x] 1.3 Delete the CORS layer and the `SEALBOX_ALLOW_CORS` read from `sealbox-server/src/api/mod.rs`; remove `tower-http`'s `cors` feature if nothing else uses it
+- [x] 1.4 Remove the `Version` enum entirely and hardcode `/v1/...` in the routes — with one variant left, the dynamic segment, the extractor, and every handler's match on it were pure noise. Also removes `MasterKeyPathParams`, `ListSecretsPathParams`, `SecretPathParams::version`, the `InvalidApiVersion` error variant, and three tests that asserted a handler-level rejection that no longer happens there
+- [x] 1.5 Verify: `cargo build --release --workspace`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`
+
+## 2. Rename rotate → rekey
+
+Mechanical, and done before the repo refactor so the refactor does not have to move renamed code twice.
+
+- [x] 2.1 Rename `Secret::rotate_master_key` → `Secret::rekey` in `sealbox-server/src/repo/mod.rs`, with its tests
+- [x] 2.2 Rename the handler and route target in `sealbox-server/src/api/handler/master_key.rs` to rekey
+- [x] 2.3 Rename the corresponding `sealbox-cli` command and its help text
+- [x] 2.4 Grep for remaining uses of "rotate" that mean re-encryption and fix them, including log and error strings
+- [x] 2.5 Verify: build, test, clippy clean
+
+## 3. Repo traits own their connection
+
+- [x] 3.1 Give `SqliteSecretRepo`, `SqliteMasterKeyRepo`, and `SqliteHealthRepo` an `Arc<Mutex<Connection>>` field and a constructor
+- [x] 3.2 Remove the `&Connection` / `&mut Connection` parameter from every method on `SecretRepo`, `MasterKeyRepo`, and `HealthRepo`
+- [x] 3.3 Move locking and transaction handling inside the implementors; multi-statement work takes the lock once and opens one transaction. The rekey transaction, previously assembled in the handler, becomes `SecretRepo::rekey_secrets` — which made `fetch_secrets_by_master_key` and `update_secret_master_key` dead, so both were removed along with their tests, replaced by two tests of `rekey_secrets` itself
+- [x] 3.4 Remove every `state.conn_pool.lock()` from `sealbox-server/src/api/handler/*` and from the readiness probe
+- [x] 3.5 Remove `conn_pool` from `AppState` if nothing outside the repos still needs it
+- [x] 3.6 Verify: build, test, clippy clean — no behavior change expected, so failing tests here mean a real mistake
+
+## 4. Schema migration
+
+- [x] 4.1 Add `server_held INTEGER NOT NULL DEFAULT 0` to `master_keys`
+- [x] 4.2 Rebuild `secrets` without `namespace`, with `PRIMARY KEY (key, version)`, in one transaction: create new table, copy rows, compare row counts, drop old, rename
+- [x] 4.3 Remove the `namespace` field from `Secret` and every query, insert, and test referencing it
+- [x] 4.4 Confirm the migration is idempotent on an already-migrated database and a fresh one
+- [x] 4.5 Verify: ran against a copy of the real database. 1 secret before and after, ciphertext byte-identical, `namespace` gone, `server_held` present and 0 — correctly reflecting that every existing master key is cold
+
+## 5. Server-held master key
+
+- [x] 5.1 Add `SEALBOX_MASTER_KEY_PATH` to `SealboxConfig`; fail startup with a clear message if it is missing or unreadable — and deliberately do **not** generate one, since doing so on a mistyped path would silently make every existing secret cold
+- [x] 5.2 Load the private master key at startup via the existing `PrivateMasterKey`; register the corresponding public key with `server_held = 1` if not already present. `PrivateMasterKey::from_str` now also accepts PKCS#8, because OpenSSL 3 emits it by default and the previous failure said only "Invalid private key"
+- [x] 5.3 Make "the current master key" resolve to the server-held one for new secrets
+- [x] 5.4 Reject operations that would require decrypting a secret whose master key is cold, with an error naming the cause
+- [x] 5.5 Verify: a new secret encrypts under the server-held key; a secret under a cold key reports cold rather than failing obscurely
+
+## 6. Remove the private-key rekey endpoint
+
+The security fix, last, because it depends on 5.
+
+- [x] 6.1 Delete `old_private_key_pem` from `RotateMasterKeyPayload`; the payload now names only source and destination master keys
+- [x] 6.2 Rewrite the rekey handler to use the server-held private key; reject any request whose source key is cold
+- [x] 6.3 Confirm no path logs, echoes, or stores submitted key material, including error paths. Also replaced `PrivateMasterKey`'s derived `Debug`, which would have printed the key's components on any `{:?}`
+- [x] 6.4 Update the `sealbox-cli` rekey command to stop sending a private key
+- [x] 6.5 Confirm rekey is atomic — it was **not**: failures were collected while successes still committed, contradicting the spec. The transaction is now dropped without committing if any secret fails, and the test asserts that not one secret moved
+- [x] 6.6 Verify: build, test, clippy clean
+
+## 7. Tests and documentation
+
+- [x] 7.1 Add a test that a rekey request carrying private key material is rejected and nothing is written. The payload now uses `deny_unknown_fields`, so an old client sending `old_private_key_pem` fails loudly instead of having its private key silently discarded
+- [x] 7.2 Add a test that rekey from a cold source key is refused
+- [x] 7.3 Add a test that no response carries `Access-Control-Allow-*` headers, in a debug build. These are the first HTTP-level tests in the repo, and they immediately found that `route_layer` had put the health probes behind authentication — so Kubernetes probes, which send no credential, were being rejected. Fixed by registering public routes after the auth layer
+- [x] 7.4 Add a test that a non-`v1` version is rejected
+- [x] 7.5 Update `docs/configuration.md` for `SEALBOX_MASTER_KEY_PATH` and the removal of `SEALBOX_ALLOW_CORS`. Also prefixed the remaining server env vars with `SEALBOX_` — adding one prefixed variable alongside three unprefixed ones was an inconsistency this change introduced
+- [x] 7.6 Update `docs/cli-reference.md` for the renamed rekey command — it describes the target command surface, which has no client-side rekey, so nothing there referred to the old one
+- [x] 7.7 Remove the stale web UI, CORS, and rotate references from `CLAUDE.md`'s repository layout and cleanup list
+- [x] 7.8 Final verification: `cargo fmt --check`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`
+
+## 8. Migration runbook
+
+- [x] 8.1 Write the operator steps into `docs/`: back up the database file, generate a server master key, set `SEALBOX_MASTER_KEY_PATH`, start, verify
+- [x] 8.2 State plainly that pre-existing secrets stay on cold keys and are re-imported with the CLI holding their private key, and why no migration path is offered

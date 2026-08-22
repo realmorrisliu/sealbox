@@ -1,0 +1,25 @@
+# Push secrets into a Kubernetes Secret that workloads already read via envFrom.
+#
+# Nothing changes on the workload side: no sidecar, no CSI driver, no operator, and no sealbox
+# credential ever reaches a Pod. Only the source of the values changes.
+
+[k8s-sync]
+adapter = "kubernetes-secret"
+runner  = "prod-cluster"          # in-cluster; uses its own ServiceAccount, no kubeconfig stored
+
+config = { namespace = "utopia-system", name = "utopia-runtime-secret-bridge" }
+
+# What a human reviews. The adapter cannot touch anything not listed here,
+# and cannot do anything to the cluster except write this Secret.
+# Secret names are literal, never parameterised. A placeholder here would let whoever invokes
+# the grant choose which credential it reaches, and the declaration would stop being the
+# boundary. Two environments are two grants — which also means approving production is its own
+# deliberate act.
+secrets = {
+  DATABASE_URL          = "utopia/prod/database-url",
+  OSS_ENDPOINT          = "utopia/prod/oss-endpoint",
+  OSS_BUCKET            = "utopia/prod/oss-bucket",
+  CONTENT_ACCESS_SECRET = "utopia/prod/content-access-secret",
+}
+
+# sealbox-cli run k8s-sync

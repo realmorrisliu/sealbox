@@ -1,22 +1,43 @@
 use std::sync::{Arc, Mutex};
 use tracing::info;
 
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::time::Instant;
+use uuid::Uuid;
+
 use crate::{
     config::SealboxConfig,
-    error::Result,
+    crypto::master_key::PrivateMasterKey,
+    error::{Result, SealboxError},
     repo::{
-        HealthRepo, MasterKeyRepo, SecretRepo, SqliteHealthRepo, SqliteMasterKeyRepo,
-        SqliteSecretRepo, create_db_connection,
+        AuditRepo, AuthenticatorRepo, GrantRepo, HealthRepo, IdentityRepo, JobRepo, MasterKeyRepo,
+        MasterKeyStatus, SecretRepo, SqliteAuditRepo, SqliteAuthenticatorRepo, SqliteGrantRepo,
+        SqliteHealthRepo, SqliteIdentityRepo, SqliteJobRepo, SqliteMasterKeyRepo, SqliteSecretRepo,
+        create_db_connection,
     },
 };
 
 #[derive(Clone)]
 pub(crate) struct AppState {
     pub(crate) config: Arc<SealboxConfig>,
-    pub(crate) conn_pool: Arc<Mutex<rusqlite::Connection>>,
     pub(crate) health_repo: Arc<dyn HealthRepo>,
     pub(crate) secret_repo: Arc<dyn SecretRepo>,
     pub(crate) master_key_repo: Arc<dyn MasterKeyRepo>,
+    pub(crate) identity_repo: Arc<dyn IdentityRepo>,
+    pub(crate) audit_repo: Arc<dyn AuditRepo>,
+    pub(crate) grant_repo: Arc<dyn GrantRepo>,
+    pub(crate) job_repo: Arc<dyn JobRepo>,
+    pub(crate) authenticator_repo: Arc<dyn AuthenticatorRepo>,
+    /// Challenges, sessions, enrolments, and pending approvals — all in memory, deliberately.
+    pub(crate) passkey: crate::api::passkey::PasskeyState,
+    /// When the bootstrap token stops being accepted. Stored as a deadline rather than a start
+    /// time so it is directly assertable, and so a token left in the environment after use —
+    /// the normal outcome — stops being useful on its own.
+    pub(crate) bootstrap_deadline: Instant,
+    /// Private halves of the server's own master keys, by id. Only rekey needs these; a key
+    /// absent from this map is cold, and nothing can decrypt secrets under it.
+    pub(crate) server_keys: Arc<HashMap<Uuid, PrivateMasterKey>>,
 }
 
 impl AppState {
@@ -25,13 +46,35 @@ impl AppState {
 
         SqliteSecretRepo::init_table(&conn)?;
         SqliteMasterKeyRepo::init_table(&conn)?;
+        SqliteIdentityRepo::init_table(&conn)?;
+        SqliteAuditRepo::init_table(&conn)?;
+        SqliteGrantRepo::init_table(&conn)?;
+        SqliteJobRepo::init_table(&conn)?;
+        SqliteAuthenticatorRepo::init_table(&conn)?;
+
+        // One connection, shared by the repositories. Nothing above this layer holds it:
+        // a database lock has no business in an HTTP handler.
+        let conn = Arc::new(Mutex::new(conn));
 
         let state = Self {
             config: Arc::new(config.clone()),
-            conn_pool: Arc::new(Mutex::new(conn)),
-            health_repo: Arc::new(SqliteHealthRepo {}),
-            secret_repo: Arc::new(SqliteSecretRepo {}),
-            master_key_repo: Arc::new(SqliteMasterKeyRepo {}),
+            health_repo: Arc::new(SqliteHealthRepo::new(conn.clone())),
+            secret_repo: Arc::new(SqliteSecretRepo::new(conn.clone())),
+            master_key_repo: Arc::new(SqliteMasterKeyRepo::new(conn.clone())),
+            identity_repo: Arc::new(SqliteIdentityRepo::new(conn.clone())),
+            audit_repo: Arc::new(SqliteAuditRepo::new(conn.clone())),
+            grant_repo: Arc::new(SqliteGrantRepo::new(conn.clone())),
+            job_repo: Arc::new(SqliteJobRepo::new(conn.clone())),
+            authenticator_repo: Arc::new(SqliteAuthenticatorRepo::new(conn)),
+            passkey: crate::api::passkey::PasskeyState::new(&config.public_url)?,
+            server_keys: Arc::new(HashMap::new()),
+            bootstrap_deadline: Instant::now() + config.bootstrap_window,
+        };
+
+        let server_keys = state.load_server_master_keys()?;
+        let state = Self {
+            server_keys: Arc::new(server_keys),
+            ..state
         };
 
         // Perform startup cleanup of expired secrets
@@ -40,11 +83,78 @@ impl AppState {
         Ok(state)
     }
 
+    /// Load the server's master keys and make sure each is registered.
+    ///
+    /// The first is Active — new secrets are encrypted under it. Any others are Retired: still
+    /// loaded, so the secrets already under them stay readable and can be rekeyed onto the
+    /// current key. Remove a path from the list once nothing references it.
+    ///
+    /// A missing or unreadable file is fatal rather than a cue to generate one: silently
+    /// creating a key when the path is wrong would leave every existing secret cold, encrypted
+    /// under a key nobody has, and the failure would only surface later on a read.
+    fn load_server_master_keys(&self) -> Result<HashMap<Uuid, PrivateMasterKey>> {
+        let mut loaded = HashMap::new();
+
+        for (index, path) in self.config.master_key_paths.iter().enumerate() {
+            let pem = std::fs::read_to_string(path).map_err(|e| {
+                SealboxError::ConfigError(format!(
+                    "Cannot read the server master key at {path}: {e}. Generate one and point \
+                     SEALBOX_MASTER_KEY_PATH at it; sealbox will not create it for you, because \
+                     doing so on a mistyped path would silently make every stored secret cold."
+                ))
+            })?;
+
+            let private_key = PrivateMasterKey::from_str(&pem)?;
+            let public_pem = private_key.public_key_pem()?;
+            let status = if index == 0 {
+                MasterKeyStatus::Active
+            } else {
+                MasterKeyStatus::Retired
+            };
+            let key = self
+                .master_key_repo
+                .ensure_server_held(&public_pem, status)?;
+            info!(
+                "Server master key {} loaded from {} ({})",
+                key.id,
+                path,
+                if index == 0 { "current" } else { "retired" }
+            );
+            loaded.insert(key.id, private_key);
+        }
+
+        Ok(loaded)
+    }
+
+    /// Mark jobs a runner claimed and never reported as failed.
+    ///
+    /// Never re-queued: a grant is not necessarily idempotent, and silently re-running a
+    /// `CREATE USER` or a deployment is worse than failing. A caller who wants it tried again
+    /// can submit another job, having decided that is safe.
+    pub fn sweep_abandoned_jobs(&self, timeout: std::time::Duration) -> Result<usize> {
+        let cutoff = time::OffsetDateTime::now_utc().unix_timestamp() - timeout.as_secs() as i64;
+        let abandoned = self.job_repo.fail_abandoned(cutoff)?;
+
+        for job in &abandoned {
+            info!(
+                "Job {} was claimed by runner '{}' and never reported; marked failed",
+                job.id, job.runner
+            );
+            self.audit_repo.append(&crate::repo::NewAuditRecord {
+                identity: Some(job.runner.clone()),
+                action: "job.abandoned".to_string(),
+                resource: Some(job.grant.clone()),
+                outcome: crate::repo::AuditOutcome::Failed,
+                detail: Some(format!("job {} was never reported; not retried", job.id)),
+            })?;
+        }
+        Ok(abandoned.len())
+    }
+
     /// Clean up expired secrets during application startup
     fn startup_cleanup(&self) -> Result<()> {
         info!("Performing startup cleanup of expired secrets...");
-        let conn = self.conn_pool.lock()?;
-        let deleted_count = self.secret_repo.cleanup_expired_secrets(&conn)?;
+        let deleted_count = self.secret_repo.cleanup_expired_secrets()?;
         if deleted_count > 0 {
             info!(
                 "Startup cleanup completed: removed {} expired secrets",

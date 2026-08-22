@@ -54,10 +54,14 @@ jobs:
           # Extract the archive
           tar -xzf sealbox-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz
           
+          # Generate the server's master key (it will not create one for you)
+          openssl genrsa -out /tmp/master.pem 2048
+
           # Run the server
-          STORE_PATH=/tmp/sealbox.db \
-          AUTH_TOKEN=your-secret-token \
-          LISTEN_ADDR=127.0.0.1:8080 \
+          SEALBOX_STORE_PATH=/tmp/sealbox.db \
+          SEALBOX_AUTH_TOKEN=your-secret-token \
+          SEALBOX_LISTEN_ADDR=127.0.0.1:8080 \
+          SEALBOX_MASTER_KEY_PATH=/tmp/master.pem \
           ./sealbox-server
           ```
         draft: false

@@ -15,12 +15,41 @@ updates:
       - "dependencies"
       - "rust"
     groups:
+      # The RustCrypto stack must move as one. `rsa` has no stable release past 0.9, and
+      # rsa 0.9 pins digest 0.10 and rand_core 0.6 — meaning sha2 0.10, rand 0.8, aes-gcm 0.10.
+      # Proposing any of them individually produces a PR that cannot compile; proposing a major
+      # bump produces one that cannot be correct until rsa 0.10 is stable. Both were merged in
+      # August 2026 and left `main` broken for eleven days.
+      # Revisit only when rsa 0.10 ships stable, and then upgrade the whole group together.
+      crypto:
+        patterns:
+          - "rsa"
+          - "rand"
+          - "sha2"
+          - "aes-gcm"
+        update-types:
+          - "patch"
       rust-minor-patch:
         patterns:
           - "*"
+        exclude-patterns:
+          - "rsa"
+          - "rand"
+          - "sha2"
+          - "aes-gcm"
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # Governed by rsa's generation, not their own release cadence. See the crypto group above.
+      - dependency-name: "rsa"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "rand"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "sha2"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "aes-gcm"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"

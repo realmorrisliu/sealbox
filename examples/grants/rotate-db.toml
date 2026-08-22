@@ -1,0 +1,25 @@
+# Rotate a database password with no window in which the service is broken.
+#
+# postgres-role creates a SECOND role rather than mutating the existing one, so at every step at
+# least one working credential exists. `ALTER USER ... PASSWORD` would have a window where the
+# database and the cluster disagree, and every request in it fails.
+#
+# The chain runs on the server, stops at the first failure, and records where it stopped. It is
+# not left to an agent: an agent can be interrupted or injected mid-way, and a half-finished
+# rotation is the state nobody wants to be in.
+
+[rotate-db]
+adapter = "postgres-role"
+runner  = "prod-cluster"
+secrets = { admin = "pg/prod-admin-password" }
+
+# create new role -> sync -> restart -> VERIFY -> drop old role
+# The verify step is the one people skip, and the one that stops a working credential being
+# deleted in favour of a broken one.
+then = ["k8s-sync", "k8s-restart", "verify-health"]
+
+# sealbox-cli rotate utopia/prod/db-password --via rotate-db
+#
+# The new value arrives as $SEALBOX_NEW, injected like any declared secret. If this grant fails,
+# the previous password is still the current one — nothing upstream is left disagreeing with what
+# is stored.

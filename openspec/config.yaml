@@ -1,0 +1,45 @@
+schema: spec-driven
+
+context: |
+  Sealbox — an isolation layer between agents and real credentials.
+  An agent can *use* a credential without ever *seeing* it.
+
+  Rust workspace: sealbox-server (Axum, rusqlite + serde_rusqlite, RSA + AES-GCM envelope
+  encryption) and sealbox-cli (clap). sealbox-web exists but is being deleted.
+
+  READ BEFORE PLANNING ANYTHING:
+  - docs/agent-native-design.md — the target design (topology, secret lifecycle, MVP)
+  - docs/adr/ — 11 recorded decisions, each with rejected alternatives
+  - CONTEXT.md — the glossary. Use these words and no synonyms.
+
+  The current code is the previous generation and is being replaced in part. Do not extend:
+  the web UI and its CORS layer, client-side decryption, the single static AUTH_TOKEN, or
+  PUT /v1/master-key's private-key payload.
+
+  Two rules the whole design derives from:
+  - No interface returns a secret's value. There is no get_secret.
+  - An agent cannot compose a command; it invokes Grants a human approved.
+
+  Architecture: a hosted server stores and authorises but NEVER executes; an in-cluster
+  runner executes and is the only place plaintext exists outside the server; the CLI is a
+  remote control that never receives plaintext. Humans authenticate with passkeys — no admin
+  credential exists on disk.
+
+  Vocabulary that is easy to get wrong:
+  - Grant (never "task") = standing permission. Job = one execution of a grant. Both exist.
+  - Rotate = replacing a secret's VALUE. Rekey = re-encrypting under a different master key.
+  - Master key (never "KEK"), at every layer. The table is already master_keys.
+  - Runner (never "worker"/"executor"). "Agent" means the LLM client.
+
+  Conventions: conventional commits; `cargo clippy --all-targets --all-features --workspace
+  -- -D warnings` must pass with zero warnings; `cargo fmt`; SQLite stays (no Postgres);
+  adapters are compiled in, never a plugin system; provider-specific logic never enters
+  sealbox core.
+
+rules:
+  proposal:
+    - State which ADR the change implements or is constrained by.
+    - If the change contradicts a recorded ADR, say so explicitly and propose amending it.
+  tasks:
+    - Every task must leave the workspace with clippy clean and tests passing.
+    - Cleanups that only delete code are separate tasks from ones that add behaviour.

@@ -18,10 +18,10 @@ pub async fn handle_command(command: KeyCommands, config: &Config) -> Result<()>
         } => generate_keys(config, &output, public_key_path, private_key_path, force).await,
         KeyCommands::Register => register_key(config, &output).await,
         KeyCommands::List => list_keys(config, &output).await,
-        KeyCommands::Rotate {
+        KeyCommands::Rekey {
             new_key_id,
             old_key_id,
-        } => rotate_keys(config, &output, new_key_id, old_key_id).await,
+        } => rekey_keys(config, &output, new_key_id, old_key_id).await,
         KeyCommands::Status => check_key_status(config, &output).await,
     }
 }
@@ -200,7 +200,7 @@ async fn list_keys(config: &Config, output: &OutputManager) -> Result<()> {
     Ok(())
 }
 
-async fn rotate_keys(
+async fn rekey_keys(
     config: &Config,
     output: &OutputManager,
     new_key_id: String,
@@ -210,34 +210,22 @@ async fn rotate_keys(
         .validate()
         .context("Configuration validation failed")?;
 
-    let private_key_path = config
-        .keys
-        .private_key_path
-        .to_str()
-        .context("Private key path contains invalid characters")?;
-
-    if !Path::new(private_key_path).exists() {
-        anyhow::bail!(
-            "Private key file does not exist: {}. Key rotation requires the old private key file",
-            private_key_path
-        );
-    }
-
-    let old_private_key_pem = fs::read_to_string(private_key_path)
-        .with_context(|| format!("Failed to read private key file: {private_key_path}"))?;
-
     let new_key_uuid = Uuid::parse_str(&new_key_id)
         .with_context(|| format!("Invalid new key ID format: {new_key_id}"))?;
     let old_key_uuid = Uuid::parse_str(&old_key_id)
         .with_context(|| format!("Invalid old key ID format: {old_key_id}"))?;
 
-    output.print_info("Performing key rotation...");
-    output.print_warning("This operation will re-encrypt all secrets using the old key, please ensure the operation is correct!");
+    output.print_info("Performing rekeying...");
+    output.print_warning(
+        "This re-encrypts every secret currently under the old key. Both keys must be held by \
+         the server; no key material is sent.",
+    );
 
+    // No private key is transmitted. The server uses its own master keys, which is why
+    // SEALBOX_MASTER_KEY_PATH must still list the old key while a rekey is in flight.
     let payload = json!({
         "new_master_key_id": new_key_uuid,
         "old_master_key_id": old_key_uuid,
-        "old_private_key_pem": old_private_key_pem
     });
 
     let client = Client::new();
@@ -256,16 +244,16 @@ async fn rotate_keys(
             .await
             .context("Failed to parse server response")?;
 
-        output.print_success("Key rotation completed!");
+        output.print_success("Rekeying completed!");
         output.print_value(&result)?;
 
-        if let Some(failed_keys) = result.get("failed_secret_keys") {
-            if !failed_keys.as_array().unwrap_or(&vec![]).is_empty() {
-                output.print_warning(
-                    "The following secrets failed to rotate and may need manual handling:",
-                );
-                output.print_value(failed_keys)?;
-            }
+        if let Some(failed_keys) = result.get("failed_secret_keys")
+            && failed_keys.as_array().is_some_and(|a| !a.is_empty())
+        {
+            output.print_warning(
+                "Rekey aborted — nothing was changed. These secrets could not be rekeyed:",
+            );
+            output.print_value(failed_keys)?;
         }
     } else {
         let error_body = response

@@ -157,11 +157,11 @@ impl Config {
     }
 
     fn expand_home_dir(path: &Path) -> Result<PathBuf> {
-        if let Some(path_str) = path.to_str() {
-            if let Some(stripped) = path_str.strip_prefix("~/") {
-                let home_dir = dirs::home_dir().context("Unable to determine home directory")?;
-                return Ok(home_dir.join(stripped));
-            }
+        if let Some(path_str) = path.to_str()
+            && let Some(stripped) = path_str.strip_prefix("~/")
+        {
+            let home_dir = dirs::home_dir().context("Unable to determine home directory")?;
+            return Ok(home_dir.join(stripped));
         }
         Ok(path.to_path_buf())
     }

@@ -1,7 +1,7 @@
 use rsa::{
     Oaep, RsaPrivateKey, RsaPublicKey,
     pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey, EncodeRsaPrivateKey, EncodeRsaPublicKey},
-    pkcs8::LineEnding,
+    pkcs8::{DecodePrivateKey, LineEnding},
 };
 use sha2::Sha256;
 use thiserror::Error;
@@ -30,8 +30,16 @@ fn new_padding() -> Oaep {
     Oaep::new::<Sha256>()
 }
 
-#[derive(Debug)]
 pub struct PrivateMasterKey(RsaPrivateKey);
+
+/// Deliberately opaque. A derived `Debug` would print the private key's components, so a
+/// single `{:?}` anywhere — a log line, an error wrapper, a panic message — would leak the key
+/// that protects every secret the server can read.
+impl std::fmt::Debug for PrivateMasterKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PrivateMasterKey(<redacted>)")
+    }
+}
 
 impl PrivateMasterKey {
     /// Decrypt data using private key
@@ -60,26 +68,35 @@ impl PrivateMasterKey {
             .map_err(MasterKeyCryptoError::FailedToDecrypt)?;
         Ok(decrypted)
     }
+
+    /// The PEM-encoded public half of this key, in the same PKCS#1 form that
+    /// `generate_key_pair` produces, so a server-held key registers identically to one a
+    /// client would have submitted.
+    pub fn public_key_pem(&self) -> Result<String> {
+        RsaPublicKey::from(&self.0)
+            .to_pkcs1_pem(LineEnding::LF)
+            .map_err(MasterKeyCryptoError::FailedToExportPemFormat)
+            .map(|pem| pem.to_string())
+    }
 }
 
 impl std::str::FromStr for PrivateMasterKey {
     type Err = MasterKeyCryptoError;
 
-    /// Parse private key from PKCS#1 PEM format string
+    /// Parse an RSA private key from PEM, in either PKCS#1 or PKCS#8 form.
     ///
-    /// # Arguments
-    ///
-    /// * `s` - PKCS#1 PEM format private key string, must start with "-----BEGIN RSA PRIVATE KEY-----"
-    ///
-    /// # Returns
-    ///
-    /// Returns `PrivateMasterKey` instance on success
+    /// Both are accepted because operators generate this file by hand and OpenSSL 3 emits
+    /// PKCS#8 (`BEGIN PRIVATE KEY`) by default, while `genrsa -traditional` emits PKCS#1
+    /// (`BEGIN RSA PRIVATE KEY`). Rejecting one of them would turn a routine command into a
+    /// startup failure whose message says nothing useful.
     ///
     /// # Errors
     ///
-    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey` - Invalid PEM format or not a valid RSA private key
+    /// * `MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey` - not a valid RSA private key in
+    ///   either encoding
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let priv_key = RsaPrivateKey::from_pkcs1_pem(s)
+            .or_else(|pkcs1_err| RsaPrivateKey::from_pkcs8_pem(s).map_err(|_| pkcs1_err))
             .map_err(MasterKeyCryptoError::InvalidPkcs1FormatPrivateKey)?;
         Ok(PrivateMasterKey(priv_key))
     }

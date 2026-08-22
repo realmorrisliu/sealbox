@@ -9,14 +9,21 @@ pub async fn handle_command(command: SecretCommands, config: &Config) -> Result<
     let output = OutputManager::new(config.output.format.clone());
 
     match command {
-        SecretCommands::Set { key, value, ttl } => {
-            set_secret(config, &output, key, value, ttl).await
-        }
+        SecretCommands::Set { key, ttl } => set_secret(config, &output, key, ttl).await,
+        SecretCommands::Gen {
+            key,
+            r#type,
+            length,
+            ttl,
+        } => generate_secret(config, &output, key, r#type, length, ttl).await,
         SecretCommands::Get { key, version } => get_secret(config, &output, key, version).await,
         SecretCommands::Delete { key, version } => {
             delete_secret(config, &output, key, version).await
         }
         SecretCommands::List => list_secrets(config, &output).await,
+        SecretCommands::Uses { key } => {
+            crate::commands::grant_commands::uses(config, &output, key).await
+        }
         SecretCommands::History { key } => get_secret_history(config, &output, key).await,
         SecretCommands::Import { file, format } => {
             import_secrets(config, &output, file, format).await
@@ -27,29 +34,45 @@ pub async fn handle_command(command: SecretCommands, config: &Config) -> Result<
     }
 }
 
+/// Strip the trailing newline a pipe adds, and refuse an empty value.
+///
+/// Only the trailing newline: leading and interior whitespace can be part of a credential, and
+/// silently altering a value is worse than storing an odd one.
+fn clean_value(raw: String, key: &str) -> Result<String> {
+    let value = raw.trim_end_matches(['\n', '\r']).to_string();
+    if value.is_empty() {
+        anyhow::bail!(
+            "No value given for '{key}'. Pipe it in — `printf %s \"$VALUE\" | sealbox-cli secret \
+             set {key}` — or run this from a terminal to be prompted."
+        );
+    }
+    Ok(value)
+}
+
 async fn set_secret(
     config: &Config,
     output: &OutputManager,
     key: String,
-    value: Option<String>,
     ttl: Option<i64>,
 ) -> Result<()> {
     config
         .validate()
         .context("Configuration validation failed")?;
 
-    // Get secret value
-    let secret_value = match value {
-        Some(val) => val,
-        None => {
-            output.print_info("Enter secret value (input will be hidden):");
-            rpassword::read_password().context("Failed to read secret value")?
-        }
+    // Always stdin. There is no argument form: while one exists it gets used, and every use
+    // puts a credential into shell history and into `ps` output for every user on the machine.
+    let raw = if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        output.print_info("Enter secret value (input will be hidden):");
+        rpassword::read_password().context("Failed to read secret value")?
+    } else {
+        use std::io::Read;
+        let mut buffer = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buffer)
+            .context("Failed to read the secret value from stdin")?;
+        buffer
     };
-
-    if secret_value.trim().is_empty() {
-        anyhow::bail!("Secret value cannot be empty");
-    }
+    let secret_value = clean_value(raw, &key)?;
 
     // Send plaintext to server (server will handle encryption)
     output.print_info("Saving to server...");
@@ -248,10 +271,77 @@ async fn delete_secret(
     Ok(())
 }
 
-async fn list_secrets(_config: &Config, output: &OutputManager) -> Result<()> {
-    // Note: Current server API doesn't support listing all secrets, this is a reserved feature
-    output.print_warning("Server does not currently support listing all secrets");
-    output.print_info("To view a specific secret, use: sealbox secret get <key>");
+async fn list_secrets(config: &Config, output: &OutputManager) -> Result<()> {
+    config
+        .validate()
+        .context("Configuration validation failed")?;
+
+    let response = Client::new()
+        .get(format!("{}/v1/secrets", config.server.url))
+        .bearer_auth(&config.server.token)
+        .send()
+        .await
+        .context("Failed to request server")?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("Server returned {status}: {body}");
+    }
+
+    // Metadata only: keys, versions, timestamps. Never a value.
+    let result: serde_json::Value = response
+        .json()
+        .await
+        .context("Failed to parse server response")?;
+    output.print_value(&result)?;
+    Ok(())
+}
+
+async fn generate_secret(
+    config: &Config,
+    output: &OutputManager,
+    key: String,
+    kind: String,
+    length: Option<usize>,
+    ttl: Option<i64>,
+) -> Result<()> {
+    config
+        .validate()
+        .context("Configuration validation failed")?;
+
+    let mut generate = serde_json::json!({ "type": kind });
+    if let Some(length) = length {
+        generate["length"] = serde_json::json!(length);
+    }
+    let mut payload = serde_json::json!({ "generate": generate });
+    if let Some(ttl) = ttl {
+        payload["ttl"] = serde_json::json!(ttl);
+    }
+
+    let response = Client::new()
+        .put(format!("{}/v1/secrets/{key}", config.server.url))
+        .bearer_auth(&config.server.token)
+        .json(&payload)
+        .send()
+        .await
+        .context("Failed to request server")?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("Server returned {status}: {body}");
+    }
+
+    let result: serde_json::Value = response
+        .json()
+        .await
+        .context("Failed to parse server response")?;
+
+    output.print_success(&format!("Generated and stored '{key}'."));
+    output.print_value(&result)?;
+    // Saying so is the point: an agent can create a credential it will never be able to read.
+    output.print_info("The value was generated on the server and is not returned to anyone.");
     Ok(())
 }
 
@@ -398,26 +488,26 @@ mod tests {
         (config, temp_dir)
     }
 
-    #[tokio::test]
-    async fn test_set_secret_empty_value() {
-        let (config, _temp_dir) = create_test_config();
-        let output = OutputManager::new(OutputFormat::Json);
+    #[test]
+    fn test_clean_value_strips_only_the_trailing_newline() {
+        // What a pipe adds.
+        assert_eq!(clean_value("hunter2\n".into(), "k").unwrap(), "hunter2");
+        assert_eq!(clean_value("hunter2\r\n".into(), "k").unwrap(), "hunter2");
+        // What is part of the value: leading and interior whitespace both survive, because
+        // silently altering a credential is worse than storing an odd one.
+        assert_eq!(clean_value("  pad  \n".into(), "k").unwrap(), "  pad  ");
+        assert_eq!(clean_value("a b\n".into(), "k").unwrap(), "a b");
+    }
 
-        let result = set_secret(
-            &config,
-            &output,
-            "test-key".to_string(),
-            Some("".to_string()),
-            None,
-        )
-        .await;
-        assert!(result.is_err());
-        assert!(
-            result
+    #[test]
+    fn test_clean_value_refuses_nothing_and_says_how() {
+        for raw in ["", "\n", "\r\n"] {
+            let err = clean_value(raw.into(), "db-password")
                 .unwrap_err()
-                .to_string()
-                .contains("Secret value cannot be empty")
-        );
+                .to_string();
+            assert!(err.contains("db-password"), "{err}");
+            assert!(err.contains("Pipe it in"), "the error must say how: {err}");
+        }
     }
 
     #[tokio::test]

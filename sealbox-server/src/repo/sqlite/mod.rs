@@ -1,4 +1,9 @@
+pub(crate) mod audit;
+pub(crate) mod authenticator;
+pub(crate) mod grant;
 pub(crate) mod health;
+pub(crate) mod identity;
+pub(crate) mod job;
 pub(crate) mod master_key;
 pub(crate) mod secret;
 
@@ -7,7 +12,9 @@ use rusqlite::Connection;
 use crate::error::Result;
 
 pub(crate) use self::{
-    health::SqliteHealthRepo, master_key::SqliteMasterKeyRepo, secret::SqliteSecretRepo,
+    audit::SqliteAuditRepo, authenticator::SqliteAuthenticatorRepo, grant::SqliteGrantRepo,
+    health::SqliteHealthRepo, identity::SqliteIdentityRepo, job::SqliteJobRepo,
+    master_key::SqliteMasterKeyRepo, secret::SqliteSecretRepo,
 };
 
 pub(crate) fn create_db_connection(db_path: &str) -> Result<Connection> {

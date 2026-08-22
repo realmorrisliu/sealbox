@@ -18,8 +18,41 @@ pub enum SealboxError {
     #[error("Missing valid master key")]
     MissingValidMasterKey,
 
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+
+    #[error("Identity already exists: {0}")]
+    IdentityAlreadyExists(String),
+
+    #[error("Identity not found: {0}")]
+    IdentityNotFound(String),
+
+    #[error("Grant already exists: {0}")]
+    GrantAlreadyExists(String),
+
+    #[error("Grant not found: {0}")]
+    GrantNotFound(String),
+
+    #[error("Invalid request: {0}")]
+    InvalidRequest(String),
+
+    #[error("Unknown role: {0}. Expected one of: agent, operator, admin")]
+    InvalidRole(String),
+
+    #[error("Forbidden: this identity's role does not permit that")]
+    Forbidden,
+    /// A refusal that needs to say more than "no" — the caller has to know what to do instead.
+    #[error("Forbidden: {0}")]
+    ForbiddenBecause(String),
+
     #[error("Master key not found: {0}")]
     MasterKeyNotFound(Uuid),
+
+    #[error(
+        "Master key {0} is cold: the server does not hold its private half and cannot decrypt \
+         secrets encrypted under it"
+    )]
+    MasterKeyNotServerHeld(Uuid),
 
     #[error("Master key mismatch for {0}: expected {1}, got {2}")]
     MasterKeyMismatch(String, String, String),
@@ -36,9 +69,6 @@ pub enum SealboxError {
     #[error("Unauthorized")]
     Unauthorized,
 
-    #[error("Invalid API version")]
-    InvalidApiVersion,
-
     #[error("Unknown error")]
     Unknown,
 }
@@ -51,10 +81,22 @@ impl IntoResponse for SealboxError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
             SealboxError::SecretNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::IdentityAlreadyExists(_) => (StatusCode::CONFLICT, errorfmt(&self)),
+            SealboxError::IdentityNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::GrantAlreadyExists(_) => (StatusCode::CONFLICT, errorfmt(&self)),
+            SealboxError::GrantNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
+            SealboxError::InvalidRole(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
+            SealboxError::Forbidden => (StatusCode::FORBIDDEN, errorfmt(&self)),
+            SealboxError::ForbiddenBecause(_) => (StatusCode::FORBIDDEN, errorfmt(&self)),
+            SealboxError::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
             SealboxError::MissingValidMasterKey => {
                 (StatusCode::PRECONDITION_REQUIRED, errorfmt(&self))
             }
             SealboxError::MasterKeyNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
+            SealboxError::MasterKeyNotServerHeld(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, errorfmt(&self))
+            }
             SealboxError::MasterKeyMismatch(_, _, _) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
             }
@@ -64,7 +106,6 @@ impl IntoResponse for SealboxError {
                 (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self))
             }
             SealboxError::Unauthorized => (StatusCode::UNAUTHORIZED, errorfmt(&self)),
-            SealboxError::InvalidApiVersion => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::Unknown => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
         };
 

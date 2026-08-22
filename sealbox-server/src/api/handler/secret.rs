@@ -3,20 +3,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
-    api::{SealboxResponse, Version, path::Path, state::AppState},
+    api::{SealboxResponse, path::Path, state::AppState},
     error::{Result, SealboxError},
+    repo::{GenerateSpec, SecretValue},
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub(crate) struct SecretPathParams {
-    version: Version,
     secret_key: String,
 }
 
 impl SecretPathParams {
-    fn version(&self) -> Version {
-        self.version.clone()
-    }
     fn secret_key(&self) -> String {
         self.secret_key.clone()
     }
@@ -32,7 +29,7 @@ pub(crate) struct GetSecretQueryParams {
 /// # Arguments
 ///
 /// * `state` - Application state containing database connection pool and repository instances
-/// * `params` - Path parameters containing API version and secret key name
+/// * `params` - Path parameters containing the secret key name
 /// * `query` - Query parameters with optional version number for retrieving specific version
 ///
 /// # Returns
@@ -42,11 +39,10 @@ pub(crate) struct GetSecretQueryParams {
 /// # Errors
 ///
 /// * `SealboxError::SecretNotFound` - When the secret does not exist
-/// * `SealboxError::InvalidApiVersion` - When the API version is not supported
 ///
 /// # HTTP Route
 ///
-/// `GET /{version}/secrets/{secret_key}[?version=N]`
+/// `GET /v1/secrets/{secret_key}[?version=N]`
 ///
 /// # Security Notes
 ///
@@ -56,56 +52,69 @@ pub(crate) async fn get(
     Path(params): Path<SecretPathParams>,
     Query(query): Query<GetSecretQueryParams>,
 ) -> Result<SealboxResponse> {
-    match params.version() {
-        Version::V1 => {
-            let mut conn = state.conn_pool.lock()?;
+    let secret = match query.version {
+        Some(version) => state
+            .secret_repo
+            .get_secret_by_version(&params.secret_key(), version)?,
+        None => state.secret_repo.get_secret(&params.secret_key())?,
+    };
 
-            let secret = match query.version {
-                Some(version) => state.secret_repo.get_secret_by_version(
-                    &mut conn,
-                    &params.secret_key(),
-                    version,
-                )?,
-                None => state
-                    .secret_repo
-                    .get_secret(&mut conn, &params.secret_key())?,
-            };
-
-            Ok(SealboxResponse::Json(json!(secret)))
-        }
-        _ => Err(SealboxError::InvalidApiVersion),
-    }
+    Ok(SealboxResponse::Json(json!(secret)))
 }
 
+/// Either supply a value or ask for one to be generated — never both, and never neither.
+/// Unknown fields are rejected so a typo in `generate` does not silently store nothing.
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SaveSecretPayload {
-    secret: String, // Now receives plaintext instead of encrypted data
+    secret: Option<String>,
+    generate: Option<GenerateSpec>,
     ttl: Option<i64>,
 }
 
-// PUT /{version}/secrets/{secret_key}
+impl SaveSecretPayload {
+    fn value(self) -> Result<SecretValue> {
+        match (self.secret, self.generate) {
+            (Some(_), Some(_)) => Err(SealboxError::InvalidRequest(
+                "supply either `secret` or `generate`, not both".to_string(),
+            )),
+            (None, None) => Err(SealboxError::InvalidRequest(
+                "supply either `secret` or `generate`".to_string(),
+            )),
+            (Some(secret), None) => Ok(SecretValue::Supplied(secret)),
+            (None, Some(spec)) => Ok(SecretValue::Generated(spec)),
+        }
+    }
+}
+
+// PUT /v1/secrets/{secret_key}
 pub(crate) async fn save(
     State(state): State<AppState>,
     Path(params): Path<SecretPathParams>,
     Json(payload): Json<SaveSecretPayload>,
 ) -> Result<SealboxResponse> {
-    match params.version() {
-        Version::V1 => {
-            let mut conn = state.conn_pool.lock()?;
-            let master_key = state.master_key_repo.get_valid_master_key(&conn)?;
+    let master_key = state.master_key_repo.get_valid_master_key()?;
 
-            let secret = state.secret_repo.create_new_version(
-                &mut conn,
-                &params.secret_key(),
-                &payload.secret,
-                master_key,
-                payload.ttl,
-            )?;
+    let ttl = payload.ttl;
+    let value = payload.value()?;
 
-            Ok(SealboxResponse::Json(json!(secret)))
-        }
-        _ => Err(SealboxError::InvalidApiVersion),
-    }
+    let secret = state.secret_repo.create_new_version(
+        &params.secret_key(),
+        &value,
+        master_key,
+        ttl,
+        false,
+    )?;
+
+    // Metadata only. Returning the ciphertext and the encrypted data key would hand every caller
+    // the material to decrypt with, given a master key — for no reason: the caller asked to store
+    // a value, and the answer is which version it became.
+    Ok(SealboxResponse::Json(json!({
+        "key": secret.key,
+        "version": secret.version,
+        "created_at": secret.created_at,
+        "expires_at": secret.expires_at,
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,35 +122,22 @@ pub(crate) struct DeleteSecretQueryParams {
     version: i32,
 }
 
-// DELETE /{version}/secrets/{secret_key}
+// DELETE /v1/secrets/{secret_key}
 pub(crate) async fn delete(
     State(state): State<AppState>,
     Path(params): Path<SecretPathParams>,
     Query(query): Query<DeleteSecretQueryParams>,
 ) -> Result<SealboxResponse> {
-    match params.version() {
-        Version::V1 => {
-            let conn = state.conn_pool.lock()?;
-            state.secret_repo.delete_secret_by_version(
-                &conn,
-                &params.secret_key(),
-                query.version,
-            )?;
-            Ok(SealboxResponse::Ok)
-        }
-        _ => Err(SealboxError::InvalidApiVersion),
-    }
+    state
+        .secret_repo
+        .delete_secret_by_version(&params.secret_key(), query.version)?;
+    Ok(SealboxResponse::Ok)
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub(crate) struct ListSecretsPathParams {
-    version: Version,
-}
-
-impl ListSecretsPathParams {
-    fn version(&self) -> Version {
-        self.version.clone()
-    }
+#[derive(Debug, Deserialize)]
+pub(crate) struct ListSecretsQueryParams {
+    /// When set, return the grants that may use this secret instead of the secret list.
+    uses: Option<String>,
 }
 
 /// API handler function for listing all secrets
@@ -149,7 +145,6 @@ impl ListSecretsPathParams {
 /// # Arguments
 ///
 /// * `state` - Application state containing database connection pool and repository instances
-/// * `params` - Path parameters containing API version
 ///
 /// # Returns
 ///
@@ -157,25 +152,108 @@ impl ListSecretsPathParams {
 ///
 /// # Errors
 ///
-/// * `SealboxError::InvalidApiVersion` - When the API version is not supported
 ///
 /// # HTTP Route
 ///
-/// `GET /{version}/secrets`
+/// `GET /v1/secrets`
 ///
 /// # Security Notes
 ///
 /// Returns only metadata about secrets, not the encrypted content. Automatically filters out expired secrets.
 pub(crate) async fn list(
     State(state): State<AppState>,
-    Path(params): Path<ListSecretsPathParams>,
+    Query(query): Query<ListSecretsQueryParams>,
 ) -> Result<SealboxResponse> {
-    match params.version() {
-        Version::V1 => {
-            let conn = state.conn_pool.lock()?;
-            let secrets = state.secret_repo.list_secrets(&conn)?;
-            Ok(SealboxResponse::Json(json!({ "secrets": secrets })))
-        }
-        _ => Err(SealboxError::InvalidApiVersion),
+    // `?uses=` answers the question no other secret manager can: everything this credential can
+    // do here. A filter over grants rather than a maintained reverse index — there will be tens
+    // of grants, and an index that disagreed with the grants themselves would be worse than a
+    // scan for an answer people act on.
+    if let Some(secret) = query.uses {
+        let grants: Vec<String> = state
+            .grant_repo
+            .list()?
+            .into_iter()
+            .filter(|g| g.declares(&secret))
+            .map(|g| g.name)
+            .collect();
+        return Ok(SealboxResponse::Json(
+            json!({ "secret": secret, "used_by": grants }),
+        ));
     }
+
+    let secrets = state.secret_repo.list_secrets()?;
+    Ok(SealboxResponse::Json(json!({ "secrets": secrets })))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RotatePayload {
+    /// The grant that will make some upstream accept the new value.
+    via: String,
+    /// Store what the grant printed instead of what was generated — for values that are composed
+    /// (a URL with a percent-encoded password) or issued upstream.
+    #[serde(default)]
+    from_output: bool,
+    #[serde(default)]
+    params: std::collections::BTreeMap<String, String>,
+    /// Generation parameters for the new value. The caller chooses the shape, never the value.
+    #[serde(default)]
+    generate: Option<GenerateSpec>,
+}
+
+/// POST /v1/secrets/{key}/rotate — operator and above.
+///
+/// Rotating changes a stored value, which is what `set` requires the operator role for. An agent
+/// may *run* a grant that reads secrets; changing one is a different thing.
+pub(crate) async fn rotate(
+    State(state): State<AppState>,
+    axum::Extension(identity): axum::Extension<crate::repo::Identity>,
+    Path(params): Path<SecretPathParams>,
+    Json(payload): Json<RotatePayload>,
+) -> Result<SealboxResponse> {
+    let key = params.secret_key();
+
+    let grant = state
+        .grant_repo
+        .get(&payload.via)?
+        .ok_or_else(|| SealboxError::GrantNotFound(payload.via.clone()))?;
+
+    // Refuse to rotate something that does not exist: there would be no previous value to fall
+    // back to, which is the property that makes a failed rotation safe.
+    state.secret_repo.get_secret(&key)?;
+
+    // The server generates the value. A caller supplying one is refused rather than honoured.
+    let master_key = state.master_key_repo.get_valid_master_key()?;
+    let spec = payload.generate.unwrap_or(GenerateSpec {
+        kind: crate::repo::GenerateKind::Password,
+        length: None,
+    });
+    let pending = state.secret_repo.create_new_version(
+        &key,
+        &SecretValue::Generated(spec),
+        master_key,
+        None,
+        true,
+    )?;
+
+    let rotation = crate::repo::Rotation {
+        secret: key.clone(),
+        version: pending.version,
+        capture: payload.from_output,
+    };
+    let job = state.job_repo.submit(
+        &grant.name,
+        &grant.runner,
+        &payload.params,
+        &identity.name,
+        Some(&rotation),
+    )?;
+
+    Ok(SealboxResponse::Json(json!({
+        "job": job.id,
+        "secret": key,
+        "pending_version": pending.version,
+        "note": "The new value was generated on the server and is not returned to anyone. It \
+                 becomes current only if the grant succeeds."
+    })))
 }
