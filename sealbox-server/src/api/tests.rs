@@ -1820,3 +1820,72 @@ async fn a_stored_authenticator_holds_only_public_data() {
         "replaying stored data must not authenticate"
     );
 }
+
+// ---------------------------------------------------------------- reads carry no ciphertext
+
+#[tokio::test]
+async fn a_read_carries_no_ciphertext() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let agent = server.identity(&admin, "bot", "agent").await;
+
+    for body in [
+        r#"{"secret":"hunter2-do-not-leak"}"#,
+        r#"{"secret":"hunter3-do-not-leak"}"#,
+    ] {
+        server
+            .send(
+                build("PUT", "/v1/secrets/app/db-url", Some(&admin))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await;
+    }
+
+    // Both the current version and a named one. The ciphertext used to come back here, and
+    // holding it is the whole of what an agent would need on the day a master key leaks.
+    for uri in ["/v1/secrets/app/db-url", "/v1/secrets/app/db-url?version=1"] {
+        let response = server.send(get(uri, Some(&agent))).await;
+        assert!(response.status().is_success(), "{uri}");
+        let serialised = server.json(response).await.to_string();
+
+        assert!(
+            serialised.contains("\"key\":\"app/db-url\""),
+            "the metadata must still be there: {serialised}"
+        );
+        for forbidden in ["hunter2", "hunter3", "encrypted_data", "encrypted_data_key"] {
+            assert!(
+                !serialised.contains(forbidden),
+                "{uri} must not carry {forbidden}: {serialised}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_agent_still_learns_that_a_secret_exists_and_when_it_changed() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let agent = server.identity(&admin, "bot", "agent").await;
+    server.secret(&admin, "app/db-url").await;
+
+    let body = server
+        .json(
+            server
+                .send(get("/v1/secrets/app/db-url", Some(&agent)))
+                .await,
+        )
+        .await;
+    assert_eq!(body["version"], 1);
+    assert!(body["updated_at"].as_i64().is_some());
+
+    // And an absent one is still absent — the question is answerable in both directions.
+    assert_eq!(
+        server
+            .send(get("/v1/secrets/app/nothing", Some(&agent)))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+}

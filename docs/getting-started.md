@@ -10,13 +10,17 @@ boilerplate.
 ## 1. Bring the server up *(implemented)*
 
 ```bash
-fly launch
+fly launch --no-deploy            # fly.toml is in the repo; keep it
 fly volumes create sealbox_data --size 1
 
 # You generate the bootstrap token. It must never pass through logs.
 fly secrets set SEALBOX_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
 fly deploy
 ```
+
+Set `SEALBOX_PUBLIC_URL` in `fly.toml` to the hostname people will actually reach **before the
+first deploy**. It is the WebAuthn relying-party ID: changing it later invalidates every registered
+passkey.
 
 The bootstrap token is accepted **only while zero identities exist**, **only within 30 minutes of
 server start**, and **exactly once**; the use is audited. Unset it immediately afterwards:
@@ -28,6 +32,44 @@ fly secrets unset SEALBOX_BOOTSTRAP_TOKEN
 > **Why not print it in the logs?** Logs get shipped, aggregated, retained, and read by people who
 > should not be able to claim your server. This is the same reason GitLab and Grafana take their
 > initial credential from the environment.
+
+### Back up the master key. Now, not later.
+
+On its first start the server finds no key and nothing stored, so it generates one at
+`/data/master.pem` and logs a fingerprint — never the key itself. **That file is the only copy.**
+
+```bash
+fly logs | grep -i fingerprint         # confirm which key is in use
+fly ssh console -C "cat /data/master.pem"   # into your password manager, then close the shell
+```
+
+Litestream replicates the **database**, not the key. Losing the volume without a copy of the key
+means the replicated database is ciphertext under a key that no longer exists — every secret gone,
+permanently, with a healthy-looking backup sitting in object storage.
+
+> **This manual step is interim.** The initialisation ceremony of
+> [ADR 0010](adr/0010-recovery-via-keypair-not-a-copied-key.md) — a recovery keypair generated
+> locally, the master key stored encrypted under it, and the recovery key typed back before setup
+> finishes — replaces it. It is not built yet, which is precisely why this step is written out
+> rather than assumed.
+
+### Replication
+
+Litestream supervises the server, so replication and the server start and stop together. Point it
+at object storage in `/data/litestream.yml`:
+
+```yaml
+dbs:
+  - path: /data/sealbox.db
+    replicas:
+      - type: s3
+        bucket: sealbox-backups
+        path: sealbox
+```
+
+With no configuration file it runs the server and replicates nothing, which is the right behaviour
+for a local run and the wrong one for production — check `fly logs` for Litestream announcing the
+replica after the first deploy.
 
 ## 2. Become admin *(partly implemented)*
 

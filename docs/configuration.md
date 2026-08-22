@@ -17,7 +17,7 @@ Environment variables. On Fly.io, non-secret values go in `fly.toml`, secrets vi
 | Variable | Required | Meaning |
 |---|:--:|---|
 | `SEALBOX_STORE_PATH` | ✓ | SQLite path, on the persistent volume |
-| `SEALBOX_MASTER_KEY_PATH` | ✓ | Server master key(s) on the persistent volume, `0600`. Comma-separated, **most-current first** — see below. |
+| `SEALBOX_MASTER_KEY_PATH` | ✓ | Server master key(s) on the persistent volume, `0600`. Comma-separated, **most-current first** — see below. Generated on first boot if a single path is configured and the store is empty; missing in any other case is fatal. |
 | `SEALBOX_LISTEN_ADDR` | ✓ | e.g. `0.0.0.0:8080` |
 | `SEALBOX_PUBLIC_URL` | ✓ | Public HTTPS URL. **Also the WebAuthn relying-party ID** — changing it invalidates every registered passkey. |
 | `SEALBOX_BOOTSTRAP_TOKEN` | first run | Creates the first admin. Accepted only while zero identities exist and only within the window below. Unset it afterwards. |
@@ -45,6 +45,17 @@ fly secrets unset SEALBOX_BOOTSTRAP_TOKEN
 The window exists because leaving the token in the environment after use is the normal outcome,
 not the exceptional one. After it closes, the token is refused even on a server with no
 identities — restart to reopen it.
+
+### The first key is generated, the rest are yours
+
+On a server that has never held anything — no master key and no secret in the store, exactly one
+path configured, no file at it — the server generates the key itself, `0600`, and logs a
+fingerprint rather than the key. Hosted platforms are why: a volume exists only while a machine is
+attached, so there is no moment before the first boot in which to place a file.
+
+Every other case is still fatal. In particular, **a restored database with no key file refuses to
+start** rather than generating one: that is a volume lost and replication restored, and a fresh key
+there would replace the only thing that can read what came back.
 
 ### Master keys move as a list
 
@@ -94,9 +105,14 @@ dbs:
         endpoint: https://s3.example.com
 ```
 
-The master key is backed up **once, at initialisation**, as an encrypted recovery blob — not by
-copying the file. See [`sealbox init`](cli-reference.md#sealbox-cli-init) and
-[ADR 0010](adr/0010-recovery-via-keypair-not-a-copied-key.md).
+Litestream covers the database and **not** the master key. A replicated database without its key
+is ciphertext under a key that no longer exists, which looks like a healthy backup right up until
+the restore.
+
+The intended backup is an encrypted recovery blob written once at initialisation, not a copy of the
+file — see [ADR 0010](adr/0010-recovery-via-keypair-not-a-copied-key.md). **That ceremony is not
+built yet.** Until it is, copy the key off the volume by hand immediately after the first deploy;
+[Getting started](getting-started.md) spells out the step.
 
 ## Runner
 

@@ -453,6 +453,19 @@ The cold path (ADR 0001) is the second line: secrets encrypted under a master ke
 not hold are readable only with an offline private key. Use it for root credentials that should
 survive the server itself being compromised.
 
+Reading one is deliberately **not** an API call. It happens against a copy of the database and the
+key, with nothing running:
+
+```bash
+sealbox-recover --db ./sealbox.db --key ./cold.pem pg/root-password
+```
+
+Routing that through the server would make the server a distribution channel for material it is
+supposed to have no relationship with, and it would only work while the server is healthy — which
+is exactly when a cold secret is *not* what you need. **This tool does not exist yet**, so a cold
+secret written today cannot be read back. It has to exist before anyone registers a master key the
+server does not hold.
+
 ## MVP
 
 **One closed loop: sealbox becomes the source of truth for Utopia's runtime secrets, and an agent

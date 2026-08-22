@@ -394,6 +394,12 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(deleted_count)
     }
 
+    fn count_secrets(&self) -> Result<usize> {
+        let guard = self.conn.lock()?;
+        let count: i64 = guard.query_row("SELECT COUNT(*) FROM secrets", [], |row| row.get(0))?;
+        Ok(count as usize)
+    }
+
     fn list_secrets(&self) -> Result<Vec<crate::repo::SecretInfo>> {
         let guard = self.conn.lock()?;
         let conn = &*guard;

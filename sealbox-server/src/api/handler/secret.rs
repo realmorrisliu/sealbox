@@ -24,29 +24,18 @@ pub(crate) struct GetSecretQueryParams {
     version: Option<i32>,
 }
 
-/// API handler function for retrieving secret data
+/// GET /v1/secrets/{secret_key}[?version=N] — metadata, never ciphertext.
 ///
-/// # Arguments
+/// The stored row holds `encrypted_data` and `encrypted_data_key`, and this handler used to
+/// return both. Nothing needs them over HTTP: the runner receives plaintext (the server decrypts
+/// before dispatch) and rekey happens server-side. What returning them cost was that any agent
+/// could carry away ciphertext for every secret and keep it against the day a master key leaks.
 ///
-/// * `state` - Application state containing database connection pool and repository instances
-/// * `params` - Path parameters containing the secret key name
-/// * `query` - Query parameters with optional version number for retrieving specific version
-///
-/// # Returns
-///
-/// Returns encrypted secret data containing encrypted content and encrypted data key
-///
-/// # Errors
-///
-/// * `SealboxError::SecretNotFound` - When the secret does not exist
-///
-/// # HTTP Route
-///
-/// `GET /v1/secrets/{secret_key}[?version=N]`
-///
-/// # Security Notes
-///
-/// If no version number is specified, returns the latest version. The returned data is still encrypted and requires the client to decrypt it using the corresponding private key.
+/// There is deliberately no parameter and no role that produces it, because a way to get it is a
+/// way for something to be misconfigured into getting it. A **cold** secret — one under a master
+/// key the server does not hold — is read offline, from a copy of the database and the key, with
+/// no server involved. That is also the only thing that works at the moment a cold secret is
+/// actually wanted, which is when the server is gone.
 pub(crate) async fn get(
     State(state): State<AppState>,
     Path(params): Path<SecretPathParams>,
@@ -59,7 +48,15 @@ pub(crate) async fn get(
         None => state.secret_repo.get_secret(&params.secret_key())?,
     };
 
-    Ok(SealboxResponse::Json(json!(secret)))
+    Ok(SealboxResponse::Json(json!({
+        "key": secret.key,
+        "version": secret.version,
+        "master_key_id": secret.master_key_id,
+        "created_at": secret.created_at,
+        "updated_at": secret.updated_at,
+        "expires_at": secret.expires_at,
+        "metadata": secret.metadata,
+    })))
 }
 
 /// Either supply a value or ask for one to be generated — never both, and never neither.

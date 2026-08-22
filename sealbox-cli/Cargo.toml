@@ -16,11 +16,10 @@ serde = { workspace = true }
 time = { workspace = true, features = ["formatting", "local-offset"] }
 toml = "1.1"
 dirs = "6.0"
-tabled = "0.21"
 rpassword = "7.5"
 aes-gcm = { workspace = true }
 base64 = { workspace = true }
-comfy-table = "7"
+comfy-table = "8"
 tempfile = { workspace = true }
 uuid = { workspace = true }
 rand = { workspace = true }

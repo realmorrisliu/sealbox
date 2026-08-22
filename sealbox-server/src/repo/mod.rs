@@ -652,6 +652,13 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn cleanup_expired_secrets(&self) -> Result<usize>;
     /// List all secrets with basic information (key, latest version, timestamps)
     fn list_secrets(&self) -> Result<Vec<SecretInfo>>;
+
+    /// How many secret rows exist, expired and pending included.
+    ///
+    /// Asked at startup to decide whether a missing master key file means "a fresh server" or
+    /// "a catastrophe in progress", so it must count everything a key could be needed for —
+    /// not the subset a listing would show.
+    fn count_secrets(&self) -> Result<usize>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
