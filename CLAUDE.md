@@ -136,7 +136,8 @@ Acceptance test: the author's own infrastructure runs on it.
    registering, signing in, approving — is outside what `cargo test` can reach. The tests cover
    everything around it: which credentials the gate accepts, link and challenge lifetimes, and
    that staging a grant creates nothing.
-10. **A skill file plus `examples/grants/`** — worked examples are the template library.
+10. ~~**A skill file plus `examples/grants/`.**~~ *Done.* `skills/sealbox/SKILL.md`; the examples
+    are the template library, and there is no scaffolding command.
 
 ### Deliberately not being built
 
