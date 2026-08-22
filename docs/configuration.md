@@ -99,15 +99,30 @@ copying the file. See [`sealbox init`](cli-reference.md#sealbox-init) and
 
 ## Runner
 
-The runner needs a server URL and, on first start only, a join token. Afterwards it authenticates
-with a keypair it generated itself and stored locally.
+> **Implemented today** with an ordinary identity token; the join-token exchange below is the
+> target.
+
+A runner is an identity with the `runner` role, whose name matches the `runner` field of the
+grants it executes:
+
+```bash
+sealbox-cli identity create prod-cluster --role runner   # prints its token once
+sealbox-cli runner --name prod-cluster                   # with that token configured
+```
+
+Its permissions are **disjoint** from every other role: it may claim jobs addressed to it and
+report their results, and nothing else — it cannot invoke a grant, read a secret by name, list
+secrets, or read the audit trail. Nor can any other role claim a job: an admin is refused there
+too, because being the most privileged identity does not make you the machine a job was addressed
+to.
 
 | Variable | Meaning |
 |---|---|
 | `SEALBOX_SERVER` | Server URL |
-| `SEALBOX_RUNNER_NAME` | Must match the `runner` field in the grants it should execute |
-| `SEALBOX_JOIN_TOKEN` | First start only. Expires in 15 minutes. |
-| `SEALBOX_STATE_PATH` | Where the runner keeps its own keypair |
+| `SEALBOX_TOKEN` | The runner identity's token |
+
+*Target, not yet built:* a 15-minute join token exchanged on first start for a keypair the runner
+generates itself, so that the Secret holding it becomes worthless minutes later.
 
 ```yaml
 # runner-deployment.yaml (abridged)

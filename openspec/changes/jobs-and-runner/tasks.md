@@ -64,8 +64,8 @@
 
 ## 9. Documentation
 
-- [ ] 9.1 Update `docs/cli-reference.md` for `run` and `runner`
-- [ ] 9.2 Update `docs/configuration.md` for the runner's settings
-- [ ] 9.3 Update `docs/getting-started.md`: the runner step is now real
-- [ ] 9.4 Update `CLAUDE.md`: MVP items 5 and 6 done
-- [ ] 9.5 Final verification: `cargo fmt --check`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`
+- [x] 9.1 Update `docs/cli-reference.md` for `run` and `runner`
+- [x] 9.2 Update `docs/configuration.md` for the runner's settings
+- [x] 9.3 Update `docs/getting-started.md`: the runner step is now real
+- [x] 9.4 Update `CLAUDE.md`: MVP items 5 and 6 done
+- [x] 9.5 Final verification: `cargo fmt --check`, `cargo test --workspace`, `cargo clippy --all-targets --all-features --workspace -- -D warnings`

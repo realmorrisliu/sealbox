@@ -71,23 +71,30 @@ recorded whether it succeeds or is refused.
 Revoking one identity is immediate and affects no one else — which is the whole reason there is
 no shared token.
 
-## 4. Put a runner in your cluster *(target)*
+## 4. Put a runner in your cluster *(implemented)*
 
 ```bash
-sealbox identity create prod-cluster --role runner   # → join token, 15 minutes, single use
-
-kubectl -n sealbox create secret generic sealbox-join \
-  --from-literal=token=<join-token>
-kubectl apply -f runner-deployment.yaml
+sealbox-cli identity create prod-cluster --role runner   # prints its token once
 ```
 
-On first start the runner generates **its own keypair**, registers the public half using the join
-token, and authenticates by signature thereafter. The join token expires in fifteen minutes, so
-**the Secret you just created becomes worthless within the hour** — which is what makes this one
-manual step acceptable.
+Give that token to a runner inside your infrastructure:
 
-The chicken-and-egg has to be broken somewhere. It is broken here, deliberately, visibly, and with
-a short fuse.
+```bash
+SEALBOX_SERVER=https://sealbox.example.dev \
+SEALBOX_TOKEN=<the runner's token> \
+  sealbox-cli runner --name prod-cluster
+```
+
+This is the only place a grant executes and the only place a secret's plaintext exists outside
+the server. It dials out, so the cluster needs no inbound port and no public endpoint.
+
+Its permissions are disjoint from every other role: claim, execute, report — nothing else. An
+admin cannot claim a job either, because the most privileged identity is still not the machine
+the job was addressed to.
+
+> **Target, not yet built:** the token is a long-lived identity token today. It will become a
+> 15-minute join token exchanged for a keypair the runner generates itself, so the Secret holding
+> it becomes worthless minutes later.
 
 The runner needs **no inbound port, no Ingress, and no public endpoint** — it dials out. Its
 ServiceAccount is its entire authority over the cluster; scope it to exactly what your grants
@@ -132,7 +139,7 @@ No import command is needed for bulk work — a shell loop inside one admin sess
 sealbox admin --exec 'for f in ~/creds/*; do set app/$(basename $f) < $f; done'
 ```
 
-## 6. Grant the first capability *(target)*
+## 6. Grant the first capability *(implemented, except adapters)*
 
 Have an agent draft it by imitating [`examples/grants/`](../examples/grants/):
 
@@ -145,15 +152,17 @@ secrets = { DATABASE_URL = "app/database-url", OSS_ENDPOINT = "app/oss-endpoint"
 ```
 
 ```bash
-sealbox grant add ./grants/k8s-sync.toml
+sealbox-cli grant add ./grants/k8s-sync.toml
+sealbox-cli run k8s-sync
 ```
 
-A browser opens — on your laptop, or scan the link with your phone. **What you approve is the
-declaration above, not a script.** The page is rendered by the server, so an agent cannot show you
-one grant and submit another.
+**What you approve is the declaration, not a script** — the command prints it, secrets first,
+before submitting. Sealbox confines the implementation to exactly those secrets, so that line is
+the security-relevant part.
 
-Approving from a phone is worth doing: it puts the approval on a device the agent has no access
-to at all.
+> **Target:** approval will happen on a server-rendered page signed with a passkey, which can be
+> your phone. That is what makes it a *trusted* display — terminal output is written by whatever
+> process is running, so an agent could show one grant and submit another.
 
 ## From then on
 
