@@ -44,6 +44,7 @@ uuid = { workspace = true }
 tokio = { workspace = true }
 assert_cmd = { workspace = true }
 tempfile = { workspace = true }
+webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
 
 [features]
 default = []

@@ -1889,3 +1889,314 @@ async fn an_agent_still_learns_that_a_secret_exists_and_when_it_changed() {
         StatusCode::NOT_FOUND
     );
 }
+
+// ---------------------------------------------------------------- the ceremonies
+//
+// A software authenticator stands in for the hardware one. What it does not stand in for is the
+// person: consent, presence, and the browser's origin checks are the authenticator's job in a
+// real ceremony, and here they are simply granted. What these do cover is everything on the
+// server's side of the wire — the challenge, the signature over it, what the signature is bound
+// to, and what each of them is then allowed to do.
+
+use webauthn_authenticator_rs::{AuthenticatorBackend, softpasskey::SoftPasskey};
+use webauthn_rs::prelude::Url;
+
+/// One person with one authenticator, driving real ceremonies against the real routes.
+struct Person {
+    authenticator: SoftPasskey,
+    origin: Url,
+}
+
+impl Person {
+    fn new() -> Self {
+        Self {
+            // `true` falsifies user verification: there is nobody here to verify.
+            authenticator: SoftPasskey::new(true),
+            origin: Url::parse("http://localhost:8080").expect("Should parse"),
+        }
+    }
+
+    /// Register through the enrolment link, exactly as the page does.
+    async fn enrol(&mut self, server: &TestServer, id: &uuid::Uuid) -> serde_json::Value {
+        let challenge = server
+            .json(
+                server
+                    .send(
+                        post(&format!("/enrol/{id}/start"), None)
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await,
+            )
+            .await;
+
+        let options = serde_json::from_value(challenge["publicKey"].clone())
+            .expect("the server should send a creation challenge");
+        let credential = self
+            .authenticator
+            .perform_register(self.origin.clone(), options, 60_000)
+            .expect("the authenticator should register");
+
+        let response = server
+            .send(
+                post(&format!("/enrol/{id}/finish"), None)
+                    .body(Body::from(serde_json::to_vec(&credential).unwrap()))
+                    .unwrap(),
+            )
+            .await;
+        assert!(response.status().is_success(), "enrolment should finish");
+        server.json(response).await
+    }
+
+    /// Sign a challenge at `base` (a login or an approval) and post the result to its finish.
+    async fn sign(
+        &mut self,
+        server: &TestServer,
+        base: &str,
+        identity: &str,
+    ) -> http::Response<Body> {
+        let started = server
+            .json(
+                server
+                    .send(
+                        post(&format!("{base}/start"), None)
+                            .header(header::CONTENT_TYPE, "application/json")
+                            .body(Body::from(
+                                serde_json::json!({ "identity": identity }).to_string(),
+                            ))
+                            .unwrap(),
+                    )
+                    .await,
+            )
+            .await;
+
+        let options = serde_json::from_value(started["options"]["publicKey"].clone())
+            .expect("the server should send a request challenge");
+        let credential = self
+            .authenticator
+            .perform_auth(self.origin.clone(), options, 60_000)
+            .expect("the authenticator should sign");
+
+        server
+            .send(
+                post(&format!("{base}/finish"), None)
+                    .body(Body::from(
+                        serde_json::json!({
+                            "challenge_id": started["challenge_id"],
+                            "credential": credential,
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+    }
+}
+
+/// Claim a server and come out of it holding a session, the way a person actually would.
+async fn enrol_and_sign_in(server: &TestServer, person: &mut Person) -> String {
+    let body = server
+        .json(
+            server
+                .send(
+                    post("/v1/bootstrap", None)
+                        .body(Body::from(
+                            serde_json::json!({ "token": BOOTSTRAP_TOKEN, "name": "root" })
+                                .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await,
+        )
+        .await;
+
+    let enrolment: uuid::Uuid = body["enrol_at"]
+        .as_str()
+        .and_then(|u| u.rsplit('/').next())
+        .and_then(|id| id.parse().ok())
+        .unwrap_or_else(|| panic!("bootstrap should return an enrolment link: {body}"));
+    person.enrol(server, &enrolment).await;
+
+    let opened = server
+        .json(
+            server
+                .send(post("/v1/auth/login", None).body(Body::empty()).unwrap())
+                .await,
+        )
+        .await;
+    let login = opened["login"].as_str().expect("a login id").to_string();
+
+    let response = person
+        .sign(server, &format!("/login/{login}"), "root")
+        .await;
+    assert!(response.status().is_success(), "signing in should succeed");
+
+    let collected = server
+        .json(
+            server
+                .send(get(&format!("/v1/auth/login/{login}"), None))
+                .await,
+        )
+        .await;
+    collected["session"]
+        .as_str()
+        .expect("the waiting caller should collect a session")
+        .to_string()
+}
+
+#[tokio::test]
+async fn a_passkey_carries_someone_from_enrolment_to_an_admin_operation() {
+    let server = TestServer::new();
+    let mut person = Person::new();
+    let session = enrol_and_sign_in(&server, &mut person).await;
+
+    // The session is the only thing that acts as an admin, and it does.
+    let response = server.send(get("/v1/identities", Some(&session))).await;
+    assert!(
+        response.status().is_success(),
+        "a signed-in admin should reach an admin route"
+    );
+}
+
+#[tokio::test]
+async fn an_enrolment_link_cannot_be_used_twice() {
+    let server = TestServer::new();
+    let mut person = Person::new();
+    enrol_and_sign_in(&server, &mut person).await;
+
+    // A leaked link must not be a way to add a second authenticator to a working identity.
+    let id = server.state.passkey.issue_enrolment("root");
+    let response = server
+        .send(
+            post(&format!("/enrol/{id}/start"), None)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_grant_exists_only_after_it_is_signed_for() {
+    let server = TestServer::new();
+    let mut person = Person::new();
+    let session = enrol_and_sign_in(&server, &mut person).await;
+    server.secret(&session, "app-db-url").await;
+
+    let staged = server
+        .json(
+            server
+                .stage_grant(&session, adapter_grant("k8s-sync", "app-db-url"))
+                .await,
+        )
+        .await;
+    let approval = staged["pending_approval"].as_str().expect("an approval id");
+
+    assert_eq!(
+        server
+            .send(get("/v1/grants/k8s-sync", Some(&session)))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+        "staging must create nothing"
+    );
+
+    let response = person
+        .sign(&server, &format!("/approve/{approval}"), "root")
+        .await;
+    assert!(response.status().is_success(), "approving should succeed");
+
+    let grant = server
+        .json(
+            server
+                .send(get("/v1/grants/k8s-sync", Some(&session)))
+                .await,
+        )
+        .await;
+    assert_eq!(grant["name"], "k8s-sync");
+    assert_eq!(
+        grant["created_by"], "root",
+        "the grant records who signed for it"
+    );
+}
+
+#[tokio::test]
+async fn a_signature_for_one_approval_does_not_approve_another() {
+    let server = TestServer::new();
+    let mut person = Person::new();
+    let session = enrol_and_sign_in(&server, &mut person).await;
+    server.secret(&session, "app-db-url").await;
+
+    let first = server
+        .json(
+            server
+                .stage_grant(&session, adapter_grant("harmless", "app-db-url"))
+                .await,
+        )
+        .await;
+    let second = server
+        .json(
+            server
+                .stage_grant(&session, adapter_grant("the-one-they-want", "app-db-url"))
+                .await,
+        )
+        .await;
+
+    // Sign for the first, then submit that signature against the second — the substitution the
+    // rendered page exists to prevent, attempted at the wire instead of the display.
+    let started = server
+        .json(
+            server
+                .send(
+                    post(
+                        &format!(
+                            "/approve/{}/start",
+                            first["pending_approval"].as_str().unwrap()
+                        ),
+                        None,
+                    )
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "identity": "root" }).to_string(),
+                    ))
+                    .unwrap(),
+                )
+                .await,
+        )
+        .await;
+    let options = serde_json::from_value(started["options"]["publicKey"].clone()).unwrap();
+    let credential = person
+        .authenticator
+        .perform_auth(person.origin.clone(), options, 60_000)
+        .expect("the authenticator should sign");
+
+    let response = server
+        .send(
+            post(
+                &format!(
+                    "/approve/{}/finish",
+                    second["pending_approval"].as_str().unwrap()
+                ),
+                None,
+            )
+            .body(Body::from(
+                serde_json::json!({
+                    "challenge_id": started["challenge_id"],
+                    "credential": credential,
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+        )
+        .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        server
+            .send(get("/v1/grants/the-one-they-want", Some(&session)))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+        "the grant they wanted must not exist"
+    );
+}
