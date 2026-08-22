@@ -1,0 +1,44 @@
+# One machine, one volume, one SQLite file.
+#
+# A second machine would mean a second volume, a second master key, and two servers disagreeing
+# about which one holds it. Horizontal scale is not a thing sealbox needs: writes are rare, reads
+# are cheap, and the dataset is megabytes.
+
+app = "sealbox"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SEALBOX_STORE_PATH = "/data/sealbox.db"
+  SEALBOX_MASTER_KEY_PATH = "/data/master.pem"
+  SEALBOX_LISTEN_ADDR = "0.0.0.0:8080"
+  # The WebAuthn relying-party ID. Changing it invalidates every registered passkey, so it is set
+  # once, deliberately, and matches the hostname people actually reach.
+  SEALBOX_PUBLIC_URL = "https://sealbox.fly.dev"
+  LITESTREAM_CONFIG = "/data/litestream.yml"
+
+[[mounts]]
+  source = "sealbox_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Never suspend. A stopped server is a runner that cannot claim its jobs, and a rotation that
+  # has already created a database role but cannot record it.
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/healthz/ready"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

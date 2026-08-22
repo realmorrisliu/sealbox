@@ -110,10 +110,12 @@ An existing database from before this is not migrated — delete it and start ag
 
 Acceptance test: the author's own infrastructure runs on it.
 
-1. **Server on Fly.io** — master key and SQLite on the volume, Litestream to object storage.
-   The master key itself already exists; what remains is the hosting and the ceremony. Includes the initialisation ceremony: deploy-time bootstrap token (never logged, single use,
-   time-boxed, zero-identity only) and recovery-keypair backup with **mandatory re-entry
-   verification** (ADR 0010).
+1. **Server on Fly.io** — *partly done.* `fly.toml`, Litestream supervising the server, and a
+   master key the server generates on first boot **only** when the store holds no key and no
+   secret. **Still missing:** the recovery-keypair ceremony with mandatory re-entry verification
+   (ADR 0010). Until it exists the master key on the volume is the only copy, and the operator
+   backs it up by hand — a manual step in a security-critical position, documented in
+   `docs/getting-started.md` and deliberately called out as interim.
 2. **`identities`** — *partly done.* Identities, four roles, hashed tokens, revocation, the audit
    trail, a bounded bootstrap, and passkeys all exist. **Still missing:** join tokens for runners,
    so a runner's token is long-lived rather than exchanged for one it generates itself.

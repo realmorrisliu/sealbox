@@ -33,8 +33,12 @@ RUN touch sealbox-server/src/main.rs sealbox-server/src/lib.rs sealbox-cli/src/m
 # Runtime stage
 FROM alpine:3.24
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates && \
+# Litestream supervises the server: `replicate -exec` runs both as one process tree, so the image
+# needs no init system, and the server cannot be running while replication is not.
+ARG LITESTREAM_VERSION=v0.3.13
+RUN apk add --no-cache ca-certificates wget && \
+    wget -qO- "https://github.com/benbjohnson/litestream/releases/download/${LITESTREAM_VERSION}/litestream-${LITESTREAM_VERSION}-linux-amd64.tar.gz" \
+      | tar -xz -C /usr/local/bin litestream && \
     adduser -D -s /bin/sh sealbox
 
 # Copy binaries from builder stage
@@ -53,13 +57,16 @@ WORKDIR /data
 # Expose port
 EXPOSE 8080
 
-# Health check
+# Probes the liveness route, not `/`. They are the routes that are deliberately public and
+# deliberately cheap; `/` is neither guaranteed.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/healthz/live || exit 1
 
 # Default environment variables
 ENV SEALBOX_STORE_PATH=/data/sealbox.db
 ENV SEALBOX_LISTEN_ADDR=0.0.0.0:8080
 
-# Default command
-CMD ["sealbox-server"]
+# Replication is configured through /etc/litestream.yml, which is mounted or baked in per
+# deployment; with no configuration Litestream runs the server and replicates nothing, which is
+# the right behaviour for a local run.
+CMD ["litestream", "replicate", "-exec", "sealbox-server"]
