@@ -40,6 +40,12 @@ const REQUEST_ID_HEADER: &str = "x-request-id";
 /// A job claimed but unreported for this long is presumed lost.
 pub const JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// How often to ask Litestream whether it is still replicating. It syncs on a one-second ticker,
+/// so a minute is long enough that a healthy replica has moved and short enough that a wedged one
+/// is noticed while someone might still care.
+pub const REPLICATION_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+pub(crate) mod replication;
 pub(crate) mod workload;
 
 #[cfg(test)]
@@ -79,6 +85,13 @@ fn build_router(state: AppState) -> Router {
         )
         // send headers from request to response headers
         .layer(PropagateRequestIdLayer::new(x_request_id));
+
+    // Watch that the database is actually being replicated. Litestream fails silently, and a
+    // replica that stopped weeks ago looks exactly like a working one until someone restores.
+    {
+        let state = state.clone();
+        tokio::spawn(replication::watch(state, REPLICATION_CHECK_INTERVAL));
+    }
 
     // Sweep abandoned jobs in the background. Without this, a runner that dies mid-job leaves
     // the caller waiting on something that will never report.
@@ -183,6 +196,10 @@ fn build_router(state: AppState) -> Router {
         .route("/", get(root))
         .route("/healthz/live", get(liveness_probe))
         .route("/healthz/ready", get(readiness_probe))
+        // Deliberately not part of readiness: a server that stops serving because its *backup*
+        // is stale has turned a recoverable problem into an outage, and taking the machine out
+        // of rotation does not fix replication.
+        .route("/healthz/replication", get(replication_probe))
         .route("/v1/bootstrap", axum::routing::post(identity::bootstrap))
         // The ceremony. Public because a browser reaches them, and safe because every id is an
         // unguessable single-use token with a short life. Not an interface (ADR 0004): they must
@@ -244,6 +261,22 @@ async fn readiness_probe(State(state): State<AppState>) -> Result<SealboxRespons
     })?;
 
     Ok(SealboxResponse::Ok)
+}
+
+/// Whether the database is being replicated, and how that was established.
+///
+/// Public like the other probes: it names no secret, no identity, and no grant — only whether a
+/// backup is happening. Something has to be able to watch it without holding a credential.
+async fn replication_probe(State(state): State<AppState>) -> Result<SealboxResponse> {
+    let status = state.replication.status();
+    let failing = matches!(status.health, replication::Health::Failing { .. });
+
+    let body = serde_json::json!(status);
+    if failing {
+        // Non-200 so that whatever is watching notices without having to parse a body.
+        return Err(SealboxError::ReplicationFailing(body.to_string()));
+    }
+    Ok(SealboxResponse::Json(body))
 }
 
 #[derive(Debug)]

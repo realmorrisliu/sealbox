@@ -69,9 +69,17 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Default environment variables
 ENV SEALBOX_STORE_PATH=/data/sealbox.db
+ENV SEALBOX_MASTER_KEY_PATH=/data/master.pem
 ENV SEALBOX_LISTEN_ADDR=0.0.0.0:8080
 
-# Replication is configured through /etc/litestream.yml, which is mounted or baked in per
-# deployment; with no configuration Litestream runs the server and replicates nothing, which is
-# the right behaviour for a local run.
+# Litestream refuses to start without a config file, so the image carries one that names the
+# database and replicates nowhere. That is right for a local run and wrong for production: mount
+# your own over it, or point LITESTREAM_CONFIG at one, and check the logs for the replica being
+# announced. A server whose database is not being replicated is the state that quietly costs
+# everything later.
+COPY <<'YAML' /etc/litestream.yml
+dbs:
+  - path: /data/sealbox.db
+YAML
+
 CMD ["litestream", "replicate", "-exec", "sealbox-server"]

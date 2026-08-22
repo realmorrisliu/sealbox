@@ -18,6 +18,9 @@ primary_region = "nrt"
   # once, deliberately, and matches the hostname people actually reach.
   SEALBOX_PUBLIC_URL = "https://sealbox.fly.dev"
   LITESTREAM_CONFIG = "/data/litestream.yml"
+  # The server asks Litestream, on loopback, whether it is still replicating. Without this the
+  # answer is "not configured" — which is honest, and is not the same as "fine".
+  SEALBOX_REPLICATION_METRICS_URL = "http://127.0.0.1:9090/metrics"
 
 [[mounts]]
   source = "sealbox_data"
@@ -38,6 +41,15 @@ primary_region = "nrt"
     method = "GET"
     timeout = "5s"
     path = "/healthz/ready"
+
+  # Watched, not enforced. A server that stops serving because its *backup* is stale has turned a
+  # recoverable problem into an outage, so this is a check to alert on rather than to restart on.
+  [[http_service.checks]]
+    grace_period = "90s"
+    interval = "5m"
+    method = "GET"
+    timeout = "5s"
+    path = "/healthz/replication"
 
 [[vm]]
   size = "shared-cpu-1x"

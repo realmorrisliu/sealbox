@@ -54,6 +54,7 @@ impl TestServer {
             listen_addr: "127.0.0.1:0".to_string(),
             master_key_paths: vec![key_path.to_string_lossy().into_owned()],
             bootstrap_window,
+            replication_metrics_url: None,
         };
 
         let state = AppState::new(&config).expect("Should build the state");

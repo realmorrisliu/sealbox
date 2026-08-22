@@ -41,6 +41,10 @@ pub enum SealboxError {
 
     #[error("Forbidden: this identity's role does not permit that")]
     Forbidden,
+    /// The database is not being replicated. Not an error in serving — the server is fine — but
+    /// reported as one so that a watcher notices without parsing a body.
+    #[error("Replication is failing: {0}")]
+    ReplicationFailing(String),
     /// A refusal that needs to say more than "no" — the caller has to know what to do instead.
     #[error("Forbidden: {0}")]
     ForbiddenBecause(String),
@@ -87,6 +91,9 @@ impl IntoResponse for SealboxError {
             SealboxError::GrantNotFound(_) => (StatusCode::NOT_FOUND, errorfmt(&self)),
             SealboxError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
             SealboxError::InvalidRole(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
+            SealboxError::ReplicationFailing(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, errorfmt(&self))
+            }
             SealboxError::Forbidden => (StatusCode::FORBIDDEN, errorfmt(&self)),
             SealboxError::ForbiddenBecause(_) => (StatusCode::FORBIDDEN, errorfmt(&self)),
             SealboxError::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
