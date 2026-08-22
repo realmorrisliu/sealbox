@@ -2,7 +2,9 @@
 FROM rust:1.97-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev pkgconfig openssl-dev
+# `openssl-libs-static` matters: the musl target links statically, and without the static halves
+# the build gets all the way to `ld` before failing on -lssl/-lcrypto.
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static
 
 # Set working directory
 WORKDIR /app
