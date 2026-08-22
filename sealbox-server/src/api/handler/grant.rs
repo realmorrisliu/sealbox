@@ -22,6 +22,9 @@ pub(crate) struct CreateGrantPayload {
     runner: String,
     #[serde(default)]
     secrets: BTreeMap<String, String>,
+    /// Secrets that must be a file rather than an environment variable.
+    #[serde(default)]
+    files: BTreeMap<String, String>,
     #[serde(default)]
     then: Vec<String>,
 
@@ -76,6 +79,7 @@ impl CreateGrantPayload {
             implementation,
             runner: self.runner,
             secrets: self.secrets,
+            files: self.files,
             then: self.then,
             created_at: time::OffsetDateTime::now_utc().unix_timestamp(),
             created_by: created_by.to_string(),
@@ -107,7 +111,7 @@ pub(crate) async fn create(
 /// which would undo the guarantee that the declaration *is* the boundary. Parameters belong in
 /// the implementation's arguments; two environments are two grants.
 fn validate_secret_names_are_literal(grant: &Grant) -> Result<()> {
-    for (injected_as, secret) in &grant.secrets {
+    for (injected_as, secret) in grant.all_declared() {
         if secret.contains('{') || secret.contains('}') {
             return Err(SealboxError::InvalidRequest(format!(
                 "secret name `{secret}` (declared as `{injected_as}`) contains a parameter. \
@@ -139,7 +143,7 @@ fn validate_secrets_exist(state: &AppState, grant: &Grant) -> Result<()> {
         .map(|s| s.key)
         .collect();
 
-    for (injected_as, secret) in &grant.secrets {
+    for (injected_as, secret) in grant.all_declared() {
         if !existing.contains(secret) {
             return Err(SealboxError::InvalidRequest(format!(
                 "grant declares secret `{secret}` (as `{injected_as}`), which does not exist"

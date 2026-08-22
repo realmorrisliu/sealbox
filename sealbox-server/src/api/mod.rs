@@ -17,8 +17,10 @@ use tracing::{error, info_span};
 
 use crate::{
     api::{
-        auth::{authenticate_and_audit, require_admin, require_agent, require_operator},
-        handler::{admin, audit, grant, identity, master_key, secret},
+        auth::{
+            authenticate_and_audit, require_admin, require_agent, require_operator, require_runner,
+        },
+        handler::{admin, audit, grant, identity, job, master_key, secret},
         state::AppState,
     },
     config::SealboxConfig,
@@ -31,6 +33,9 @@ mod path;
 pub(crate) mod state;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
+
+/// A job claimed but unreported for this long is presumed lost.
+pub const JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
 pub fn create_app(config: &SealboxConfig) -> Result<Router> {
     tracing::info!("Initializing API routes");
@@ -62,6 +67,21 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
 
     let state = AppState::new(config)?;
 
+    // Sweep abandoned jobs in the background. Without this, a runner that dies mid-job leaves
+    // the caller waiting on something that will never report.
+    {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                ticker.tick().await;
+                if let Err(e) = state.sweep_abandoned_jobs(JOB_TIMEOUT) {
+                    tracing::error!("Failed to sweep abandoned jobs: {e}");
+                }
+            }
+        });
+    }
+
     // No CORS layer, and no configuration to add one: sealbox serves no browser client
     // (ADR 0004). Behaviour is identical in debug and release builds.
     // Routes are grouped by the role they require, and each group carries its own gate.
@@ -79,6 +99,8 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         .route("/v1/audit", get(audit::list))
         .route("/v1/grants", get(grant::list))
         .route("/v1/grants/{name}", get(grant::show))
+        .route("/v1/jobs", axum::routing::post(job::submit))
+        .route("/v1/jobs/{id}", get(job::show))
         .route_layer(from_fn(require_agent));
 
     let operator_routes = Router::new()
@@ -87,6 +109,13 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             put(secret::save).delete(secret::delete),
         )
         .route_layer(from_fn(require_operator));
+
+    // Disjoint from every other group: only a runner reaches these, and a runner reaches
+    // nothing else.
+    let runner_routes = Router::new()
+        .route("/v1/jobs/claim", get(job::claim))
+        .route("/v1/jobs/{id}/result", axum::routing::post(job::report))
+        .route_layer(from_fn(require_runner));
 
     let admin_routes = Router::new()
         .route(
@@ -112,6 +141,7 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         .merge(agent_routes)
         .merge(operator_routes)
         .merge(admin_routes)
+        .merge(runner_routes)
         .route_layer(from_fn_with_state(state.clone(), authenticate_and_audit))
         // Public: no credential, and not audited. Registered after every auth layer.
         .route("/", get(root))

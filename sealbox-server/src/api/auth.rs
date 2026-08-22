@@ -110,6 +110,24 @@ role_gate!(
 );
 role_gate!(require_admin, Role::Admin, "Admits Admin only.");
 
+/// Admits the runner role and **only** the runner role — not admin, not anyone above.
+///
+/// Runner permissions are disjoint rather than ordered: being the most privileged identity does
+/// not make you the machine a job was addressed to. The threshold gates refuse a runner for free,
+/// because Runner sorts below Agent.
+pub(crate) async fn require_runner(request: Request, next: Next) -> Result<Response> {
+    let identity = request
+        .extensions()
+        .get::<Identity>()
+        .ok_or(SealboxError::Unauthorized)?;
+
+    if identity.role != Role::Runner {
+        return Err(SealboxError::Forbidden);
+    }
+
+    Ok(next.run(request).await)
+}
+
 /// The thing being acted on, taken from the path where it already is.
 fn resource_from_path(path: &str) -> Option<String> {
     let mut parts = path.trim_start_matches('/').split('/');

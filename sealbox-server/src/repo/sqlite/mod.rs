@@ -2,6 +2,7 @@ pub(crate) mod audit;
 pub(crate) mod grant;
 pub(crate) mod health;
 pub(crate) mod identity;
+pub(crate) mod job;
 pub(crate) mod master_key;
 pub(crate) mod secret;
 
@@ -11,7 +12,8 @@ use crate::error::Result;
 
 pub(crate) use self::{
     audit::SqliteAuditRepo, grant::SqliteGrantRepo, health::SqliteHealthRepo,
-    identity::SqliteIdentityRepo, master_key::SqliteMasterKeyRepo, secret::SqliteSecretRepo,
+    identity::SqliteIdentityRepo, job::SqliteJobRepo, master_key::SqliteMasterKeyRepo,
+    secret::SqliteSecretRepo,
 };
 
 pub(crate) fn create_db_connection(db_path: &str) -> Result<Connection> {

@@ -14,8 +14,8 @@ use crate::{
 };
 
 pub(crate) use self::sqlite::{
-    SqliteAuditRepo, SqliteGrantRepo, SqliteHealthRepo, SqliteIdentityRepo, SqliteMasterKeyRepo,
-    SqliteSecretRepo, create_db_connection,
+    SqliteAuditRepo, SqliteGrantRepo, SqliteHealthRepo, SqliteIdentityRepo, SqliteJobRepo,
+    SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
 };
 
 mod sqlite;
@@ -135,6 +135,11 @@ impl Secret {
 /// invite per-resource entries — the boundary this design relies on is the grant, not an ACL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Role {
+    /// Claims jobs addressed to it and reports results. **Disjoint from the others**, not
+    /// beneath them: it cannot invoke a grant, read a secret by name, list secrets, or read the
+    /// audit trail — and no other role can claim a job. Ordered lowest so that every threshold
+    /// gate refuses it without needing to know about it.
+    Runner,
     /// Invoke approved capabilities and read metadata. Nothing else.
     Agent,
     /// Additionally store secrets.
@@ -146,6 +151,7 @@ pub enum Role {
 impl ToSql for Role {
     fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
         match self {
+            Role::Runner => Ok(rusqlite::types::ToSqlOutput::from("Runner")),
             Role::Agent => Ok(rusqlite::types::ToSqlOutput::from("Agent")),
             Role::Operator => Ok(rusqlite::types::ToSqlOutput::from("Operator")),
             Role::Admin => Ok(rusqlite::types::ToSqlOutput::from("Admin")),
@@ -156,6 +162,7 @@ impl ToSql for Role {
 impl FromSql for Role {
     fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
         match value.as_str() {
+            Ok("Runner") => Ok(Role::Runner),
             Ok("Agent") => Ok(Role::Agent),
             Ok("Operator") => Ok(Role::Operator),
             Ok("Admin") => Ok(Role::Admin),
@@ -169,6 +176,7 @@ impl FromStr for Role {
 
     fn from_str(s: &str) -> Result<Self> {
         match s.to_ascii_lowercase().as_str() {
+            "runner" => Ok(Role::Runner),
             "agent" => Ok(Role::Agent),
             "operator" => Ok(Role::Operator),
             "admin" => Ok(Role::Admin),
@@ -180,6 +188,7 @@ impl FromStr for Role {
 impl std::fmt::Display for Role {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Role::Runner => "Runner",
             Role::Agent => "Agent",
             Role::Operator => "Operator",
             Role::Admin => "Admin",
@@ -436,9 +445,18 @@ pub struct Grant {
     pub implementation: Implementation,
     /// Which runner executes this. Not resolved here — the runner does not exist yet.
     pub runner: String,
-    /// Injected name to secret name. **This is what a human reviews**, and the only secrets the
-    /// implementation can reach.
+    /// Injected name to secret name. **This is what a human reviews**, and together with
+    /// `files` the only secrets the implementation can reach.
+    ///
+    /// Each becomes an environment variable, and all of them together are also rendered into a
+    /// `KEY=value` file whose path is available as `SEALBOX_ENVFILE` — one declaration, both
+    /// forms, because a consumer needing `--from-env-file` should not require a second list.
     pub secrets: BTreeMap<String, String>,
+    /// Secrets that must be a *file*: a kubeconfig, a docker config, an SSH key, a GCP
+    /// service-account JSON. Each is written to a `0600` file whose path is substituted into
+    /// argv as `{name}` and exported as `name`.
+    #[serde(default)]
+    pub files: BTreeMap<String, String>,
     /// Grants to run after this one succeeds, in order. Linear, stop-on-failure (ADR 0011).
     #[serde(default)]
     pub then: Vec<String>,
@@ -449,7 +467,12 @@ pub struct Grant {
 
 impl Grant {
     pub fn declares(&self, secret: &str) -> bool {
-        self.secrets.values().any(|s| s == secret)
+        self.secrets.values().any(|s| s == secret) || self.files.values().any(|s| s == secret)
+    }
+
+    /// Every secret this grant may reach, in either form.
+    pub fn all_declared(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.secrets.iter().chain(self.files.iter())
     }
 }
 
@@ -458,6 +481,94 @@ pub(crate) trait GrantRepo: Send + Sync {
     fn get(&self, name: &str) -> Result<Option<Grant>>;
     fn list(&self) -> Result<Vec<Grant>>;
     fn remove(&self, name: &str) -> Result<()>;
+}
+
+/// One requested execution of a grant.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Job {
+    pub id: i64,
+    pub grant: String,
+    pub params: BTreeMap<String, String>,
+    /// Which runner it is addressed to. Copied from the grant at submission, so a later change
+    /// to the grant cannot redirect work already queued.
+    pub runner: String,
+    pub status: JobStatus,
+    pub submitted_by: String,
+    pub submitted_at: i64,
+    pub claimed_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    pub exit_code: Option<i32>,
+    pub output: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum JobStatus {
+    Pending,
+    Claimed,
+    Succeeded,
+    Failed,
+}
+
+impl JobStatus {
+    pub fn is_finished(&self) -> bool {
+        matches!(self, JobStatus::Succeeded | JobStatus::Failed)
+    }
+}
+
+impl ToSql for JobStatus {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        match self {
+            JobStatus::Pending => Ok(rusqlite::types::ToSqlOutput::from("Pending")),
+            JobStatus::Claimed => Ok(rusqlite::types::ToSqlOutput::from("Claimed")),
+            JobStatus::Succeeded => Ok(rusqlite::types::ToSqlOutput::from("Succeeded")),
+            JobStatus::Failed => Ok(rusqlite::types::ToSqlOutput::from("Failed")),
+        }
+    }
+}
+
+impl FromSql for JobStatus {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        match value.as_str() {
+            Ok("Pending") => Ok(JobStatus::Pending),
+            Ok("Claimed") => Ok(JobStatus::Claimed),
+            Ok("Succeeded") => Ok(JobStatus::Succeeded),
+            Ok("Failed") => Ok(JobStatus::Failed),
+            _ => Err(rusqlite::types::FromSqlError::InvalidType),
+        }
+    }
+}
+
+/// What a runner is handed when it claims a job: the implementation, and the plaintext of only
+/// the secrets that grant declares. There is no operation, for any role, that fetches a secret
+/// by name — this is the only way plaintext leaves the server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaimedJob {
+    pub id: i64,
+    pub grant: String,
+    pub params: BTreeMap<String, String>,
+    pub implementation: Implementation,
+    /// Injected name to plaintext value, for environment injection and the env-file.
+    pub secrets: BTreeMap<String, String>,
+    /// Injected name to plaintext value, for secrets that must be a file.
+    #[serde(default)]
+    pub files: BTreeMap<String, String>,
+}
+
+pub(crate) trait JobRepo: Send + Sync {
+    fn submit(
+        &self,
+        grant: &str,
+        runner: &str,
+        params: &BTreeMap<String, String>,
+        by: &str,
+    ) -> Result<Job>;
+    fn get(&self, id: i64) -> Result<Option<Job>>;
+    /// Claim the oldest pending job for this runner, atomically. `None` if there is none.
+    fn claim_next(&self, runner: &str) -> Result<Option<Job>>;
+    /// Record an outcome. Only the runner that claimed it may report.
+    fn report(&self, id: i64, runner: &str, exit_code: i32, output: &str) -> Result<Job>;
+    /// Mark jobs claimed but unreported past the deadline as failed. Never re-queues them.
+    fn fail_abandoned(&self, older_than: i64) -> Result<Vec<Job>>;
 }
 
 pub(crate) trait SecretRepo: Send + Sync {

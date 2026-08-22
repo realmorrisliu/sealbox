@@ -24,6 +24,7 @@ impl SqliteGrantRepo {
                 implementation TEXT NOT NULL,
                 runner TEXT NOT NULL,
                 secrets TEXT NOT NULL,
+                files TEXT NOT NULL DEFAULT '{}',
                 chain TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
                 created_by TEXT NOT NULL
@@ -36,7 +37,8 @@ impl SqliteGrantRepo {
     fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grant> {
         let implementation: String = row.get(1)?;
         let secrets: String = row.get(3)?;
-        let chain: String = row.get(4)?;
+        let files: String = row.get(4)?;
+        let chain: String = row.get(5)?;
         Ok(Grant {
             name: row.get(0)?,
             implementation: serde_json::from_str::<Implementation>(&implementation).map_err(
@@ -49,6 +51,13 @@ impl SqliteGrantRepo {
                 },
             )?,
             runner: row.get(2)?,
+            files: serde_json::from_str(&files).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    4,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?,
             secrets: serde_json::from_str(&secrets).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
                     3,
@@ -58,18 +67,18 @@ impl SqliteGrantRepo {
             })?,
             then: serde_json::from_str(&chain).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    4,
+                    5,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )
             })?,
-            created_at: row.get(5)?,
-            created_by: row.get(6)?,
+            created_at: row.get(6)?,
+            created_by: row.get(7)?,
         })
     }
 
     const COLUMNS: &'static str =
-        "name, implementation, runner, secrets, chain, created_at, created_by";
+        "name, implementation, runner, secrets, files, chain, created_at, created_by";
 }
 
 impl GrantRepo for SqliteGrantRepo {
@@ -77,14 +86,16 @@ impl GrantRepo for SqliteGrantRepo {
         let guard = self.conn.lock()?;
         guard
             .execute(
-                "INSERT INTO grants (name, implementation, runner, secrets, chain, created_at, created_by)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO grants (name, implementation, runner, secrets, files, chain, created_at, created_by)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 (
                     &grant.name,
                     serde_json::to_string(&grant.implementation)
                         .map_err(|e| SealboxError::DatabaseError(e.to_string()))?,
                     &grant.runner,
                     serde_json::to_string(&grant.secrets)
+                        .map_err(|e| SealboxError::DatabaseError(e.to_string()))?,
+                    serde_json::to_string(&grant.files)
                         .map_err(|e| SealboxError::DatabaseError(e.to_string()))?,
                     serde_json::to_string(&grant.then)
                         .map_err(|e| SealboxError::DatabaseError(e.to_string()))?,

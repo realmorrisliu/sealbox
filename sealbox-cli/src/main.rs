@@ -3,8 +3,8 @@ mod config;
 mod output;
 
 use crate::commands::{
-    audit_commands, config_commands, grant_commands, identity_commands, key_commands,
-    secret_commands,
+    audit_commands, config_commands, grant_commands, identity_commands, job_commands, key_commands,
+    runner_commands, secret_commands,
 };
 use crate::config::{Config, OutputFormat};
 use anyhow::Result;
@@ -101,6 +101,20 @@ enum Commands {
         /// Maximum records to return
         #[arg(long)]
         limit: Option<usize>,
+    },
+    /// Run a grant: submit a job, wait, and print the result. Never a secret value.
+    Run {
+        /// Grant name
+        grant: String,
+        /// Parameters as key=value
+        params: Vec<String>,
+    },
+    /// Execute jobs addressed to this runner. The only place a grant runs, and the only place
+    /// plaintext exists outside the server.
+    Runner {
+        /// This runner's identity name, matching the `runner` field in the grants it executes
+        #[arg(long)]
+        name: String,
     },
     /// Claim a server that has no identities yet, creating the first admin
     Bootstrap {
@@ -332,6 +346,14 @@ async fn main() -> Result<()> {
         } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());
             audit_commands::list(&config, &output, identity, action, since, limit).await
+        }
+        Commands::Run { grant, params } => {
+            let output = crate::output::OutputManager::new(config.output.format.clone());
+            job_commands::run(&config, &output, grant, params).await
+        }
+        Commands::Runner { name } => {
+            let output = crate::output::OutputManager::new(config.output.format.clone());
+            runner_commands::run(&config, &output, name).await
         }
         Commands::Bootstrap { token, name } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());

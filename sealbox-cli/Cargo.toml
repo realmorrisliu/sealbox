@@ -21,8 +21,8 @@ rpassword = "7.5"
 aes-gcm = { workspace = true }
 base64 = { workspace = true }
 comfy-table = "7"
+tempfile = { workspace = true }
 uuid = { workspace = true }
 rand = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }

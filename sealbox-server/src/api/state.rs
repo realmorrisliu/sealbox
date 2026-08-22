@@ -11,9 +11,9 @@ use crate::{
     crypto::master_key::PrivateMasterKey,
     error::{Result, SealboxError},
     repo::{
-        AuditRepo, GrantRepo, HealthRepo, IdentityRepo, MasterKeyRepo, MasterKeyStatus, SecretRepo,
-        SqliteAuditRepo, SqliteGrantRepo, SqliteHealthRepo, SqliteIdentityRepo,
-        SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+        AuditRepo, GrantRepo, HealthRepo, IdentityRepo, JobRepo, MasterKeyRepo, MasterKeyStatus,
+        SecretRepo, SqliteAuditRepo, SqliteGrantRepo, SqliteHealthRepo, SqliteIdentityRepo,
+        SqliteJobRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
     },
 };
 
@@ -26,6 +26,7 @@ pub(crate) struct AppState {
     pub(crate) identity_repo: Arc<dyn IdentityRepo>,
     pub(crate) audit_repo: Arc<dyn AuditRepo>,
     pub(crate) grant_repo: Arc<dyn GrantRepo>,
+    pub(crate) job_repo: Arc<dyn JobRepo>,
     /// When the bootstrap token stops being accepted. Stored as a deadline rather than a start
     /// time so it is directly assertable, and so a token left in the environment after use —
     /// the normal outcome — stops being useful on its own.
@@ -44,6 +45,7 @@ impl AppState {
         SqliteIdentityRepo::init_table(&conn)?;
         SqliteAuditRepo::init_table(&conn)?;
         SqliteGrantRepo::init_table(&conn)?;
+        SqliteJobRepo::init_table(&conn)?;
 
         // One connection, shared by the repositories. Nothing above this layer holds it:
         // a database lock has no business in an HTTP handler.
@@ -56,7 +58,8 @@ impl AppState {
             master_key_repo: Arc::new(SqliteMasterKeyRepo::new(conn.clone())),
             identity_repo: Arc::new(SqliteIdentityRepo::new(conn.clone())),
             audit_repo: Arc::new(SqliteAuditRepo::new(conn.clone())),
-            grant_repo: Arc::new(SqliteGrantRepo::new(conn)),
+            grant_repo: Arc::new(SqliteGrantRepo::new(conn.clone())),
+            job_repo: Arc::new(SqliteJobRepo::new(conn)),
             server_keys: Arc::new(HashMap::new()),
             bootstrap_deadline: Instant::now() + config.bootstrap_window,
         };
@@ -114,6 +117,31 @@ impl AppState {
         }
 
         Ok(loaded)
+    }
+
+    /// Mark jobs a runner claimed and never reported as failed.
+    ///
+    /// Never re-queued: a grant is not necessarily idempotent, and silently re-running a
+    /// `CREATE USER` or a deployment is worse than failing. A caller who wants it tried again
+    /// can submit another job, having decided that is safe.
+    pub fn sweep_abandoned_jobs(&self, timeout: std::time::Duration) -> Result<usize> {
+        let cutoff = time::OffsetDateTime::now_utc().unix_timestamp() - timeout.as_secs() as i64;
+        let abandoned = self.job_repo.fail_abandoned(cutoff)?;
+
+        for job in &abandoned {
+            info!(
+                "Job {} was claimed by runner '{}' and never reported; marked failed",
+                job.id, job.runner
+            );
+            self.audit_repo.append(&crate::repo::NewAuditRecord {
+                identity: Some(job.runner.clone()),
+                action: "job.abandoned".to_string(),
+                resource: Some(job.grant.clone()),
+                outcome: crate::repo::AuditOutcome::Failed,
+                detail: Some(format!("job {} was never reported; not retried", job.id)),
+            })?;
+        }
+        Ok(abandoned.len())
     }
 
     /// Clean up expired secrets during application startup
