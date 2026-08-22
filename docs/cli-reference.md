@@ -92,6 +92,24 @@ Roles are ordered — each admits everything below it:
 | `operator` | additionally store and delete secrets |
 | `admin` | additionally manage identities and master keys |
 
+### `sealbox-cli issuer add <name> --issuer-url <iss> --jwks-file <file>` *(admin)*
+
+Registers a platform whose signed tokens may authenticate — a Kubernetes cluster, GitHub Actions,
+anything that speaks OIDC. What is uploaded is public key material, so this hands nothing over;
+what it widens is *who may act here*, which is why it needs a passkey.
+
+```bash
+kubectl get --raw /openid/v1/jwks > jwks.json
+sealbox-cli admin issuer add prod-cluster \
+  --issuer-url "$(kubectl get --raw /.well-known/openid-configuration | jq -r .issuer)" \
+  --jwks-file jwks.json
+```
+
+`issuer update <name> --jwks-file <file>` replaces the keys. A cluster rotating its signing key
+publishes both for a while: register the document holding both, and register it again without the
+old one when nothing presents it. `issuer list` and `issuer rm` do what they say — removing one
+stops every identity bound to it.
+
 ### `sealbox-cli identity list` / `identity revoke <name>`
 
 Listing never shows tokens. Revocation takes effect on that identity's next request and affects
@@ -314,14 +332,23 @@ a credential must not travel that way.
 
 The new value is not displayed, to anyone, ever.
 
-### `sealbox-cli runner --name <name>`
+### `sealbox-cli runner --name <name> [--token-file <path>]`
 
 Claims jobs addressed to this runner, executes them, and reports back. **This is the only place a
 grant runs, and the only place a secret's plaintext exists outside the server.**
 
 ```bash
-sealbox-cli runner --name prod-cluster
+# with workload identity — no sealbox credential anywhere in the cluster
+sealbox-cli runner --name prod-runner --token-file /var/run/sealbox/token
+
+# with a bearer token, for a machine that has no workload identity to present
+SEALBOX_TOKEN=<the runner's token> sealbox-cli runner --name laptop
 ```
+
+`--token-file` is re-read **before every poll**, because the platform rotates it underneath — a
+runner that read it once at start-up would work until the first rotation and then stop. The file
+must hold a JWT; a Secret mounted where the projected token was meant to go fails with that said
+plainly rather than as an authentication error.
 
 It dials out — the network it sits in needs no inbound port, no Ingress, and no public endpoint.
 

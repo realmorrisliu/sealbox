@@ -23,7 +23,10 @@ impl SqliteIdentityRepo {
                 id BLOB PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 role TEXT NOT NULL,
-                token_hash BLOB NOT NULL UNIQUE,
+                token_hash BLOB NOT NULL,
+                issuer TEXT,
+                subject TEXT,
+                audience TEXT,
                 created_at INTEGER NOT NULL,
                 revoked_at INTEGER
             )",
@@ -37,7 +40,8 @@ impl SqliteIdentityRepo {
         Ok(())
     }
 
-    const COLUMNS: &'static str = "id, name, role, token_hash, created_at, revoked_at";
+    const COLUMNS: &'static str =
+        "id, name, role, token_hash, issuer, subject, audience, created_at, revoked_at";
 
     fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Identity> {
         Ok(Identity {
@@ -45,8 +49,11 @@ impl SqliteIdentityRepo {
             name: row.get(1)?,
             role: row.get(2)?,
             token_hash: row.get(3)?,
-            created_at: row.get(4)?,
-            revoked_at: row.get(5)?,
+            issuer: row.get(4)?,
+            subject: row.get(5)?,
+            audience: row.get(6)?,
+            created_at: row.get(7)?,
+            revoked_at: row.get(8)?,
         })
     }
 }
@@ -56,13 +63,17 @@ impl IdentityRepo for SqliteIdentityRepo {
         let guard = self.conn.lock()?;
         guard
             .execute(
-                "INSERT INTO identities (id, name, role, token_hash, created_at, revoked_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO identities
+                     (id, name, role, token_hash, issuer, subject, audience, created_at, revoked_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 (
                     &identity.id,
                     &identity.name,
                     &identity.role,
                     &identity.token_hash,
+                    &identity.issuer,
+                    &identity.subject,
+                    &identity.audience,
                     &identity.created_at,
                     &identity.revoked_at,
                 ),
@@ -78,21 +89,34 @@ impl IdentityRepo for SqliteIdentityRepo {
         Ok(())
     }
 
+    /// An empty hash never matches: a workload identity holds no token, and its row stores an
+    /// empty one. Without this, presenting an empty credential would resolve to it.
+    fn find_by_token(&self, token: &str) -> Result<Option<Identity>> {
+        let hash = hash_token(token);
+        let guard = self.conn.lock()?;
+        let mut stmt = guard.prepare(&format!(
+            "SELECT {} FROM identities
+             WHERE token_hash = ?1 AND token_hash != X'' AND revoked_at IS NULL LIMIT 1",
+            Self::COLUMNS
+        ))?;
+        Ok(stmt.query_one([hash], Self::from_row).optional()?)
+    }
+
+    fn find_by_workload(&self, issuer: &str, subject: &str) -> Result<Option<Identity>> {
+        let guard = self.conn.lock()?;
+        let mut stmt = guard.prepare(&format!(
+            "SELECT {} FROM identities
+             WHERE issuer = ?1 AND subject = ?2 AND revoked_at IS NULL LIMIT 1",
+            Self::COLUMNS
+        ))?;
+        Ok(stmt
+            .query_one([issuer, subject], Self::from_row)
+            .optional()?)
+    }
+
     /// Resolves a presented token by looking up its hash — a single indexed query, rather than
     /// reading candidates and comparing them. A revoked identity resolves to `None`, so a
     /// revocation takes effect on the very next request.
-    fn find_by_token(&self, token: &str) -> Result<Option<Identity>> {
-        let guard = self.conn.lock()?;
-        let mut stmt = guard.prepare(&format!(
-            "SELECT {} FROM identities WHERE token_hash = ?1 AND revoked_at IS NULL LIMIT 1",
-            Self::COLUMNS
-        ))?;
-        let identity = stmt
-            .query_one([hash_token(token)], Self::from_row)
-            .optional()?;
-        Ok(identity)
-    }
-
     fn find_by_name(&self, name: &str) -> Result<Option<Identity>> {
         let guard = self.conn.lock()?;
         let mut stmt = guard.prepare(&format!(

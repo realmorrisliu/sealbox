@@ -117,8 +117,8 @@ Acceptance test: the author's own infrastructure runs on it.
    backs it up by hand — a manual step in a security-critical position, documented in
    `docs/getting-started.md` and deliberately called out as interim.
 2. **`identities`** — *partly done.* Identities, four roles, hashed tokens, revocation, the audit
-   trail, a bounded bootstrap, and passkeys all exist. **Still missing:** join tokens for runners,
-   so a runner's token is long-lived rather than exchanged for one it generates itself.
+   trail, a bounded bootstrap, passkeys, and **workload identity for runners** all exist — a
+   runner presents the token its platform signs and holds no sealbox credential at all.
 3. ~~**`sealbox set` and `sealbox gen`.**~~ *Done.* `set` reads stdin only; `gen` produces the
    value server-side and returns it to nobody. Minimum length 16, default 32, password alphabet
    without ambiguous characters or punctuation.

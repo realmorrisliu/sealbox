@@ -20,7 +20,7 @@ use crate::{
         auth::{
             authenticate_and_audit, require_admin, require_agent, require_operator, require_runner,
         },
-        handler::{admin, admin_auth, audit, grant, identity, job, master_key, secret},
+        handler::{admin, admin_auth, audit, grant, identity, issuer, job, master_key, secret},
         state::AppState,
     },
     config::SealboxConfig,
@@ -37,6 +37,8 @@ const REQUEST_ID_HEADER: &str = "x-request-id";
 
 /// A job claimed but unreported for this long is presumed lost.
 pub const JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+pub(crate) mod workload;
 
 #[cfg(test)]
 mod tests;
@@ -152,6 +154,11 @@ fn build_router(state: AppState) -> Router {
             axum::routing::delete(admin::cleanup_expired),
         )
         .route("/v1/identities", get(identity::list).post(identity::create))
+        .route("/v1/issuers", get(issuer::list).post(issuer::register))
+        .route(
+            "/v1/issuers/{name}",
+            axum::routing::put(issuer::update_keys).delete(issuer::remove),
+        )
         .route(
             "/v1/identities/{name}",
             axum::routing::delete(identity::revoke),

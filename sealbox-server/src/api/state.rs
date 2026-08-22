@@ -29,6 +29,7 @@ pub(crate) struct AppState {
     pub(crate) grant_repo: Arc<dyn GrantRepo>,
     pub(crate) job_repo: Arc<dyn JobRepo>,
     pub(crate) authenticator_repo: Arc<dyn AuthenticatorRepo>,
+    pub(crate) issuer_repo: Arc<dyn crate::repo::IssuerRepo>,
     /// Challenges, sessions, enrolments, and pending approvals — all in memory, deliberately.
     pub(crate) passkey: crate::api::passkey::PasskeyState,
     /// When the bootstrap token stops being accepted. Stored as a deadline rather than a start
@@ -51,6 +52,7 @@ impl AppState {
         SqliteGrantRepo::init_table(&conn)?;
         SqliteJobRepo::init_table(&conn)?;
         SqliteAuthenticatorRepo::init_table(&conn)?;
+        crate::repo::SqliteIssuerRepo::init_table(&conn)?;
 
         // One connection, shared by the repositories. Nothing above this layer holds it:
         // a database lock has no business in an HTTP handler.
@@ -65,7 +67,8 @@ impl AppState {
             audit_repo: Arc::new(SqliteAuditRepo::new(conn.clone())),
             grant_repo: Arc::new(SqliteGrantRepo::new(conn.clone())),
             job_repo: Arc::new(SqliteJobRepo::new(conn.clone())),
-            authenticator_repo: Arc::new(SqliteAuthenticatorRepo::new(conn)),
+            authenticator_repo: Arc::new(SqliteAuthenticatorRepo::new(conn.clone())),
+            issuer_repo: Arc::new(crate::repo::SqliteIssuerRepo::new(conn)),
             passkey: crate::api::passkey::PasskeyState::new(&config.public_url)?,
             server_keys: Arc::new(HashMap::new()),
             bootstrap_deadline: Instant::now() + config.bootstrap_window,

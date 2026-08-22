@@ -126,17 +126,48 @@ no shared token.
 
 ## 4. Put a runner in your cluster *(implemented)*
 
-```bash
-sealbox-cli identity create prod-cluster --role runner   # prints its token once
-```
-
-Give that token to a runner inside your infrastructure:
+The runner holds **no sealbox credential**. It presents the ServiceAccount token its own cluster
+signs, and sealbox verifies that offline against keys you register once.
 
 ```bash
-SEALBOX_SERVER=https://sealbox.example.dev \
-SEALBOX_TOKEN=<the runner's token> \
-  sealbox-cli runner --name prod-cluster
+# once per cluster
+kubectl get --raw /openid/v1/jwks > jwks.json
+sealbox-cli admin issuer add prod-cluster \
+  --issuer-url "$(kubectl get --raw /.well-known/openid-configuration | jq -r .issuer)" \
+  --jwks-file jwks.json
+
+# one identity, one exact ServiceAccount
+sealbox-cli admin identity create prod-runner --role runner \
+  --issuer prod-cluster \
+  --subject system:serviceaccount:sealbox:runner \
+  --audience sealbox
 ```
+
+In the Deployment, mount a **projected** token with that audience — not the default one, or a
+token minted for the cluster's API server would authenticate here — and point the runner at it:
+
+```yaml
+      containers:
+        - name: runner
+          args: ["runner", "--name", "prod-runner", "--token-file", "/var/run/sealbox/token"]
+          env:
+            - name: SEALBOX_SERVER
+              value: https://sealbox.example.dev
+          volumeMounts:
+            - name: sealbox-identity
+              mountPath: /var/run/sealbox
+              readOnly: true
+      volumes:
+        - name: sealbox-identity
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: sealbox
+                  expirationSeconds: 3600
+```
+
+The runner re-reads that file before every poll, because the kubelet rotates it underneath.
 
 This is the only place a grant executes and the only place a secret's plaintext exists outside
 the server. It dials out, so the cluster needs no inbound port and no public endpoint.
@@ -145,9 +176,14 @@ Its permissions are disjoint from every other role: claim, execute, report — n
 admin cannot claim a job either, because the most privileged identity is still not the machine
 the job was addressed to.
 
-> **Target, not yet built:** the token is a long-lived identity token today. It will become a
-> 15-minute join token exchanged for a keypair the runner generates itself, so the Secret holding
-> it becomes worthless minutes later.
+> **Subjects match exactly.** A prefix would mean that creating a ServiceAccount is enough to
+> become a runner, and in most clusters far more people can create one than can be trusted with
+> plaintext. Revocation stays sealbox's: revoking the identity ends it regardless of what the
+> cluster keeps signing.
+
+> **A cluster that rotates its signing keys** needs its JWKS re-registered. Register the document
+> holding both keys with `issuer update`, and remove the old one once nothing presents it — the
+> same overlap master keys use.
 
 The runner needs **no inbound port, no Ingress, and no public endpoint** — it dials out. Its
 ServiceAccount is its entire authority over the cluster; scope it to exactly what your grants

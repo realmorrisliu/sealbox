@@ -43,10 +43,21 @@ enum Implementation {
 ///
 /// Outbound only: the runner dials the server, so the network it sits in needs no inbound port,
 /// no Ingress, and no public endpoint (ADR 0008).
-pub async fn run(config: &Config, output: &OutputManager, name: String) -> Result<()> {
-    config
-        .validate()
-        .context("Configuration validation failed")?;
+pub async fn run(
+    config: &Config,
+    output: &OutputManager,
+    name: String,
+    token_file: Option<String>,
+) -> Result<()> {
+    // A token file means the platform supplies the credential — a projected ServiceAccount token,
+    // say — and `config.server.token` need not be set at all.
+    if token_file.is_none() {
+        config
+            .validate()
+            .context("Configuration validation failed")?;
+    } else if config.server.url.is_empty() {
+        anyhow::bail!("Set the server URL with --url or SEALBOX_SERVER");
+    }
     output.print_info(&format!(
         "Runner '{name}' polling {} — this is the only place a grant executes.",
         config.server.url
@@ -59,7 +70,18 @@ pub async fn run(config: &Config, output: &OutputManager, name: String) -> Resul
         .context("Failed to build HTTP client")?;
 
     loop {
-        match claim(&client, config).await {
+        // Re-read every time round: the platform rotates the file underneath us, and a runner
+        // that read it once at start-up would work until the first rotation and then stop.
+        let credential = match credential(config, token_file.as_deref()) {
+            Ok(credential) => credential,
+            Err(e) => {
+                output.print_warning(&format!("{e}"));
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+
+        match claim(&client, config, &credential).await {
             Ok(Some(job)) => {
                 let id = job.id;
                 let grant = job.grant.clone();
@@ -81,7 +103,16 @@ pub async fn run(config: &Config, output: &OutputManager, name: String) -> Resul
                     (format!("{out}{err}"), None)
                 };
 
-                report(&client, config, id, exit_code, &reported, captured).await?;
+                report(
+                    &client,
+                    config,
+                    &credential,
+                    id,
+                    exit_code,
+                    &reported,
+                    captured,
+                )
+                .await?;
                 if exit_code == 0 {
                     output.print_success(&format!("Job {id} succeeded"));
                 } else {
@@ -97,10 +128,35 @@ pub async fn run(config: &Config, output: &OutputManager, name: String) -> Resul
     }
 }
 
-async fn claim(client: &Client, config: &Config) -> Result<Option<ClaimedJob>> {
+/// The credential to present: whatever the platform currently has in the token file, or the
+/// configured bearer token.
+fn credential(config: &Config, token_file: Option<&str>) -> Result<String> {
+    match token_file {
+        Some(path) => {
+            let token = std::fs::read_to_string(path).with_context(|| {
+                format!(
+                    "Cannot read the token at {path}. With a projected ServiceAccount token this \
+                     is the volume mount — check that the pod actually mounts it."
+                )
+            })?;
+            let token = token.trim().to_string();
+            if token.matches('.').count() != 2 {
+                anyhow::bail!(
+                    "{path} does not hold a JWT. A projected ServiceAccount token has three \
+                     dot-separated parts; a file with one line of something else is usually a \
+                     Secret mounted where the projected token was meant to go."
+                );
+            }
+            Ok(token)
+        }
+        None => Ok(config.server.token.clone()),
+    }
+}
+
+async fn claim(client: &Client, config: &Config, credential: &str) -> Result<Option<ClaimedJob>> {
     let response = client
         .get(format!("{}/v1/jobs/claim", config.server.url))
-        .bearer_auth(&config.server.token)
+        .bearer_auth(credential)
         .send()
         .await
         .context("Failed to reach server")?;
@@ -116,6 +172,7 @@ async fn claim(client: &Client, config: &Config) -> Result<Option<ClaimedJob>> {
 async fn report(
     client: &Client,
     config: &Config,
+    credential: &str,
     id: i64,
     exit_code: i32,
     output: &str,
@@ -123,7 +180,7 @@ async fn report(
 ) -> Result<()> {
     let response = client
         .post(format!("{}/v1/jobs/{id}/result", config.server.url))
-        .bearer_auth(&config.server.token)
+        .bearer_auth(credential)
         .json(&serde_json::json!({
             "exit_code": exit_code,
             "output": output,

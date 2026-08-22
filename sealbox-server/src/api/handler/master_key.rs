@@ -112,7 +112,8 @@ mod tests {
             audit_repo: Arc::new(crate::repo::SqliteAuditRepo::new(conn.clone())),
             grant_repo: Arc::new(crate::repo::SqliteGrantRepo::new(conn.clone())),
             job_repo: Arc::new(crate::repo::SqliteJobRepo::new(conn.clone())),
-            authenticator_repo: Arc::new(crate::repo::SqliteAuthenticatorRepo::new(conn)),
+            authenticator_repo: Arc::new(crate::repo::SqliteAuthenticatorRepo::new(conn.clone())),
+            issuer_repo: Arc::new(crate::repo::SqliteIssuerRepo::new(conn)),
             passkey: crate::api::passkey::PasskeyState::new("http://localhost:8080")
                 .expect("Should build passkey state"),
             config: Arc::new(SealboxConfig::default()),

@@ -15,7 +15,8 @@ use crate::{
 
 pub(crate) use self::sqlite::{
     SqliteAuditRepo, SqliteAuthenticatorRepo, SqliteGrantRepo, SqliteHealthRepo,
-    SqliteIdentityRepo, SqliteJobRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+    SqliteIdentityRepo, SqliteIssuerRepo, SqliteJobRepo, SqliteMasterKeyRepo, SqliteSecretRepo,
+    create_db_connection,
 };
 
 pub mod adapter;
@@ -223,8 +224,19 @@ pub struct Identity {
     pub id: Uuid,
     pub name: String,
     pub role: Role,
+    /// Empty when this identity authenticates as a workload instead of holding a credential.
     #[serde(skip)]
     pub token_hash: Vec<u8>,
+    /// Bound to a registered issuer: the identity presents a token that issuer signed rather than
+    /// one sealbox handed out. An identity does one or the other, never both — a runner that can
+    /// still be reached with a stored token has not stopped holding a stored token.
+    pub issuer: Option<String>,
+    /// The exact `sub` that may act as this identity. Exact, because in most clusters far more
+    /// people can create a ServiceAccount than can be trusted with plaintext.
+    pub subject: Option<String>,
+    /// The `aud` the token must carry. Required, so a token minted for the cluster's API server
+    /// does not authenticate here.
+    pub audience: Option<String>,
     pub created_at: i64,
     /// Set rather than deleting the row, so audit records naming this identity stay meaningful.
     pub revoked_at: Option<i64>,
@@ -242,6 +254,9 @@ impl Identity {
 
         let identity = Self {
             id: Uuid::new_v4(),
+            issuer: None,
+            subject: None,
+            audience: None,
             name,
             role,
             token_hash: hash_token(&token),
@@ -249,6 +264,31 @@ impl Identity {
             revoked_at: None,
         };
         Ok((identity, token))
+    }
+
+    /// An identity that holds no credential at all: it authenticates by presenting a token its
+    /// platform signed, checked against a registered issuer.
+    ///
+    /// The token hash is empty, and the lookup by hash refuses an empty one — otherwise
+    /// presenting nothing would resolve to this identity.
+    pub(crate) fn workload(
+        name: String,
+        role: Role,
+        issuer: String,
+        subject: String,
+        audience: String,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            role,
+            token_hash: Vec::new(),
+            issuer: Some(issuer),
+            subject: Some(subject),
+            audience: Some(audience),
+            created_at: time::OffsetDateTime::now_utc().unix_timestamp(),
+            revoked_at: None,
+        }
     }
 
     pub fn is_revoked(&self) -> bool {
@@ -274,6 +314,11 @@ pub(crate) trait IdentityRepo: Send + Sync {
     /// Resolve a presented token to a live identity. Returns `None` for unknown or revoked.
     fn find_by_token(&self, token: &str) -> Result<Option<Identity>>;
     fn find_by_name(&self, name: &str) -> Result<Option<Identity>>;
+    /// The identity bound to exactly this issuer and subject, if it is live.
+    ///
+    /// The pair comes from a token that has **not been verified yet** — it is used only to find
+    /// which identity's rules to check the token against, never to decide that the token is good.
+    fn find_by_workload(&self, issuer: &str, subject: &str) -> Result<Option<Identity>>;
     fn list(&self) -> Result<Vec<Identity>>;
     fn revoke(&self, name: &str) -> Result<()>;
     /// Whether any identity exists at all. The bootstrap path turns on this.
@@ -748,6 +793,29 @@ impl MasterKey {
 }
 
 /// MasterKeyRepo trait for managing master_keys table
+/// A token issuer whose signatures sealbox will accept: a name, the `iss` its tokens carry, and
+/// its public keys as a JWKS.
+///
+/// Registered rather than discovered. A hosted server cannot reach a private cluster's OIDC
+/// endpoint — the same constraint that made the runner poll outbound (ADR 0008).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Issuer {
+    pub name: String,
+    pub url: String,
+    /// The JWKS document, stored as it was supplied. More than one key may be present, which is
+    /// what lets a signing-key rotation overlap instead of cutting over.
+    pub jwks: String,
+    pub created_at: i64,
+}
+
+pub(crate) trait IssuerRepo: Send + Sync {
+    fn register(&self, issuer: &Issuer) -> Result<()>;
+    fn update_keys(&self, name: &str, jwks: &str) -> Result<()>;
+    fn remove(&self, name: &str) -> Result<()>;
+    fn list(&self) -> Result<Vec<Issuer>>;
+    fn find_by_url(&self, url: &str) -> Result<Option<Issuer>>;
+}
+
 pub(crate) trait MasterKeyRepo: Send + Sync {
     fn create_master_key(&self, key: &MasterKey) -> Result<()>;
     fn fetch_all_master_keys(&self) -> Result<Vec<MasterKey>>;

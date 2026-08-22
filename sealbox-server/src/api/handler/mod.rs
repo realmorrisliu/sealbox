@@ -3,6 +3,7 @@ pub(crate) mod admin_auth;
 pub(crate) mod audit;
 pub(crate) mod grant;
 pub(crate) mod identity;
+pub(crate) mod issuer;
 pub(crate) mod job;
 pub(crate) mod master_key;
 pub(crate) mod secret;

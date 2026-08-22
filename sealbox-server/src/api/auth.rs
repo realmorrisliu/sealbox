@@ -5,6 +5,7 @@ use axum::{
     response::Response,
 };
 
+use crate::api::workload;
 use crate::{
     api::state::AppState,
     error::{Result, SealboxError},
@@ -18,6 +19,9 @@ use crate::{
 pub(crate) enum AuthMethod {
     BearerToken,
     PasskeySession,
+    /// A token signed by a registered issuer — a workload proving what it is rather than holding
+    /// something it was given.
+    WorkloadToken,
 }
 
 /// Authenticate the caller, run the request, and record the attempt.
@@ -43,10 +47,14 @@ pub(crate) async fn authenticate_and_audit(
                 .identity_repo
                 .find_by_name(&name)?
                 .map(|i| (i, AuthMethod::PasskeySession)),
-            None => state
-                .identity_repo
-                .find_by_token(token)?
-                .map(|i| (i, AuthMethod::BearerToken)),
+            None => match state.identity_repo.find_by_token(token)? {
+                Some(identity) => Some((identity, AuthMethod::BearerToken)),
+                // Not a credential sealbox handed out. It may be one a registered issuer signed —
+                // the only kind of authentication that leaves nothing on the presenter's disk.
+                None => {
+                    workload::authenticate(&state, token)?.map(|i| (i, AuthMethod::WorkloadToken))
+                }
+            },
         },
         None => None,
     };

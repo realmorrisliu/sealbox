@@ -138,8 +138,10 @@ to.
 | `SEALBOX_SERVER` | Server URL |
 | `SEALBOX_TOKEN` | The runner identity's token |
 
-*Target, not yet built:* a 15-minute join token exchanged on first start for a keypair the runner
-generates itself, so that the Secret holding it becomes worthless minutes later.
+The runner authenticates with **workload identity**: `--token-file` points at a projected
+ServiceAccount token, re-read before every poll because the platform rotates it. `SEALBOX_TOKEN` is
+then unnecessary — there is no sealbox credential in the cluster at all. See
+[Getting started](getting-started.md#4-put-a-runner-in-your-cluster-implemented).
 
 ```yaml
 # runner-deployment.yaml (abridged)

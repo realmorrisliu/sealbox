@@ -2345,3 +2345,366 @@ async fn a_signature_for_one_approval_does_not_approve_another() {
         "the grant they wanted must not exist"
     );
 }
+
+// ---------------------------------------------------------------- workload identity
+//
+// A runner's credential is the only one that receives plaintext. These drive the real routes with
+// real signatures, so what is asserted is what a cluster's token would meet.
+
+/// A stand-in issuer: an RSA key, the JWKS that publishes it, and tokens signed by it.
+struct Platform {
+    encoding: jsonwebtoken::EncodingKey,
+    jwks: String,
+    url: String,
+}
+
+impl Platform {
+    fn new(url: &str) -> Self {
+        use base64::Engine;
+        use rsa::traits::PublicKeyParts;
+
+        let (private_pem, _) =
+            crate::crypto::master_key::generate_key_pair().expect("Should generate a key");
+        // The generator emits PKCS#1; jsonwebtoken wants PKCS#8, so convert once here.
+        let private =
+            <rsa::RsaPrivateKey as rsa::pkcs1::DecodeRsaPrivateKey>::from_pkcs1_pem(&private_pem)
+                .expect("Should parse");
+        let pkcs8 = <rsa::RsaPrivateKey as rsa::pkcs8::EncodePrivateKey>::to_pkcs8_pem(
+            &private,
+            rsa::pkcs8::LineEnding::LF,
+        )
+        .expect("Should re-encode");
+        let public = private.to_public_key();
+
+        let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let jwks = serde_json::json!({
+            "keys": [{
+                "kty": "RSA",
+                "kid": "test-key",
+                "alg": "RS256",
+                "use": "sig",
+                "n": b64.encode(public.n().to_bytes_be()),
+                "e": b64.encode(public.e().to_bytes_be()),
+            }]
+        })
+        .to_string();
+
+        Self {
+            encoding: jsonwebtoken::EncodingKey::from_rsa_pem(pkcs8.as_bytes())
+                .expect("Should build an encoding key"),
+            jwks,
+            url: url.to_string(),
+        }
+    }
+
+    fn sign(&self, subject: &str, audience: &str, expires_in: i64) -> String {
+        self.sign_with_kid(subject, audience, expires_in, Some("test-key"))
+    }
+
+    fn sign_with_kid(
+        &self,
+        subject: &str,
+        audience: &str,
+        expires_in: i64,
+        kid: Option<&str>,
+    ) -> String {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let claims = serde_json::json!({
+            "iss": self.url,
+            "sub": subject,
+            "aud": audience,
+            "iat": now,
+            "exp": now + expires_in,
+        });
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+        header.kid = kid.map(|k| k.to_string());
+        jsonwebtoken::encode(&header, &claims, &self.encoding).expect("Should sign")
+    }
+}
+
+/// Register the platform as an issuer and bind a runner identity to one subject.
+async fn bind_runner(
+    server: &TestServer,
+    admin: &str,
+    platform: &Platform,
+    name: &str,
+    subject: &str,
+) {
+    let response = server
+        .send(
+            post("/v1/issuers", Some(admin))
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "prod-cluster",
+                        "url": platform.url,
+                        "jwks": platform.jwks,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "registering the issuer");
+
+    let response = server
+        .send(
+            post("/v1/identities", Some(admin))
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": name,
+                        "role": "runner",
+                        "issuer": "prod-cluster",
+                        "subject": subject,
+                        "audience": "sealbox",
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "binding the runner");
+    let body = server.json(response).await;
+    assert!(
+        body["token"].is_null(),
+        "a bound identity holds no credential: {body}"
+    );
+}
+
+/// What a runner does with its token: claim a job.
+async fn claim_with(server: &TestServer, token: &str) -> http::StatusCode {
+    server
+        .send(get("/v1/jobs/claim?runner=prod-runner", Some(token)))
+        .await
+        .status()
+}
+
+#[tokio::test]
+async fn a_workload_token_authenticates_a_runner() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let platform = Platform::new("https://kubernetes.default.svc.cluster.local");
+    bind_runner(
+        &server,
+        &admin,
+        &platform,
+        "prod-runner",
+        "system:serviceaccount:sealbox:runner",
+    )
+    .await;
+
+    let token = platform.sign("system:serviceaccount:sealbox:runner", "sealbox", 3600);
+    assert!(
+        claim_with(&server, &token).await.is_success(),
+        "a valid token from the bound issuer authenticates"
+    );
+}
+
+#[tokio::test]
+async fn every_way_a_workload_token_can_be_wrong_is_refused() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let platform = Platform::new("https://kubernetes.default.svc.cluster.local");
+    bind_runner(
+        &server,
+        &admin,
+        &platform,
+        "prod-runner",
+        "system:serviceaccount:sealbox:runner",
+    )
+    .await;
+
+    let elsewhere = Platform::new("https://someone-elses-cluster");
+
+    let cases = [
+        (
+            "another subject in the same cluster",
+            platform.sign("system:serviceaccount:default:anyone", "sealbox", 3600),
+        ),
+        (
+            "a subject differing only by a suffix",
+            platform.sign("system:serviceaccount:sealbox:runner-2", "sealbox", 3600),
+        ),
+        (
+            "a token minted for the API server",
+            platform.sign(
+                "system:serviceaccount:sealbox:runner",
+                "https://kubernetes.default.svc",
+                3600,
+            ),
+        ),
+        (
+            "an expired token",
+            platform.sign("system:serviceaccount:sealbox:runner", "sealbox", -7200),
+        ),
+        (
+            "a token signed by another issuer's key",
+            elsewhere.sign("system:serviceaccount:sealbox:runner", "sealbox", 3600),
+        ),
+        (
+            "a key nobody registered",
+            platform.sign_with_kid(
+                "system:serviceaccount:sealbox:runner",
+                "sealbox",
+                3600,
+                Some("some-other-key"),
+            ),
+        ),
+        (
+            "something that is not a token at all",
+            "not.a.jwt".to_string(),
+        ),
+    ];
+
+    for (what, token) in cases {
+        assert_eq!(
+            claim_with(&server, &token).await,
+            StatusCode::UNAUTHORIZED,
+            "{what} must be refused"
+        );
+    }
+}
+
+#[tokio::test]
+async fn revoking_a_bound_identity_ends_it_whatever_the_platform_signs() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let platform = Platform::new("https://kubernetes.default.svc.cluster.local");
+    bind_runner(
+        &server,
+        &admin,
+        &platform,
+        "prod-runner",
+        "system:serviceaccount:sealbox:runner",
+    )
+    .await;
+
+    let token = platform.sign("system:serviceaccount:sealbox:runner", "sealbox", 3600);
+    assert!(claim_with(&server, &token).await.is_success());
+
+    // Revocation has to be sealbox's, not the platform's: the cluster will happily keep signing.
+    let response = server
+        .send(
+            build("DELETE", "/v1/identities/prod-runner", Some(&admin))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "revoking");
+
+    assert_eq!(
+        claim_with(&server, &token).await,
+        StatusCode::UNAUTHORIZED,
+        "the same token must stop working the moment the identity is revoked"
+    );
+}
+
+#[tokio::test]
+async fn both_keys_work_while_a_signing_key_rotates() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let old = Platform::new("https://kubernetes.default.svc.cluster.local");
+    bind_runner(
+        &server,
+        &admin,
+        &old,
+        "prod-runner",
+        "system:serviceaccount:sealbox:runner",
+    )
+    .await;
+
+    // A cluster rotating its signing key publishes both for a while. Registering the combined
+    // JWKS is how that overlaps here instead of cutting over and stranding every runner.
+    let new = Platform::new("https://kubernetes.default.svc.cluster.local");
+    let mut combined: serde_json::Value = serde_json::from_str(&old.jwks).unwrap();
+    let mut new_key: serde_json::Value = serde_json::from_str(&new.jwks).unwrap();
+    new_key["keys"][0]["kid"] = serde_json::json!("rotated-key");
+    combined["keys"]
+        .as_array_mut()
+        .unwrap()
+        .push(new_key["keys"][0].clone());
+
+    let response = server
+        .send(
+            build("PUT", "/v1/issuers/prod-cluster", Some(&admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "jwks": combined.to_string() }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "registering both keys");
+
+    for (which, token) in [
+        (
+            "the old key",
+            old.sign("system:serviceaccount:sealbox:runner", "sealbox", 3600),
+        ),
+        (
+            "the new key",
+            new.sign_with_kid(
+                "system:serviceaccount:sealbox:runner",
+                "sealbox",
+                3600,
+                Some("rotated-key"),
+            ),
+        ),
+    ] {
+        assert!(
+            claim_with(&server, &token).await.is_success(),
+            "{which} should authenticate during a rotation"
+        );
+    }
+}
+
+#[tokio::test]
+async fn binding_an_identity_needs_all_three_parts() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let response = server
+        .send(
+            post("/v1/identities", Some(&admin))
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "half-bound",
+                        "role": "runner",
+                        "issuer": "prod-cluster",
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = server.json(response).await;
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("audience"),
+        "the refusal should say what is missing and why: {body}"
+    );
+}
+
+#[tokio::test]
+async fn an_issuer_that_does_not_parse_is_refused_while_someone_is_there_to_fix_it() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let response = server
+        .send(
+            post("/v1/issuers", Some(&admin))
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "typo",
+                        "url": "https://cluster",
+                        "jwks": "{ not a jwks }",
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
