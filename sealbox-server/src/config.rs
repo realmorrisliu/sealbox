@@ -23,6 +23,12 @@ pub struct SealboxConfig {
     /// still loaded, so their secrets remain readable and can be rekeyed onto the current key.
     /// A retired key is removed from this list once nothing references it (ADR 0001).
     pub master_key_paths: Vec<String>,
+    /// Where Litestream serves its metrics, if replication is being watched.
+    ///
+    /// Optional: a server with no replication configured is a legitimate local run. What is not
+    /// legitimate is *believing* replication is happening when it stopped weeks ago, which is
+    /// what this exists to catch.
+    pub replication_metrics_url: Option<String>,
 }
 
 impl SealboxConfig {
@@ -85,6 +91,10 @@ impl SealboxConfig {
             }
         };
 
+        let replication_metrics_url = env::var("SEALBOX_REPLICATION_METRICS_URL")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
+
         info!(
             "Sealbox configuration loaded: {:?}",
             SealboxConfig {
@@ -94,6 +104,7 @@ impl SealboxConfig {
                 store_path: store_path.clone(),
                 master_key_paths: master_key_paths.clone(),
                 listen_addr: listen_addr.clone(),
+                replication_metrics_url: replication_metrics_url.clone(),
             }
         );
 
@@ -104,6 +115,7 @@ impl SealboxConfig {
             store_path,
             listen_addr,
             master_key_paths,
+            replication_metrics_url,
         })
     }
 }
@@ -117,6 +129,7 @@ impl Default for SealboxConfig {
             store_path: ":memory:".to_string(),
             listen_addr: "127.0.0.1:8080".to_string(),
             master_key_paths: Vec::new(),
+            replication_metrics_url: None,
         }
     }
 }

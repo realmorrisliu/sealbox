@@ -22,6 +22,7 @@ Environment variables. On Fly.io, non-secret values go in `fly.toml`, secrets vi
 | `SEALBOX_PUBLIC_URL` | ✓ | Public HTTPS URL. **Also the WebAuthn relying-party ID** — changing it invalidates every registered passkey. |
 | `SEALBOX_BOOTSTRAP_TOKEN` | first run | Creates the first admin. Accepted only while zero identities exist and only within the window below. Unset it afterwards. |
 | `SEALBOX_BOOTSTRAP_WINDOW_SECS` | | How long the bootstrap token stays usable. Default 1800. |
+| `SEALBOX_REPLICATION_METRICS_URL` | | Where Litestream serves metrics, e.g. `http://127.0.0.1:9090/metrics`. Unset means replication is not watched — reported as *not configured*, which is not the same as fine. |
 
 ```toml
 # fly.toml
@@ -104,6 +105,29 @@ dbs:
         bucket: sealbox-backups
         endpoint: https://s3.example.com
 ```
+
+### Replication is watched, not assumed
+
+Litestream fails silently: a replica that stopped three weeks ago looks exactly like a working one
+until someone restores from it. So the server asks it, once a minute, whether it is still going —
+`litestream_sync_count` must move, because Litestream syncs on a one-second ticker whether or not
+anything was written, and `litestream_sync_error_count` must not.
+
+```yaml
+# litestream.yml
+addr: ":9090"          # without this there are no metrics to ask for
+dbs:
+  - path: /data/sealbox.db
+    replicas: [...]
+```
+
+`GET /healthz/replication` answers **503** while it is failing, and each transition is written to
+the audit trail once — edge-triggered, so a week-long outage is two records rather than ten
+thousand.
+
+It deliberately does **not** affect `/healthz/ready`. A server that stops serving because its
+backup is stale has turned a recoverable problem into an outage, and taking the machine out of
+rotation does not fix replication.
 
 Litestream covers the database and **not** the master key. A replicated database without its key
 is ciphertext under a key that no longer exists, which looks like a healthy backup right up until

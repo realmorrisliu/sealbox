@@ -31,6 +31,7 @@ pub(crate) struct AppState {
     pub(crate) authenticator_repo: Arc<dyn AuthenticatorRepo>,
     pub(crate) issuer_repo: Arc<dyn crate::repo::IssuerRepo>,
     pub(crate) recovery_repo: Arc<dyn crate::repo::RecoveryRepo>,
+    pub(crate) replication: crate::api::replication::ReplicationWatch,
     /// Challenges, sessions, enrolments, and pending approvals — all in memory, deliberately.
     pub(crate) passkey: crate::api::passkey::PasskeyState,
     /// When the bootstrap token stops being accepted. Stored as a deadline rather than a start
@@ -72,6 +73,9 @@ impl AppState {
             authenticator_repo: Arc::new(SqliteAuthenticatorRepo::new(conn.clone())),
             issuer_repo: Arc::new(crate::repo::SqliteIssuerRepo::new(conn.clone())),
             recovery_repo: Arc::new(crate::repo::SqliteRecoveryRepo::new(conn)),
+            replication: crate::api::replication::ReplicationWatch::new(
+                config.replication_metrics_url.is_some(),
+            ),
             passkey: crate::api::passkey::PasskeyState::new(&config.public_url)?,
             server_keys: Arc::new(HashMap::new()),
             bootstrap_deadline: Instant::now() + config.bootstrap_window,
@@ -270,6 +274,7 @@ mod tests {
                 .map(|p| dir.path().join(p).to_string_lossy().into_owned())
                 .collect(),
             bootstrap_window: std::time::Duration::from_secs(1800),
+            replication_metrics_url: None,
         }
     }
 

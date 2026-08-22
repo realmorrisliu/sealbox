@@ -120,6 +120,7 @@ mod tests {
             authenticator_repo: Arc::new(crate::repo::SqliteAuthenticatorRepo::new(conn.clone())),
             issuer_repo: Arc::new(crate::repo::SqliteIssuerRepo::new(conn.clone())),
             recovery_repo: Arc::new(crate::repo::SqliteRecoveryRepo::new(conn)),
+            replication: crate::api::replication::ReplicationWatch::new(false),
             passkey: crate::api::passkey::PasskeyState::new("http://localhost:8080")
                 .expect("Should build passkey state"),
             config: Arc::new(SealboxConfig::default()),

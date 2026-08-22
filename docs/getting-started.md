@@ -84,9 +84,13 @@ dbs:
         path: sealbox
 ```
 
-With no configuration file it runs the server and replicates nothing, which is the right behaviour
-for a local run and the wrong one for production — check `fly logs` for Litestream announcing the
-replica after the first deploy.
+Add `addr: ":9090"` at the top of that file and set `SEALBOX_REPLICATION_METRICS_URL` — then the
+server asks Litestream once a minute whether it is still replicating, answers **503** on
+`/healthz/replication` when it is not, and records each change in the audit trail. Without it,
+replication can stop and nothing will say so until the day you restore.
+
+The image ships a config that replicates **nowhere**, which is right for a local run and wrong for
+production — check `fly logs` for Litestream announcing the replica after the first deploy.
 
 ## 2. Become admin *(partly implemented)*
 

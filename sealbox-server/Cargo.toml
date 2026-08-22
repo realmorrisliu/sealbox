@@ -36,6 +36,9 @@ uuid = { workspace = true }
 serde_rusqlite = { workspace = true }
 webauthn-rs = "0.5"
 jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
+# Only ever used to ask Litestream, on loopback, whether it is still replicating. The server
+# reaches nothing else: runners poll inbound, and issuer keys are registered rather than fetched.
+reqwest = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }
