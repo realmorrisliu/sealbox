@@ -42,7 +42,7 @@ async fn add(config: &Config, output: &OutputManager, file: String) -> Result<()
         // Show what is actually being approved. The secrets line is the security-relevant part:
         // sealbox confines the implementation to exactly these, so however it is written it
         // cannot reach anything else.
-        output.print_info(&format!("Approving grant '{name}':"));
+        output.print_info(&format!("Submitting grant '{name}' for approval:"));
         print_declaration(output, &payload);
 
         let response = Client::new()
@@ -58,9 +58,49 @@ async fn add(config: &Config, output: &OutputManager, file: String) -> Result<()
             let detail = response.text().await.unwrap_or_default();
             anyhow::bail!("Grant '{name}' was refused ({status}): {detail}");
         }
+
+        // Nothing has been created yet. What the terminal printed above is a courtesy — the
+        // decision is made on the page the server renders, because a terminal's output is
+        // written by whatever process is running, and that may be the thing asking.
+        let staged: serde_json::Value = response
+            .json()
+            .await
+            .context("Failed to parse server response")?;
+        let url = staged["approve_at"].as_str().unwrap_or_default();
+
+        output.print_info(&format!("Approve it with your passkey:\n  {url}"));
+        output.print_info("  (open it here, or on your phone — this will pick it up)");
+        let _ = crate::commands::admin_commands::open_in_browser(url);
+
+        wait_for(config, &name).await?;
         output.print_success(&format!("Grant '{name}' approved."));
     }
     Ok(())
+}
+
+/// Wait for the grant to exist. Approval happens in a browser, possibly on another device, so
+/// the only thing to watch is whether it landed.
+async fn wait_for(config: &Config, name: &str) -> Result<()> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+    loop {
+        if std::time::Instant::now() > deadline {
+            anyhow::bail!(
+                "Timed out waiting for '{name}' to be approved. Nothing was created; submit it \
+                 again when you are ready to approve it."
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+
+        let response = Client::new()
+            .get(format!("{}/v1/grants/{name}", config.server.url))
+            .bearer_auth(&config.server.token)
+            .send()
+            .await
+            .context("Failed to request server")?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+    }
 }
 
 fn print_declaration(output: &OutputManager, payload: &serde_json::Value) {

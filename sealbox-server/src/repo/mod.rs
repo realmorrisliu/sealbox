@@ -14,8 +14,8 @@ use crate::{
 };
 
 pub(crate) use self::sqlite::{
-    SqliteAuditRepo, SqliteGrantRepo, SqliteHealthRepo, SqliteIdentityRepo, SqliteJobRepo,
-    SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+    SqliteAuditRepo, SqliteAuthenticatorRepo, SqliteGrantRepo, SqliteHealthRepo,
+    SqliteIdentityRepo, SqliteJobRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
 };
 
 pub mod adapter;
@@ -254,6 +254,7 @@ pub(crate) trait IdentityRepo: Send + Sync {
     fn create(&self, identity: &Identity) -> Result<()>;
     /// Resolve a presented token to a live identity. Returns `None` for unknown or revoked.
     fn find_by_token(&self, token: &str) -> Result<Option<Identity>>;
+    fn find_by_name(&self, name: &str) -> Result<Option<Identity>>;
     fn list(&self) -> Result<Vec<Identity>>;
     fn revoke(&self, name: &str) -> Result<()>;
     /// Whether any identity exists at all. The bootstrap path turns on this.
@@ -591,6 +592,23 @@ pub(crate) trait JobRepo: Send + Sync {
     fn report(&self, id: i64, runner: &str, exit_code: i32, output: &str) -> Result<Job>;
     /// Mark jobs claimed but unreported past the deadline as failed. Never re-queues them.
     fn fail_abandoned(&self, older_than: i64) -> Result<Vec<Job>>;
+}
+
+/// A registered WebAuthn credential. `passkey` holds the serialised public credential — what is
+/// needed to verify a signature, and not enough to produce one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Authenticator {
+    pub credential_id: String,
+    pub identity: String,
+    #[serde(skip)]
+    pub passkey: String,
+    pub created_at: i64,
+}
+
+pub(crate) trait AuthenticatorRepo: Send + Sync {
+    fn register(&self, identity: &str, credential_id: &str, passkey: &str) -> Result<()>;
+    fn for_identity(&self, identity: &str) -> Result<Vec<Authenticator>>;
+    fn count_for(&self, identity: &str) -> Result<usize>;
 }
 
 pub(crate) trait SecretRepo: Send + Sync {

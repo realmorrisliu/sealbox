@@ -24,6 +24,19 @@ pub(crate) async fn create(
     let (identity, token) = Identity::new(payload.name, role)?;
     state.identity_repo.create(&identity)?;
 
+    // An admin gets no credential at all — there is nothing to leak. It enrols an authenticator
+    // instead, and authenticates by proving possession of it (ADR 0009).
+    if role == Role::Admin {
+        let enrolment = state.passkey.issue_enrolment(&identity.name);
+        return Ok(SealboxResponse::Json(json!({
+            "name": identity.name,
+            "role": role.to_string(),
+            "enrol_at": format!("{}/enrol/{enrolment}", state.config.public_url),
+            "note": "Open that URL to register a passkey. No token is issued: an admin \
+                     credential on disk is exactly what an agent on your machine would read."
+        })));
+    }
+
     // The only time the plaintext token is ever returned.
     Ok(SealboxResponse::Json(json!({
         "name": identity.name,
@@ -94,8 +107,9 @@ pub(crate) async fn bootstrap(
         refuse("bootstrap token did not match")?;
     }
 
-    let (identity, token) = Identity::new(payload.name, Role::Admin)?;
+    let (identity, _token) = Identity::new(payload.name, Role::Admin)?;
     state.identity_repo.create(&identity)?;
+    let enrolment = state.passkey.issue_enrolment(&identity.name);
 
     // Recorded against an empty trail: the first entry is how the server was claimed.
     state.audit_repo.append(&NewAuditRecord {
@@ -109,7 +123,8 @@ pub(crate) async fn bootstrap(
     Ok(SealboxResponse::Json(json!({
         "name": identity.name,
         "role": identity.role.to_string(),
-        "token": token,
-        "warning": "This token is shown once and cannot be retrieved again."
+        "enrol_at": format!("{}/enrol/{enrolment}", state.config.public_url),
+        "note": "Open that URL to register a passkey. Then unset SEALBOX_BOOTSTRAP_TOKEN — it \
+                 has served its purpose and only widens exposure from here."
     })))
 }

@@ -159,16 +159,23 @@ Rotation is one command, not a browser session plus a workflow dispatch.
 | `grants`, `ls`, `audit` | ✓ | ✓ | ✓ | |
 | `rotate` via an approved grant | ✓ | ✓ | ✓ | |
 | `set` a secret | ✓ | ✓ | | |
-| **`grant add` — approve a capability** | ✓ | | | |
+| `grant add` — submit a draft for approval | ✓ | ✓ | ✓ | |
+| **approve a capability** (passkey, not a role) | ✓ | | | |
+| remove a grant, manage identities and master keys | ✓ | | | |
 | claim a job addressed to it, and receive that job's plaintext | | | | ✓ |
 
 The runner's row is disjoint from every other: it is the only identity that receives plaintext,
 and the only one that cannot ask for anything. It takes what it is given and reports back. It
 cannot enumerate secrets, read one it was not sent, or start a job.
 
-**`grant add` is the only gate, and it has no tiers** — every grant needs an admin passkey
-approval (ADR 0009). An agent can draft a grant; it cannot make one runnable, and there is no
-admin credential on disk for it to steal.
+**Approval is the only gate, and it has no tiers** — every grant needs an admin passkey
+approval (ADR 0009). Submitting one is deliberately not privileged: it creates nothing, so an
+agent may draft freely. What it cannot do is make one runnable, and there is no admin credential on
+disk for it to steal — the admin row above is reached by signature, never by a token.
+
+The approval happens on a page the server renders, because a terminal cannot be a trusted display:
+its output is written by whatever process is running, so an agent could print one grant and submit
+another. The page is built from what the server stored, and the signature is bound to it.
 
 **What a human reviews is the capability declaration, not the script:**
 
@@ -318,12 +325,15 @@ topology. Join tokens are the right balance.)*
 **You move your credentials in.**
 
 ```bash
-sealbox admin                    # one Touch ID for the whole session
-> set utopia/prod/database-url   # value on stdin
-> set pg/prod-admin-password
-> exit                           # session lives in process memory, dies with it
+sealbox secret set utopia/prod/database-url   # value on stdin
+sealbox secret set pg/prod-admin-password
 rm -rf ~/.utopia-secrets
 ```
+
+Storing a secret is an `operator` operation, not an admin one, so no fingerprint is involved and
+bulk work is an ordinary shell loop. What *is* behind a passkey is the rare, irreversible sort:
+creating an identity, removing a grant, rekeying — `sealbox admin <command>` opens a session that
+lives in that process's memory and dies with it.
 
 Success criterion #1 met.
 
@@ -473,8 +483,9 @@ provisions a new service end to end without learning a single password.**
 7. **`sealbox rotate <secret> --via <grant> [--from-output]`**, committing only on grant success.
 8. **`audit` table and `sealbox audit`.**
 9. **Passkey authentication for every admin operation** (ADR 0009) — a server-rendered approval
-   page, no admin credential on disk, and an in-memory `sealbox admin` session so bulk import is
-   one fingerprint rather than fifty.
+   page, no admin credential on disk, and a `sealbox admin <command>` session that lives in the
+   process and dies with it. Bulk import needs no fingerprint at all: storing secrets is an
+   operator operation, and only the rare irreversible ones are behind a passkey.
 10. **One skill file, plus `examples/grants/`** — worked examples are the template library, and are
    what lets an agent write a correct new grant by imitation.
 

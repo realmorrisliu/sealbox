@@ -11,9 +11,10 @@ use crate::{
     crypto::master_key::PrivateMasterKey,
     error::{Result, SealboxError},
     repo::{
-        AuditRepo, GrantRepo, HealthRepo, IdentityRepo, JobRepo, MasterKeyRepo, MasterKeyStatus,
-        SecretRepo, SqliteAuditRepo, SqliteGrantRepo, SqliteHealthRepo, SqliteIdentityRepo,
-        SqliteJobRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+        AuditRepo, AuthenticatorRepo, GrantRepo, HealthRepo, IdentityRepo, JobRepo, MasterKeyRepo,
+        MasterKeyStatus, SecretRepo, SqliteAuditRepo, SqliteAuthenticatorRepo, SqliteGrantRepo,
+        SqliteHealthRepo, SqliteIdentityRepo, SqliteJobRepo, SqliteMasterKeyRepo, SqliteSecretRepo,
+        create_db_connection,
     },
 };
 
@@ -27,6 +28,9 @@ pub(crate) struct AppState {
     pub(crate) audit_repo: Arc<dyn AuditRepo>,
     pub(crate) grant_repo: Arc<dyn GrantRepo>,
     pub(crate) job_repo: Arc<dyn JobRepo>,
+    pub(crate) authenticator_repo: Arc<dyn AuthenticatorRepo>,
+    /// Challenges, sessions, enrolments, and pending approvals — all in memory, deliberately.
+    pub(crate) passkey: crate::api::passkey::PasskeyState,
     /// When the bootstrap token stops being accepted. Stored as a deadline rather than a start
     /// time so it is directly assertable, and so a token left in the environment after use —
     /// the normal outcome — stops being useful on its own.
@@ -46,6 +50,7 @@ impl AppState {
         SqliteAuditRepo::init_table(&conn)?;
         SqliteGrantRepo::init_table(&conn)?;
         SqliteJobRepo::init_table(&conn)?;
+        SqliteAuthenticatorRepo::init_table(&conn)?;
 
         // One connection, shared by the repositories. Nothing above this layer holds it:
         // a database lock has no business in an HTTP handler.
@@ -59,7 +64,9 @@ impl AppState {
             identity_repo: Arc::new(SqliteIdentityRepo::new(conn.clone())),
             audit_repo: Arc::new(SqliteAuditRepo::new(conn.clone())),
             grant_repo: Arc::new(SqliteGrantRepo::new(conn.clone())),
-            job_repo: Arc::new(SqliteJobRepo::new(conn)),
+            job_repo: Arc::new(SqliteJobRepo::new(conn.clone())),
+            authenticator_repo: Arc::new(SqliteAuthenticatorRepo::new(conn)),
+            passkey: crate::api::passkey::PasskeyState::new(&config.public_url)?,
             server_keys: Arc::new(HashMap::new()),
             bootstrap_deadline: Instant::now() + config.bootstrap_window,
         };

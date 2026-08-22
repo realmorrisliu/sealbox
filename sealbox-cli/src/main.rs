@@ -3,8 +3,8 @@ mod config;
 mod output;
 
 use crate::commands::{
-    audit_commands, config_commands, grant_commands, identity_commands, job_commands, key_commands,
-    runner_commands, secret_commands,
+    admin_commands, audit_commands, config_commands, grant_commands, identity_commands,
+    job_commands, key_commands, runner_commands, secret_commands,
 };
 use crate::config::{Config, OutputFormat};
 use anyhow::Result;
@@ -129,6 +129,15 @@ enum Commands {
         #[arg(long)]
         name: String,
     },
+    /// Run one command as an admin, proving it with a passkey.
+    ///
+    /// The session lives in this process and dies with it: an admin has no token to store, which
+    /// is what stops an agent on this machine from acting as one.
+    Admin {
+        /// The command to run, e.g. `identity create alice --role operator`
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
+    },
     /// Claim a server that has no identities yet, creating the first admin
     Bootstrap {
         /// The value the server was started with in SEALBOX_BOOTSTRAP_TOKEN
@@ -142,7 +151,8 @@ enum Commands {
 
 #[derive(Subcommand)]
 pub enum GrantCommands {
-    /// Approve a grant from a TOML file. Requires the admin role.
+    /// Submit a grant from a TOML file for approval. Any identity may draft one; it exists only
+    /// once a human has signed for it with a passkey.
     Add {
         /// Path to the grant file
         file: String,
@@ -344,13 +354,30 @@ async fn main() -> Result<()> {
         config.output.format = output.into();
     }
 
-    // Execute command
-    match cli.command {
-        Commands::Config { command } => config_commands::handle_command(command, &mut config).await,
-        Commands::Key { command } => key_commands::handle_command(command, &config).await,
-        Commands::Secret { command } => secret_commands::handle_command(command, &config).await,
-        Commands::Grant { command } => grant_commands::handle_command(command, &config).await,
-        Commands::Identity { command } => identity_commands::handle_command(command, &config).await,
+    if let Commands::Admin { command } = cli.command {
+        let output = crate::output::OutputManager::new(config.output.format.clone());
+        config.server.token = admin_commands::authenticate(&config, &output).await?;
+
+        // Re-parsed rather than dispatched by hand, so `admin identity create …` accepts exactly
+        // what `identity create …` accepts and cannot drift from it.
+        let parsed = Cli::try_parse_from(std::iter::once("sealbox".to_string()).chain(command))?;
+        if matches!(parsed.command, Commands::Admin { .. }) {
+            anyhow::bail!("`admin admin …` is not a thing");
+        }
+        return dispatch(parsed.command, config).await;
+    }
+
+    dispatch(cli.command, config).await
+}
+
+async fn dispatch(command: Commands, mut config: Config) -> Result<()> {
+    let config = &mut config;
+    match command {
+        Commands::Config { command } => config_commands::handle_command(command, config).await,
+        Commands::Key { command } => key_commands::handle_command(command, config).await,
+        Commands::Secret { command } => secret_commands::handle_command(command, config).await,
+        Commands::Grant { command } => grant_commands::handle_command(command, config).await,
+        Commands::Identity { command } => identity_commands::handle_command(command, config).await,
         Commands::Audit {
             identity,
             action,
@@ -358,11 +385,11 @@ async fn main() -> Result<()> {
             limit,
         } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());
-            audit_commands::list(&config, &output, identity, action, since, limit).await
+            audit_commands::list(config, &output, identity, action, since, limit).await
         }
         Commands::Run { grant, params } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());
-            job_commands::run(&config, &output, grant, params).await
+            job_commands::run(config, &output, grant, params).await
         }
         Commands::Rotate {
             secret,
@@ -371,15 +398,16 @@ async fn main() -> Result<()> {
             params,
         } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());
-            job_commands::rotate(&config, &output, secret, via, from_output, params).await
+            job_commands::rotate(config, &output, secret, via, from_output, params).await
         }
         Commands::Runner { name } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());
-            runner_commands::run(&config, &output, name).await
+            runner_commands::run(config, &output, name).await
         }
+        Commands::Admin { .. } => unreachable!("handled before dispatch"),
         Commands::Bootstrap { token, name } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());
-            identity_commands::bootstrap(&config, &output, token, name).await
+            identity_commands::bootstrap(config, &output, token, name).await
         }
     }
 }

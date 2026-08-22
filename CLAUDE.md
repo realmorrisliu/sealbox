@@ -59,9 +59,15 @@ The server cannot execute: a hosted instance has no route into your VPC, and giv
 expose production to the internet. The runner polls **outbound**, so the cluster needs no inbound
 port. The CLI is a remote control.
 
-**Humans will authenticate with passkeys** (ADR 0009) — no admin credential on disk. *Not built
-yet:* every identity currently holds a bearer token. Authorisation does not care how an identity
-authenticated, so passkeys replace how a credential is presented, not what it resolves to.
+**Humans authenticate with passkeys** (ADR 0009) — there is no admin credential on disk, and an
+admin route refuses a bearer token outright, even a valid admin identity's. Agents, operators, and
+runners still carry tokens; authorisation does not care how an identity authenticated, so this
+changed how a credential is presented, not what it resolves to.
+
+**A terminal is not a trusted display.** Its output is written by whatever process is running, so
+an agent could print one grant and submit another. Anything a human approves is therefore rendered
+by the server from what the server stored, and the signature is bound to it. Drafting a grant is an
+ordinary agent operation; the grant exists only once someone signs for it.
 
 **Authorisation lives in the router**, not in handlers: routes are grouped by required role and
 each group carries its own gate, so a route not placed in a group is not routed at all. Adding an
@@ -108,9 +114,9 @@ Acceptance test: the author's own infrastructure runs on it.
    The master key itself already exists; what remains is the hosting and the ceremony. Includes the initialisation ceremony: deploy-time bootstrap token (never logged, single use,
    time-boxed, zero-identity only) and recovery-keypair backup with **mandatory re-entry
    verification** (ADR 0010).
-2. **`identities`** — *partly done.* Identities, three ordered roles, hashed tokens, revocation,
-   the audit trail, and a bounded bootstrap all exist. **Still missing:** passkeys (ADR 0009),
-   single-use invites for humans, join tokens for runners, and the `runner` role itself.
+2. **`identities`** — *partly done.* Identities, four roles, hashed tokens, revocation, the audit
+   trail, a bounded bootstrap, and passkeys all exist. **Still missing:** join tokens for runners,
+   so a runner's token is long-lived rather than exchanged for one it generates itself.
 3. ~~**`sealbox set` and `sealbox gen`.**~~ *Done.* `set` reads stdin only; `gen` produces the
    value server-side and returns it to nobody. Minimum length 16, default 32, password alphabet
    without ambiguous characters or punctuation.
@@ -123,8 +129,13 @@ Acceptance test: the author's own infrastructure runs on it.
 7. **`sealbox rotate <secret> --via <grant> [--from-output]`** — commits only on success.
    Rotation-capable adapters must **create-new-then-drop-old**, never mutate in place (ADR 0011).
 8. **`audit` table and `sealbox audit`.**
-9. **Passkey authentication for every admin operation** — server-rendered approval page, in-memory
-   `sealbox admin` session so bulk import is one fingerprint (ADR 0009).
+9. ~~**Passkey authentication for every admin operation.**~~ *Done.* Enrolment links instead of
+   admin tokens, a server-rendered approval page, and `sealbox admin <command>`, which opens a
+   session that lives in the process and dies with it (ADR 0009). **Verified by hand, not by
+   tests:** WebAuthn needs an authenticator and a person, so the browser half of every ceremony —
+   registering, signing in, approving — is outside what `cargo test` can reach. The tests cover
+   everything around it: which credentials the gate accepts, link and challenge lifetimes, and
+   that staging a grant creates nothing.
 10. **A skill file plus `examples/grants/`** — worked examples are the template library.
 
 ### Deliberately not being built

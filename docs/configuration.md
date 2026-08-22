@@ -1,9 +1,10 @@
 # Configuration
 
-> **Partly implemented.** Everything in the server section works today except `SEALBOX_PUBLIC_URL`,
-> which belongs to passkeys. Identities, roles, and the audit trail exist; **passkeys, invites, and
-> join tokens do not** — humans and agents alike currently authenticate with a bearer token.
-> Everything about the runner describes the target. See [`README.md`](../README.md).
+> **Mostly implemented.** Everything in the server section works today, `SEALBOX_PUBLIC_URL`
+> included — it is required, and startup fails without it, because every passkey is bound to it.
+> Identities, roles, the audit trail, and passkeys all exist. **Join tokens do not:** a runner's
+> token is a long-lived identity token rather than one exchanged at first contact. See
+> [`README.md`](../README.md).
 
 Three things are configured separately, because they are trusted differently: the **server** holds
 everything, the **runner** holds plaintext transiently, and the **CLI** holds nothing but a

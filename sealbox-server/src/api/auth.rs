@@ -11,6 +11,15 @@ use crate::{
     repo::{AuditOutcome, Identity, NewAuditRecord, Role},
 };
 
+/// How an identity proved who it is. Admin operations require a passkey session; a bearer token
+/// is refused outright, even a valid admin identity's — a route that still accepted one would
+/// leave the hole open for anything that forgot to stop sending it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AuthMethod {
+    BearerToken,
+    PasskeySession,
+}
+
 /// Authenticate the caller, run the request, and record the attempt.
 ///
 /// Authentication and audit are one layer because they need the same two things at opposite
@@ -26,12 +35,23 @@ pub(crate) async fn authenticate_and_audit(
     let resource = resource_from_path(request.uri().path());
 
     let token = bearer_token(&request);
-    let identity = match token {
-        Some(token) => state.identity_repo.find_by_token(&token)?,
+
+    // A passkey session resolves first: it is the only thing that can act as an admin.
+    let resolved = match &token {
+        Some(token) => match state.passkey.resolve_session(token) {
+            Some(name) => state
+                .identity_repo
+                .find_by_name(&name)?
+                .map(|i| (i, AuthMethod::PasskeySession)),
+            None => state
+                .identity_repo
+                .find_by_token(token)?
+                .map(|i| (i, AuthMethod::BearerToken)),
+        },
         None => None,
     };
 
-    let Some(identity) = identity else {
+    let Some((identity, method)) = resolved else {
         record(
             &state,
             NewAuditRecord {
@@ -48,6 +68,7 @@ pub(crate) async fn authenticate_and_audit(
     let name = identity.name.clone();
     let mut request = request;
     request.extensions_mut().insert(identity);
+    request.extensions_mut().insert(method);
 
     let response = next.run(request).await;
 
@@ -108,7 +129,37 @@ role_gate!(
     Role::Operator,
     "Admits Operator and Admin."
 );
-role_gate!(require_admin, Role::Admin, "Admits Admin only.");
+/// Admits Admin, **and only through a passkey session**.
+///
+/// Not "a session or a token, whichever is present": a bearer token is refused even when it
+/// belongs to a valid admin identity, because the point is that nothing on disk authenticates as
+/// an admin (ADR 0009).
+pub(crate) async fn require_admin(request: Request, next: Next) -> Result<Response> {
+    let identity = request
+        .extensions()
+        .get::<Identity>()
+        .ok_or(SealboxError::Unauthorized)?;
+
+    if identity.role < Role::Admin {
+        return Err(SealboxError::Forbidden);
+    }
+
+    let method = request
+        .extensions()
+        .get::<AuthMethod>()
+        .copied()
+        .unwrap_or(AuthMethod::BearerToken);
+    if method != AuthMethod::PasskeySession {
+        return Err(SealboxError::ForbiddenBecause(
+            "admin operations need a passkey session. Run `sealbox-cli admin` to open one — a \
+             bearer token cannot act as an admin, which is what keeps an agent on your machine \
+             from approving its own grants."
+                .to_string(),
+        ));
+    }
+
+    Ok(next.run(request).await)
+}
 
 /// Admits the runner role and **only** the runner role — not admin, not anyone above.
 ///

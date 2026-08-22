@@ -93,6 +93,15 @@ impl IdentityRepo for SqliteIdentityRepo {
         Ok(identity)
     }
 
+    fn find_by_name(&self, name: &str) -> Result<Option<Identity>> {
+        let guard = self.conn.lock()?;
+        let mut stmt = guard.prepare(&format!(
+            "SELECT {} FROM identities WHERE name = ?1 AND revoked_at IS NULL LIMIT 1",
+            Self::COLUMNS
+        ))?;
+        Ok(stmt.query_one([name], Self::from_row).optional()?)
+    }
+
     fn list(&self) -> Result<Vec<Identity>> {
         let guard = self.conn.lock()?;
         let mut stmt = guard.prepare(&format!(

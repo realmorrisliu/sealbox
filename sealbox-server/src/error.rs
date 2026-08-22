@@ -41,6 +41,9 @@ pub enum SealboxError {
 
     #[error("Forbidden: this identity's role does not permit that")]
     Forbidden,
+    /// A refusal that needs to say more than "no" — the caller has to know what to do instead.
+    #[error("Forbidden: {0}")]
+    ForbiddenBecause(String),
 
     #[error("Master key not found: {0}")]
     MasterKeyNotFound(Uuid),
@@ -85,6 +88,7 @@ impl IntoResponse for SealboxError {
             SealboxError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
             SealboxError::InvalidRole(_) => (StatusCode::BAD_REQUEST, errorfmt(&self)),
             SealboxError::Forbidden => (StatusCode::FORBIDDEN, errorfmt(&self)),
+            SealboxError::ForbiddenBecause(_) => (StatusCode::FORBIDDEN, errorfmt(&self)),
             SealboxError::ConfigError(_) => (StatusCode::INTERNAL_SERVER_ERROR, errorfmt(&self)),
             SealboxError::MissingValidMasterKey => {
                 (StatusCode::PRECONDITION_REQUIRED, errorfmt(&self))

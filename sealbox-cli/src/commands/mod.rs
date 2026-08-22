@@ -1,3 +1,4 @@
+pub mod admin_commands;
 pub mod audit_commands;
 pub mod config_commands;
 pub mod grant_commands;

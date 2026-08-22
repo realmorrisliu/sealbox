@@ -1,8 +1,8 @@
 # Getting Started
 
-> **Partly implemented.** Steps 1, 2, and 3 work today in a simpler form — bootstrap and identity
-> creation exist; the recovery-keypair ceremony and passkeys do not. The runner and grants are the
-> target. Each step is marked. See [`README.md`](../README.md).
+> **Mostly implemented.** Bootstrap, identities, passkeys, secrets, grants, and the runner all
+> work. The recovery-keypair ceremony in step 2 does not exist yet. Each step is marked. See
+> [`README.md`](../README.md).
 
 Setting sealbox up takes about half an hour, once. Every step exists for a reason; none of them is
 boilerplate.
@@ -31,22 +31,32 @@ fly secrets unset SEALBOX_BOOTSTRAP_TOKEN
 
 ## 2. Become admin *(partly implemented)*
 
-> **Implemented today**, in a simpler form: `sealbox-cli bootstrap --token <value> --name root`
-> creates the first admin and prints its token once. The recovery keypair ceremony and passkey
-> registration described below are the target and do not exist yet.
-
 ```bash
-sealbox init --server https://sealbox.example.dev --bootstrap-token <value>
+sealbox-cli bootstrap --token <value> --name root
 ```
 
-This runs one ceremony with several parts:
+This prints **no token**. An admin has no credential to store — that is the point (ADR 0009) — so
+what comes back is an enrolment link:
 
-1. The CLI generates a **recovery keypair locally**. The public half is uploaded; the private half
-   is displayed **once**.
-2. The server generates its master key and stores it encrypted under your recovery public key.
-   **The master key itself is never displayed, logged, or returned by any endpoint.**
-3. You must **type the recovery key back** before initialisation completes.
-4. A browser opens; you register your passkey.
+```
+Open this to register your passkey:
+  https://sealbox.example.dev/enrol/6f2c…
+```
+
+Open it, register the authenticator you actually carry, and unset the bootstrap token. From then
+on, every admin operation goes through `sealbox-cli admin <command>`, which opens a session that
+lives in that process's memory and dies with it. A bearer token is refused on admin routes even if
+it belongs to a valid admin identity, so there is nothing on your machine an agent could read and
+use to act as you.
+
+The link is single use, expires in thirty minutes, and works only while that identity has no
+authenticator: a leaked link must be a way to become *an* admin for the first time, never a way to
+displace a working one.
+
+> **Not built yet:** the recovery-keypair ceremony — generating a recovery keypair locally, storing
+> the master key encrypted under its public half, and forcing you to type the private half back
+> before initialisation completes. Until it exists, the server's master key file *is* the backup;
+> keep a copy of it somewhere you keep nothing else.
 
 > **The re-entry is not ceremony for its own sake.** An unverified backup is reliably not a backup
 > — it is a transcription error nobody discovers until the day it matters. This is why 1Password
@@ -64,7 +74,8 @@ sealbox-cli identity create claude-code --role agent
 sealbox-cli identity create alice --role operator
 ```
 
-Each token is printed once. Give an agent the narrowest role that lets it do its job: an `agent`
+Each token is printed once — except an admin's, which does not exist: `--role admin` returns an
+enrolment link, as in step 2. Give an agent the narrowest role that lets it do its job: an `agent`
 reads and invokes but cannot store secrets or manage identities, and every attempt it makes is
 recorded whether it succeeds or is refused.
 
@@ -119,13 +130,12 @@ sealbox-cli secret gen app/session-key
 sealbox-cli secret gen app/hmac --type hex
 ```
 
-> **The target**, once passkeys land, is one authentication for a whole session:
->
-> ```bash
-> sealbox admin
-> > set app/database-url
-> > exit                               # the session lives in memory and dies with the process
-> ```
+Storing secrets is an `operator` operation, not an admin one, so bulk work is an ordinary shell
+loop and no fingerprint is involved:
+
+```bash
+for f in ~/creds/*; do sealbox-cli secret set "app/$(basename "$f")" < "$f"; done
+```
 
 Then delete the originals:
 
@@ -133,13 +143,7 @@ Then delete the originals:
 rm ~/.config/app/secrets.env
 ```
 
-No import command is needed for bulk work — a shell loop inside one admin session does it:
-
-```bash
-sealbox admin --exec 'for f in ~/creds/*; do set app/$(basename $f) < $f; done'
-```
-
-## 6. Grant the first capability *(implemented, except adapters)*
+## 6. Grant the first capability *(implemented)*
 
 Have an agent draft it by imitating [`examples/grants/`](../examples/grants/):
 
@@ -156,13 +160,13 @@ sealbox-cli grant add ./grants/k8s-sync.toml
 sealbox-cli run k8s-sync
 ```
 
-**What you approve is the declaration, not a script** — the command prints it, secrets first,
-before submitting. Sealbox confines the implementation to exactly those secrets, so that line is
-the security-relevant part.
+Submitting creates nothing. The command prints an approval URL and opens it; the page lists the
+secrets first, and you sign it with your passkey — **on that machine or on your phone**. Sealbox
+confines the implementation to exactly those secrets, so that line is what the approval is about.
 
-> **Target:** approval will happen on a server-rendered page signed with a passkey, which can be
-> your phone. That is what makes it a *trusted* display — terminal output is written by whatever
-> process is running, so an agent could show one grant and submit another.
+That the page comes from the server is the whole point. Terminal output is written by whatever
+process is running, so an agent could show one grant and submit another; a page rendered from what
+the server stored cannot be influenced that way, and the signature is bound to it.
 
 ## From then on
 
@@ -171,10 +175,10 @@ the security-relevant part.
 sealbox run k8s-sync ns=production
 sealbox rotate app/database-url --via pg-provision --from-output host=... user=app
 
-# You, occasionally
-sealbox grant add ./grants/new-thing.toml
-sealbox audit --since 24h
-sealbox identity revoke agent-laptop
+# You, occasionally — the first is a browser prompt, the last needs your passkey
+sealbox-cli grant add ./grants/new-thing.toml
+sealbox-cli audit --since 24h
+sealbox-cli admin identity revoke agent-laptop
 ```
 
 ## Recovering from total loss

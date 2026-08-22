@@ -1,10 +1,17 @@
 //! HTTP-level tests: routing, middleware, authentication, authorisation, and audit.
 //! These assert behavior no handler can assert in isolation.
+//!
+//! Inside the crate rather than in `tests/` for one reason: an admin has no credential to be
+//! handed any more, so acting as one means minting a passkey session directly — which nothing
+//! outside the crate can do, and no route offers. What *cannot* be tested here is the ceremony
+//! itself: WebAuthn needs an authenticator and a person, so the browser half is verified by
+//! hand (see the change's tasks).
 
 use axum::{Router, body::Body};
 use http::{Request, StatusCode, header};
-use sealbox_server::{config::SealboxConfig, create_app};
 use tower::ServiceExt;
+
+use crate::{api::state::AppState, config::SealboxConfig};
 
 const BOOTSTRAP_TOKEN: &str = "bootstrap-secret";
 
@@ -12,6 +19,7 @@ const BOOTSTRAP_TOKEN: &str = "bootstrap-secret";
 /// the identities created during a test — persists across them.
 struct TestServer {
     app: Router,
+    state: AppState,
     _dir: tempfile::TempDir,
 }
 
@@ -29,10 +37,11 @@ impl TestServer {
         let dir = tempfile::tempdir().expect("Should create a temp dir");
         let key_path = dir.path().join("master.pem");
         let (private_pem, _) =
-            sealbox_server::crypto::master_key::generate_key_pair().expect("Should generate a key");
+            crate::crypto::master_key::generate_key_pair().expect("Should generate a key");
         std::fs::write(&key_path, private_pem).expect("Should write the key file");
 
         let config = SealboxConfig {
+            public_url: "http://localhost:8080".to_string(),
             bootstrap_token: Some(BOOTSTRAP_TOKEN.to_string()),
             store_path: dir.path().join("test.db").to_string_lossy().into_owned(),
             listen_addr: "127.0.0.1:0".to_string(),
@@ -40,8 +49,10 @@ impl TestServer {
             bootstrap_window,
         };
 
+        let state = AppState::new(&config).expect("Should build the state");
         Self {
-            app: create_app(&config).expect("Should build the app"),
+            app: super::build_router(state.clone()),
+            state,
             _dir: dir,
         }
     }
@@ -61,7 +72,10 @@ impl TestServer {
         serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
     }
 
-    /// Claim the server and return the first admin's token.
+    /// Claim the server and open an admin session.
+    ///
+    /// Bootstrap returns an enrolment link, not a credential — so the session is minted here
+    /// instead of being registered and signed for, which needs hardware and a human.
     async fn bootstrap(&self) -> String {
         let response = self
             .send(
@@ -77,10 +91,18 @@ impl TestServer {
             StatusCode::OK,
             "bootstrap should succeed"
         );
-        self.json(response).await["token"]
-            .as_str()
-            .expect("Should return a token")
-            .to_string()
+        let body = self.json(response).await;
+        assert!(
+            body["token"].is_null(),
+            "bootstrap must not hand out an admin credential"
+        );
+        assert!(
+            body["enrol_at"]
+                .as_str()
+                .is_some_and(|u| u.contains("/enrol/")),
+            "bootstrap should point at an enrolment link: {body}"
+        );
+        self.state.passkey.issue_session("root")
     }
 
     /// Create an identity with the given role and return its token.
@@ -440,7 +462,7 @@ async fn a_rekey_request_carrying_a_private_key_is_rejected() {
     let server = TestServer::new();
     let admin = server.bootstrap().await;
     let (private_pem, _) =
-        sealbox_server::crypto::master_key::generate_key_pair().expect("Should generate a key");
+        crate::crypto::master_key::generate_key_pair().expect("Should generate a key");
 
     let response = server
         .send(
@@ -616,13 +638,46 @@ impl TestServer {
         assert!(response.status().is_success(), "creating secret {name}");
     }
 
-    async fn add_grant(&self, token: &str, body: serde_json::Value) -> http::Response<Body> {
+    /// Submit a grant and stop there: it is staged for approval, not created.
+    async fn stage_grant(&self, token: &str, body: serde_json::Value) -> http::Response<Body> {
         self.send(
             post("/v1/grants", Some(token))
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
         .await
+    }
+
+    async fn add_grant(&self, token: &str, body: serde_json::Value) -> http::Response<Body> {
+        let response = self.stage_grant(token, body).await;
+        if !response.status().is_success() {
+            return response;
+        }
+
+        // Standing in for the signature: a real approval needs an authenticator and a person, so
+        // the tests take the staged approval and run the same function the ceremony calls once
+        // the signature verifies. Everything after this point is therefore identical.
+        let body = self.json(response).await;
+        let id = body["pending_approval"]
+            .as_str()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| panic!("submitting a grant should stage an approval: {body}"));
+        let pending = self
+            .state
+            .passkey
+            .take_approval(&id)
+            .expect("the staged approval should be there");
+        match crate::api::handler::grant::create_from_payload(
+            &self.state,
+            pending.payload,
+            &pending.requested_by,
+        ) {
+            Ok(_) => http::Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::empty())
+                .unwrap(),
+            Err(e) => axum::response::IntoResponse::into_response(e),
+        }
     }
 }
 
@@ -631,7 +686,7 @@ fn adapter_grant(name: &str, secret: &str) -> serde_json::Value {
         "name": name,
         "runner": "prod-cluster",
         "adapter": "kubernetes-secret",
-        "config": { "namespace": "prod" },
+        "config": { "namespace": "prod", "name": "app-runtime-secrets" },
         "secrets": { "DATABASE_URL": secret },
     })
 }
@@ -675,22 +730,47 @@ async fn a_grant_round_trips() {
 }
 
 #[tokio::test]
-async fn an_agent_may_read_grants_but_not_create_them() {
+async fn an_agent_may_stage_a_grant_but_not_create_one() {
     let server = TestServer::new();
     let admin = server.bootstrap().await;
     let agent = server.identity(&admin, "bot", "agent").await;
     server.secret(&admin, "app-db-url").await;
 
+    // Drafting is the agent's job, and it is harmless: staging creates nothing.
     let response = server
-        .add_grant(&agent, adapter_grant("sneaky", "app-db-url"))
+        .stage_grant(&agent, adapter_grant("sneaky", "app-db-url"))
         .await;
-    assert_eq!(
-        response.status(),
-        StatusCode::FORBIDDEN,
-        "an agent cannot approve its own capability"
+    assert!(response.status().is_success());
+    let body = server.json(response).await;
+    assert!(
+        body["approve_at"]
+            .as_str()
+            .is_some_and(|u| u.contains("/approve/"))
     );
 
-    // But it must be able to see what it may invoke, and to draft a proposal.
+    assert_eq!(
+        server
+            .send(get("/v1/grants/sneaky", Some(&agent)))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+        "a staged grant does not exist until someone signs for it"
+    );
+
+    // And it cannot remove one either.
+    assert_eq!(
+        server
+            .send(
+                build("DELETE", "/v1/grants/sneaky", Some(&agent))
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+
+    // But it must be able to see what it may invoke.
     server
         .add_grant(&admin, adapter_grant("k8s-sync", "app-db-url"))
         .await;
@@ -867,6 +947,10 @@ async fn uses_enumerates_what_a_credential_can_do() {
     for name in ["pg-provision", "rotate-db"] {
         let mut grant = adapter_grant(name, "pg-admin");
         grant["adapter"] = serde_json::json!("postgres-role");
+        grant["config"] = serde_json::json!({
+            "host": "db.internal", "database": "app",
+            "role_prefix": "app", "privileges": ["CONNECT", "SELECT"],
+        });
         grant["secrets"] = serde_json::json!({ "admin": "pg-admin" });
         assert!(server.add_grant(&admin, grant).await.status().is_success());
     }
@@ -1568,4 +1652,171 @@ async fn a_valid_adapter_grant_is_approved() {
     });
 
     assert!(server.add_grant(&admin, grant).await.status().is_success());
+}
+
+// ---------------------------------------------------------------- admin authentication
+//
+// The ceremony itself needs an authenticator and a person, so what is asserted here is
+// everything around it: which credentials the gate accepts, what an enrolment link will and
+// will not do, and that a stolen database row is not a way in.
+
+#[tokio::test]
+async fn an_admin_route_refuses_a_bearer_token() {
+    let server = TestServer::new();
+    server.bootstrap().await;
+
+    // Not an agent's token, not a stale one: a *valid admin identity's* token, minted the same
+    // way every other identity's is. It must still be refused, or every caller that simply
+    // forgets to stop sending one keeps the old hole open.
+    let (identity, token) =
+        crate::repo::Identity::new("second-admin".to_string(), crate::repo::Role::Admin)
+            .expect("Should build an identity");
+    server
+        .state
+        .identity_repo
+        .create(&identity)
+        .expect("Should store it");
+
+    let response = server.send(get("/v1/identities", Some(&token))).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = server.json(response).await;
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("passkey"),
+        "the refusal should say what is needed instead: {body}"
+    );
+}
+
+#[tokio::test]
+async fn an_enrolment_link_is_refused_once_an_authenticator_exists() {
+    let server = TestServer::new();
+    server.bootstrap().await;
+
+    // A leaked link should be a way to become *an* admin for the first time, never a way to
+    // displace a working credential.
+    let id = server.state.passkey.issue_enrolment("root");
+    server
+        .state
+        .authenticator_repo
+        .register("root", "credential-id", "{}")
+        .expect("Should register");
+
+    let response = server
+        .send(
+            post(&format!("/enrol/{id}/start"), None)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn an_unknown_enrolment_link_says_nothing_about_who_it_was_for() {
+    let server = TestServer::new();
+    server.bootstrap().await;
+
+    let response = server
+        .send(get(&format!("/enrol/{}", uuid::Uuid::new_v4()), None))
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_session_is_the_only_thing_that_acts_as_an_admin() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    assert!(
+        server
+            .send(get("/v1/identities", Some(&admin)))
+            .await
+            .status()
+            .is_success()
+    );
+
+    // Sessions are held in memory with an expiry; a restart drops them, and so does time.
+    let server2 = TestServer::new();
+    server2.bootstrap().await;
+    assert_eq!(
+        server2
+            .send(get("/v1/identities", Some(&admin)))
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED,
+        "a session from one server must not authenticate against another"
+    );
+}
+
+#[tokio::test]
+async fn agent_operator_and_runner_authentication_is_untouched() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let agent = server.identity(&admin, "claude", "agent").await;
+    let operator = server.identity(&admin, "alice", "operator").await;
+    let runner = server.identity(&admin, "prod-cluster", "runner").await;
+
+    for (who, token) in [("agent", &agent), ("operator", &operator)] {
+        assert!(
+            server
+                .send(get("/v1/secrets", Some(token)))
+                .await
+                .status()
+                .is_success(),
+            "{who} still reads secrets with a bearer token"
+        );
+    }
+    assert!(
+        server
+            .send(get("/v1/jobs/claim?runner=prod-cluster", Some(&runner)))
+            .await
+            .status()
+            .is_success(),
+        "a runner still claims with a bearer token"
+    );
+}
+
+#[tokio::test]
+async fn a_stored_authenticator_holds_only_public_data() {
+    let server = TestServer::new();
+    server.bootstrap().await;
+
+    // Whatever is written here is what a database dump yields. WebAuthn's guarantee is that the
+    // private half never leaves the authenticator, so the row is worth nothing on its own — but
+    // that only holds if nothing else is stored beside it.
+    server
+        .state
+        .authenticator_repo
+        .register("root", "cred-1", r#"{"cred":"public-key-material"}"#)
+        .expect("Should register");
+
+    let stored = server
+        .state
+        .authenticator_repo
+        .for_identity("root")
+        .expect("Should read back");
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].passkey, r#"{"cred":"public-key-material"}"#);
+
+    // There is no route that returns it, and no route that turns it into a session: a signature
+    // is the only way in, and only the authenticator can produce one.
+    let response = server
+        .send(
+            post(&format!("/login/{}/finish", uuid::Uuid::new_v4()), None)
+                .body(Body::from(
+                    serde_json::json!({
+                        "challenge_id": uuid::Uuid::new_v4(),
+                        "credential": {},
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(
+        !response.status().is_success(),
+        "replaying stored data must not authenticate"
+    );
 }

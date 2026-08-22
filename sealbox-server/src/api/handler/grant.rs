@@ -87,24 +87,67 @@ impl CreateGrantPayload {
     }
 }
 
-/// POST /v1/grants — admin only.
+/// POST /v1/grants — admin only. Does not create the grant: it stages it for approval.
 ///
-/// Everything checkable is checked here, while a human is present to fix it. At execution nobody
-/// is, and the failure would land mid-operation, possibly between steps of a chain.
+/// The grant exists once a human has signed for it on a page the server rendered. Creating it
+/// here and calling the signature a formality would put the decision back in a terminal, whose
+/// output an agent writes.
 pub(crate) async fn create(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Json(payload): Json<CreateGrantPayload>,
 ) -> Result<SealboxResponse> {
-    let grant = payload.into_grant(&identity.name)?;
+    let name = payload.name.clone();
+    let payload = serde_json::to_value(payload)
+        .map_err(|e| SealboxError::InvalidRequest(format!("grant payload: {e}")))?;
 
+    // Validate now so a mistake is caught before anyone is asked to approve it. The grant itself
+    // is created only after the signature.
+    let candidate: CreateGrantPayload = serde_json::from_value(payload.clone())
+        .map_err(|e| SealboxError::InvalidRequest(format!("grant payload: {e}")))?;
+    let grant = candidate.into_grant(&identity.name)?;
     validate_secret_names_are_literal(&grant)?;
     validate_adapter(&grant)?;
     validate_secrets_exist(&state, &grant)?;
     validate_chain(&state, &grant)?;
+    if state.grant_repo.get(&grant.name)?.is_some() {
+        return Err(SealboxError::GrantAlreadyExists(grant.name));
+    }
+
+    let id = state
+        .passkey
+        .stash_approval(crate::api::passkey::PendingApproval {
+            payload,
+            requested_by: identity.name.clone(),
+        });
+
+    Ok(SealboxResponse::Json(json!({
+        "pending_approval": id,
+        "grant": name,
+        "approve_at": format!("{}/approve/{id}", state.config.public_url),
+        "note": "Open that URL — on this machine or on your phone — and approve it with your \
+                 passkey. What the page shows is what you sign; a terminal cannot promise that."
+    })))
+}
+
+/// Shared by the direct path and the passkey approval, so a grant approved through a signature
+/// goes through exactly the same validation as one created directly.
+pub(crate) fn create_from_payload(
+    state: &AppState,
+    payload: serde_json::Value,
+    created_by: &str,
+) -> Result<Grant> {
+    let payload: CreateGrantPayload = serde_json::from_value(payload)
+        .map_err(|e| SealboxError::InvalidRequest(format!("grant payload: {e}")))?;
+    let grant = payload.into_grant(created_by)?;
+
+    validate_secret_names_are_literal(&grant)?;
+    validate_adapter(&grant)?;
+    validate_secrets_exist(state, &grant)?;
+    validate_chain(state, &grant)?;
 
     state.grant_repo.create(&grant)?;
-    Ok(SealboxResponse::Json(json!(grant)))
+    Ok(grant)
 }
 
 /// A parameterised secret name would let a caller choose which credential the grant reaches,

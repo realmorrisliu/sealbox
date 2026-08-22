@@ -20,7 +20,7 @@ use crate::{
         auth::{
             authenticate_and_audit, require_admin, require_agent, require_operator, require_runner,
         },
-        handler::{admin, audit, grant, identity, job, master_key, secret},
+        handler::{admin, admin_auth, audit, grant, identity, job, master_key, secret},
         state::AppState,
     },
     config::SealboxConfig,
@@ -29,6 +29,7 @@ use crate::{
 
 mod auth;
 mod handler;
+pub(crate) mod passkey;
 mod path;
 pub(crate) mod state;
 
@@ -37,7 +38,17 @@ const REQUEST_ID_HEADER: &str = "x-request-id";
 /// A job claimed but unreported for this long is presumed lost.
 pub const JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+#[cfg(test)]
+mod tests;
+
 pub fn create_app(config: &SealboxConfig) -> Result<Router> {
+    Ok(build_router(AppState::new(config)?))
+}
+
+/// Split out from `create_app` so the tests below can hold the state as well as the router —
+/// minting a passkey session directly, since a WebAuthn ceremony needs an authenticator and a
+/// person. No route does this; there is no way in from outside the crate.
+fn build_router(state: AppState) -> Router {
     tracing::info!("Initializing API routes");
     let x_request_id = HeaderName::from_static(REQUEST_ID_HEADER);
     let request_id_middleware = ServiceBuilder::new()
@@ -65,8 +76,6 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         // send headers from request to response headers
         .layer(PropagateRequestIdLayer::new(x_request_id));
 
-    let state = AppState::new(config)?;
-
     // Sweep abandoned jobs in the background. Without this, a runner that dies mid-job leaves
     // the caller waiting on something that will never report.
     {
@@ -78,6 +87,7 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
                 if let Err(e) = state.sweep_abandoned_jobs(JOB_TIMEOUT) {
                     tracing::error!("Failed to sweep abandoned jobs: {e}");
                 }
+                state.passkey.sweep();
             }
         });
     }
@@ -97,7 +107,11 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         // path segment has to swallow slashes.
         .route("/v1/secrets/{*secret_key}", get(secret::get))
         .route("/v1/audit", get(audit::list))
-        .route("/v1/grants", get(grant::list))
+        // Staging a grant is an agent's job: nothing is created until a human signs for it, so
+        // the draft is harmless. Requiring an admin session to *submit* would mean two
+        // ceremonies for one decision, and a ceremony people resent is a ceremony they route
+        // around.
+        .route("/v1/grants", get(grant::list).post(grant::create))
         .route("/v1/grants/{name}", get(grant::show))
         .route("/v1/jobs", axum::routing::post(job::submit))
         .route("/v1/jobs/{id}", get(job::show))
@@ -137,11 +151,10 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             "/v1/identities/{name}",
             axum::routing::delete(identity::revoke),
         )
-        .route("/v1/grants", axum::routing::post(grant::create))
         .route("/v1/grants/{name}", axum::routing::delete(grant::remove))
         .route_layer(from_fn(require_admin));
 
-    Ok(Router::new()
+    Router::new()
         .merge(agent_routes)
         .merge(operator_routes)
         .merge(admin_routes)
@@ -152,8 +165,45 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
         .route("/healthz/live", get(liveness_probe))
         .route("/healthz/ready", get(readiness_probe))
         .route("/v1/bootstrap", axum::routing::post(identity::bootstrap))
+        // The ceremony. Public because a browser reaches them, and safe because every id is an
+        // unguessable single-use token with a short life. Not an interface (ADR 0004): they must
+        // never grow a way to *manage* anything.
+        .route("/enrol/{id}", get(admin_auth::enrol_page))
+        .route(
+            "/enrol/{id}/start",
+            axum::routing::post(admin_auth::enrol_start),
+        )
+        .route(
+            "/enrol/{id}/finish",
+            axum::routing::post(admin_auth::enrol_finish),
+        )
+        .route("/approve/{id}", get(admin_auth::approve_page))
+        .route(
+            "/approve/{id}/start",
+            axum::routing::post(admin_auth::approve_start),
+        )
+        .route(
+            "/approve/{id}/finish",
+            axum::routing::post(admin_auth::approve_finish),
+        )
+        // Sign-in: the CLI opens a request, a browser signs it, and the session goes back to
+        // the waiting process — never through the terminal, where it would land in scrollback.
+        .route(
+            "/v1/auth/login",
+            axum::routing::post(admin_auth::login_open),
+        )
+        .route("/v1/auth/login/{id}", get(admin_auth::login_collect))
+        .route("/login/{id}", get(admin_auth::login_page))
+        .route(
+            "/login/{id}/start",
+            axum::routing::post(admin_auth::login_start),
+        )
+        .route(
+            "/login/{id}/finish",
+            axum::routing::post(admin_auth::login_finish),
+        )
         .with_state(state)
-        .layer(request_id_middleware))
+        .layer(request_id_middleware)
 }
 
 async fn root() -> &'static str {

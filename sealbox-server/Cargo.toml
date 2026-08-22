@@ -22,7 +22,7 @@ rusqlite = { workspace = true }
 rsa = { workspace = true }
 rand = { workspace = true }
 aes-gcm = { workspace = true }
-base64 = { workspace = true }
+base64 = "0.23"
 hmac = { workspace = true }
 sha2 = { workspace = true }
 dotenvy = { workspace = true }
@@ -34,6 +34,7 @@ tower = { workspace = true }
 tower-http = { workspace = true }
 uuid = { workspace = true }
 serde_rusqlite = { workspace = true }
+webauthn-rs = "0.5"
 
 [dev-dependencies]
 reqwest = { workspace = true }

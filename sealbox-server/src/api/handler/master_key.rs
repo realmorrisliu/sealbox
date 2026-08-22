@@ -111,7 +111,10 @@ mod tests {
             identity_repo: Arc::new(crate::repo::SqliteIdentityRepo::new(conn.clone())),
             audit_repo: Arc::new(crate::repo::SqliteAuditRepo::new(conn.clone())),
             grant_repo: Arc::new(crate::repo::SqliteGrantRepo::new(conn.clone())),
-            job_repo: Arc::new(crate::repo::SqliteJobRepo::new(conn)),
+            job_repo: Arc::new(crate::repo::SqliteJobRepo::new(conn.clone())),
+            authenticator_repo: Arc::new(crate::repo::SqliteAuthenticatorRepo::new(conn)),
+            passkey: crate::api::passkey::PasskeyState::new("http://localhost:8080")
+                .expect("Should build passkey state"),
             config: Arc::new(SealboxConfig::default()),
             server_keys: Arc::new(std::collections::HashMap::new()),
             bootstrap_deadline: std::time::Instant::now(),
