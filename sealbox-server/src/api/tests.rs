@@ -24,6 +24,13 @@ struct TestServer {
 }
 
 impl TestServer {
+    /// The SQLite file behind this server, for the few tests that have to stand in for time.
+    fn store_path(&self) -> std::path::PathBuf {
+        self._dir.path().join("test.db")
+    }
+}
+
+impl TestServer {
     fn new() -> Self {
         Self::with_bootstrap_window(std::time::Duration::from_secs(1800))
     }
@@ -510,8 +517,8 @@ async fn a_generated_secret_is_never_returned() {
     let keys: Vec<_> = body.as_object().unwrap().keys().cloned().collect();
     assert_eq!(
         keys,
-        vec!["created_at", "expires_at", "key", "version"],
-        "storing a secret reports which version it became, and nothing else"
+        vec!["created_at", "expires_at", "key", "rotate_after", "version"],
+        "storing a secret reports which version it became and its policy, and nothing else"
     );
 }
 
@@ -1573,22 +1580,40 @@ async fn a_failed_rotation_leaves_no_version_gap() {
 }
 
 #[tokio::test]
-async fn an_agent_cannot_rotate() {
+async fn an_agent_rotates_through_an_approved_grant() {
     let server = TestServer::new();
     let (admin, _runner) = rotation_fixture(&server).await;
     let agent = server.identity(&admin, "bot", "agent").await;
 
+    // Rotation widens nothing: the grant was approved by a human, the value is generated here and
+    // returned to nobody, and the previous credential keeps working until something drops it. A
+    // person in this path would buy no boundary and cost the automation the design is for
+    // (ADR 0013). An agent that may invoke a grant may rotate through one.
     let response = server
         .rotate(&agent, "app/db", serde_json::json!({ "via": "push" }))
         .await;
-    assert_eq!(
-        response.status(),
-        StatusCode::FORBIDDEN,
-        "an agent may run a grant that reads secrets; changing one is a different thing"
+    assert!(
+        response.status().is_success(),
+        "an agent may rotate through a grant that declares the secret"
     );
 }
 
-// ---------------------------------------------------------------- adapters
+#[tokio::test]
+async fn a_runner_still_cannot_rotate() {
+    let server = TestServer::new();
+    let (admin, _runner) = rotation_fixture(&server).await;
+    let second = server.identity(&admin, "other-runner", "runner").await;
+
+    // The runner's permissions are disjoint, not beneath: it takes what it is given and reports
+    // back. Nothing about opening rotation to agents reaches it.
+    assert_eq!(
+        server
+            .rotate(&second, "app/db", serde_json::json!({ "via": "push" }))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+}
 
 #[tokio::test]
 async fn adapter_configuration_is_validated_at_approval() {
@@ -1887,6 +1912,126 @@ async fn an_agent_still_learns_that_a_secret_exists_and_when_it_changed() {
             .await
             .status(),
         StatusCode::NOT_FOUND
+    );
+}
+
+// ---------------------------------------------------------------- rotation policy
+
+/// Store a secret carrying a rotation interval, and backdate it so it is already overdue.
+async fn overdue_secret(server: &TestServer, admin: &str, key: &str, after: i64, age: i64) {
+    let response = server
+        .send(
+            build("PUT", &format!("/v1/secrets/{key}"), Some(admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "secret": "value", "rotate_after": after }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success());
+
+    // Standing in for time passing: reach into the store and age the row. Nothing else in the
+    // system can make a secret older, which is the point — the interval is measured from a
+    // timestamp only a rotation moves.
+    if age > 0 {
+        let then = time::OffsetDateTime::now_utc().unix_timestamp() - age;
+        let conn = rusqlite::Connection::open(server.store_path()).expect("Should open the store");
+        conn.execute(
+            "UPDATE secrets SET updated_at = ?1 WHERE key = ?2",
+            (then, key),
+        )
+        .expect("Should backdate");
+    }
+}
+
+#[tokio::test]
+async fn overdue_lists_exactly_what_is_past_its_interval() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    overdue_secret(&server, &admin, "app/stale", 3600, 7200).await;
+    overdue_secret(&server, &admin, "app/fresh", 86400, 0).await;
+    server.secret(&admin, "app/no-policy").await;
+
+    let body = server
+        .json(
+            server
+                .send(get("/v1/secrets?overdue=true", Some(&admin)))
+                .await,
+        )
+        .await;
+    let names: Vec<&str> = body["secrets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["key"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(
+        names,
+        vec!["app/stale"],
+        "one is past its interval; one is not; one declares none and so is never due"
+    );
+
+    // The interval is a declaration, not a timer: the overdue secret is untouched and still
+    // readable. Nothing swept it, nothing queued anything, and job 1 does not exist because no
+    // job was ever created.
+    let still = server
+        .json(
+            server
+                .send(get("/v1/secrets/app/stale", Some(&admin)))
+                .await,
+        )
+        .await;
+    assert_eq!(still["version"], 1);
+    assert!(
+        !server
+            .send(get("/v1/jobs/1", Some(&admin)))
+            .await
+            .status()
+            .is_success(),
+        "nothing acts on the interval on its own — no job exists to have been created"
+    );
+}
+
+#[tokio::test]
+async fn a_rotation_carries_the_interval_and_settles_the_secret() {
+    let server = TestServer::new();
+    let (admin, runner) = rotation_fixture(&server).await;
+
+    // `rotation_fixture` stores app/db without a policy; give it one, already overdue.
+    overdue_secret(&server, &admin, "app/db", 3600, 7200).await;
+    async fn overdue_count(server: &TestServer, admin: &str) -> usize {
+        server
+            .json(
+                server
+                    .send(get("/v1/secrets?overdue=true", Some(admin)))
+                    .await,
+            )
+            .await["secrets"]
+            .as_array()
+            .unwrap()
+            .len()
+    }
+    assert_eq!(overdue_count(&server, &admin).await, 1);
+
+    server
+        .rotate(&admin, "app/db", serde_json::json!({ "via": "push" }))
+        .await;
+    server.finish(&runner, 0, None).await;
+
+    let after = server
+        .json(server.send(get("/v1/secrets/app/db", Some(&admin))).await)
+        .await;
+    assert_eq!(
+        after["rotate_after"], 3600,
+        "losing the policy at the first rotation that honoured it would be the worst moment"
+    );
+    assert_eq!(
+        overdue_count(&server, &admin).await,
+        0,
+        "rotating settles it, because the only thing making it overdue is the timestamp"
     );
 }
 

@@ -28,6 +28,9 @@ pub struct SecretInfo {
     pub created_at: i64,         // Creation timestamp (Unix time)
     pub updated_at: i64,         // Last update timestamp (Unix time)
     pub expires_at: Option<i64>, // Expiry timestamp (Unix time), optional for TTL
+    /// The declared rotation interval in seconds, and when this value is due, if it declares one.
+    pub rotate_after: Option<i64>,
+    pub rotate_due_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +44,16 @@ pub struct Secret {
     pub updated_at: i64,             // Last update timestamp (Unix time)
     pub expires_at: Option<i64>,     // Expiry timestamp (Unix time), optional for TTL
     pub metadata: Option<String>,    // Optional metadata in serialized format
+    /// How long this value should stand before it is rotated again, in seconds.
+    ///
+    /// A declaration and nothing more: nothing in the system acts on it. Acting on it would be a
+    /// scheduler, and a scheduler brings retries, backoff, overlap, and calendars — a system
+    /// rather than a field (ADR 0013). What it buys is that "what is overdue" becomes a question
+    /// with an answer here, instead of knowledge spread across everyone's cron jobs.
+    ///
+    /// Distinct from `expires_at`, which **deletes**. Using expiry as a rotation deadline would
+    /// remove a credential that production is still using.
+    pub rotate_after: Option<i64>,
 }
 
 impl Secret {
@@ -94,6 +107,7 @@ impl Secret {
             updated_at: now_timestamp,
             expires_at,
             metadata: None,
+            rotate_after: None,
         })
     }
 
@@ -629,6 +643,7 @@ pub(crate) trait SecretRepo: Send + Sync {
         value: &SecretValue,
         master_key: MasterKey,
         ttl: Option<i64>,
+        rotate_after: Option<i64>,
         pending: bool,
     ) -> Result<Secret>;
     /// Read a pending version. The only path that sees one — every other read excludes them.

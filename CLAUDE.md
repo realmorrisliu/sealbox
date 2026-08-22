@@ -11,7 +11,7 @@ is being replaced in significant part.
 | | |
 |---|---|
 | Target design | [`docs/agent-native-design.md`](docs/agent-native-design.md) |
-| Decisions and their reasoning | [`docs/adr/`](docs/adr/) — 12 ADRs |
+| Decisions and their reasoning | [`docs/adr/`](docs/adr/) — 13 ADRs |
 | Vocabulary — use these words, no synonyms | [`CONTEXT.md`](CONTEXT.md) |
 | Behavior already specified | [`openspec/specs/`](openspec/specs/) — `http-api`, `master-key`, `secret-encryption` |
 

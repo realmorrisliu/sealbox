@@ -115,16 +115,21 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/grants/{name}", get(grant::show))
         .route("/v1/jobs", axum::routing::post(job::submit))
         .route("/v1/jobs/{id}", get(job::show))
+        // Rotation sits with invoking a grant, not with storing secrets: under a grant a human
+        // approved, the two reach the same things. The value is generated server-side and
+        // returned to nobody, the previous credential keeps working until something drops it,
+        // and every attempt is audited — so requiring a person here would buy no boundary and
+        // cost the automation the whole design is for (ADR 0013).
+        .route(
+            "/v1/rotate/{*secret_key}",
+            axum::routing::post(secret::rotate),
+        )
         .route_layer(from_fn(require_agent));
 
     let operator_routes = Router::new()
         .route(
             "/v1/secrets/{*secret_key}",
             put(secret::save).delete(secret::delete),
-        )
-        .route(
-            "/v1/rotate/{*secret_key}",
-            axum::routing::post(secret::rotate),
         )
         .route_layer(from_fn(require_operator));
 

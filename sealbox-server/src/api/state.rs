@@ -320,6 +320,7 @@ mod tests {
                 &crate::repo::SecretValue::Supplied("hunter2".to_string()),
                 master_key,
                 None,
+                None,
                 false,
             )
             .expect("Should store a secret");

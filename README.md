@@ -117,7 +117,7 @@ submitting one and stopping is the finished job, not a failure.
 |---|---|
 | [Agent skill](skills/sealbox/SKILL.md) | What to give an agent |
 | [Design](docs/agent-native-design.md) | Topology, secret lifecycle, security boundary, MVP |
-| [Decisions](docs/adr/) | 12 ADRs, each with what was rejected and why |
+| [Decisions](docs/adr/) | 13 ADRs, each with what was rejected and why |
 | [Glossary](CONTEXT.md) | The vocabulary, and the synonyms to avoid |
 | [Getting started](docs/getting-started.md) | Setting one up, step by step |
 | [CLI reference](docs/cli-reference.md) | Command surface |

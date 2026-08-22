@@ -117,7 +117,7 @@ Records name the *resource*, never its value.
 
 ## Secrets *(implemented)*
 
-### `sealbox-cli secret set <key> [--ttl N]`
+### `sealbox-cli secret set <key> [--ttl N] [--rotate-after 30d]`
 
 Reads the value from **stdin**. There is no argument form — while one exists it gets used, and
 every use puts a credential into shell history and into `ps` output for every user on the machine.
@@ -131,7 +131,7 @@ sealbox-cli secret set k8s/dockerconfig < config.json
 Only a trailing newline is stripped — the artefact of a pipe. Leading and interior whitespace
 survive, because silently altering a credential is worse than storing an odd one.
 
-### `sealbox-cli secret gen <key> [--type password|hex] [--length N] [--ttl N]`
+### `sealbox-cli secret gen <key> [--type password|hex] [--length N] [--ttl N] [--rotate-after 30d]`
 
 The server generates the value, encrypts it, and stores it. **The plaintext never crosses the
 network and is not returned to anyone — including the caller who asked for it.** That is what
@@ -150,9 +150,37 @@ alphabet is about 187 bits.
 A length below 16 is refused rather than honoured — a caller asking for eight is likelier to have
 made a mistake than to have a reason, and a weak credential looks exactly like a strong one.
 
-### `sealbox-cli secret list`
+### `--rotate-after` is not `--ttl`
+
+`--ttl` **deletes** the secret when it passes. Reaching for it as a rotation deadline removes a
+credential production is still using, at the moment it is most in use.
+
+`--rotate-after` records how long a value should stand and **nothing acts on it**. It exists so
+that "how old is this credential" is a question sealbox can answer, instead of knowledge spread
+across everyone's cron jobs. A rotation carries it to the new version — losing the policy at the
+first rotation that honoured it would be the worst possible moment.
+
+```bash
+sealbox-cli secret gen app/session-key --rotate-after 30d
+```
+
+Sealbox runs no scheduler ([ADR 0013](adr/0013-automation-first.md)). Whatever runs on a timer
+stays outside, and its whole job is three lines:
+
+```bash
+for s in $(sealbox-cli secret list --overdue --output json | jq -r '.secrets[].key'); do
+  sealbox-cli rotate "$s" --via "$GRANT"
+done
+```
+
+### `sealbox-cli secret list [--overdue]`
 
 Keys, versions, and timestamps. Never values. Expired secrets are omitted.
+
+`--overdue` narrows it to secrets past their declared interval, computed from when each last
+changed. A secret declaring none is never overdue, and rotating one settles it — because the only
+thing that made it overdue is the timestamp a rotation moves. A **rekey** does not settle it: that
+re-encrypts the data key and leaves the value alone.
 
 ### `sealbox-cli secret show <key> [--version N]`
 

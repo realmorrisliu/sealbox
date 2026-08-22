@@ -262,9 +262,14 @@ enum SecretCommands {
     Set {
         /// Secret key name
         key: String,
-        /// Time to live in seconds
+        /// Time to live in seconds. This DELETES the secret when it passes — for a rotation
+        /// deadline use --rotate-after.
         #[arg(long)]
         ttl: Option<i64>,
+        /// How long this value should stand before it is rotated: 30d, 12h. Recorded, never
+        /// acted on: `secret list --overdue` is what reads it.
+        #[arg(long)]
+        rotate_after: Option<String>,
     },
     /// Have the server generate the value. It is encrypted without ever leaving the server, and
     /// is not returned to anyone — including the caller who asked for it.
@@ -277,9 +282,13 @@ enum SecretCommands {
         /// Length. Defaults to 32; below 16 is refused.
         #[arg(long)]
         length: Option<usize>,
-        /// Time to live in seconds
+        /// Time to live in seconds. This DELETES the secret when it passes — for a rotation
+        /// deadline use --rotate-after.
         #[arg(long)]
         ttl: Option<i64>,
+        /// How long this value should stand before it is rotated: 30d, 12h.
+        #[arg(long)]
+        rotate_after: Option<String>,
     },
     /// Show a secret's metadata: that it exists, its version, and when it last changed. Never
     /// its value, and never its ciphertext.
@@ -299,7 +308,11 @@ enum SecretCommands {
         version: i32,
     },
     /// List all secret keys. Metadata only — never values.
-    List,
+    List {
+        /// Only those past their declared rotation interval
+        #[arg(long)]
+        overdue: bool,
+    },
     /// Which grants may use a secret: everything that credential can do here
     Uses {
         /// Secret key name
