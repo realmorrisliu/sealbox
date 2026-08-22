@@ -7,34 +7,68 @@ use crate::{IdentityCommands, config::Config, output::OutputManager};
 pub async fn handle_command(command: IdentityCommands, config: &Config) -> Result<()> {
     let output = OutputManager::new(config.output.format.clone());
     match command {
-        IdentityCommands::Create { name, role } => create(config, &output, name, role).await,
+        IdentityCommands::Create {
+            name,
+            role,
+            issuer,
+            subject,
+            audience,
+        } => create(config, &output, name, role, issuer, subject, audience).await,
         IdentityCommands::List => list(config, &output).await,
         IdentityCommands::Revoke { name } => revoke(config, &output, name).await,
     }
 }
 
-async fn create(config: &Config, output: &OutputManager, name: String, role: String) -> Result<()> {
+#[allow(clippy::too_many_arguments)]
+async fn create(
+    config: &Config,
+    output: &OutputManager,
+    name: String,
+    role: String,
+    issuer: Option<String>,
+    subject: Option<String>,
+    audience: Option<String>,
+) -> Result<()> {
     config
         .validate()
         .context("Configuration validation failed")?;
 
+    let bound = issuer.is_some() || subject.is_some() || audience.is_some();
+    let mut payload = json!({ "name": name, "role": role });
+    for (field, value) in [
+        ("issuer", issuer),
+        ("subject", subject),
+        ("audience", audience),
+    ] {
+        if let Some(value) = value {
+            payload[field] = json!(value);
+        }
+    }
+
     let response = Client::new()
         .post(format!("{}/v1/identities", config.server.url))
         .bearer_auth(&config.server.token)
-        .json(&json!({ "name": name, "role": role }))
+        .json(&payload)
         .send()
         .await
         .context("Failed to request server")?;
 
     let result = expect_json(response).await?;
-
-    // The one and only time this token exists outside the caller's memory.
     output.print_success(&format!("Identity '{name}' created."));
     output.print_value(&result)?;
-    output.print_warning(
-        "The token above is shown once and cannot be retrieved. Store it now; if it is lost, \
-         revoke the identity and create another.",
-    );
+
+    if bound {
+        // Nothing to store is the whole point: the platform signs a fresh token on every restart,
+        // so there is no Secret to leak and nothing to rotate.
+        output.print_info(
+            "No credential was issued. Point the runner at its token with --token-file.",
+        );
+    } else {
+        output.print_warning(
+            "The token above is shown once and cannot be retrieved. Store it now; if it is lost, \
+             revoke the identity and create another.",
+        );
+    }
     Ok(())
 }
 
@@ -96,7 +130,8 @@ pub async fn bootstrap(
     output.print_success(&format!("Admin identity '{name}' created."));
     output.print_value(&result)?;
     output.print_warning(
-        "Store this token, then unset SEALBOX_BOOTSTRAP_TOKEN on the server — it has served its \
+        "Open the enrolment link and register your passkey, then unset SEALBOX_BOOTSTRAP_TOKEN \
+         on the server — it has served its \
          purpose and only widens exposure from here.",
     );
     Ok(())

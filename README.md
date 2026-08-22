@@ -12,8 +12,8 @@
 > Sealbox has been rebuilt around the design in [`docs/agent-native-design.md`](docs/agent-native-design.md),
 > and the previous generation — a single-token store with a React UI — is gone. Secrets, grants,
 > jobs, the runner, adapters, rotation, the audit trail, and passkey approval all work. **Not yet
-> built:** hosted deployment on Fly.io, the recovery-keypair ceremony, and runner join tokens; a
-> runner's token is long-lived today. There is no migration from the old generation — delete the
+> built:** hosted deployment on Fly.io — the `fly.toml` and image are here, but nothing has been
+> deployed to it yet. There is no migration from the old generation — delete the
 > database and start again ([ADR 0012](docs/adr/0012-no-backward-compatibility-before-first-release.md)).
 
 ## Why
@@ -117,7 +117,7 @@ submitting one and stopping is the finished job, not a failure.
 |---|---|
 | [Agent skill](skills/sealbox/SKILL.md) | What to give an agent |
 | [Design](docs/agent-native-design.md) | Topology, secret lifecycle, security boundary, MVP |
-| [Decisions](docs/adr/) | 12 ADRs, each with what was rejected and why |
+| [Decisions](docs/adr/) | 13 ADRs, each with what was rejected and why |
 | [Glossary](CONTEXT.md) | The vocabulary, and the synonyms to avoid |
 | [Getting started](docs/getting-started.md) | Setting one up, step by step |
 | [CLI reference](docs/cli-reference.md) | Command surface |

@@ -20,7 +20,9 @@ use crate::{
         auth::{
             authenticate_and_audit, require_admin, require_agent, require_operator, require_runner,
         },
-        handler::{admin, admin_auth, audit, grant, identity, job, master_key, secret},
+        handler::{
+            admin, admin_auth, audit, grant, identity, issuer, job, master_key, recovery, secret,
+        },
         state::AppState,
     },
     config::SealboxConfig,
@@ -37,6 +39,8 @@ const REQUEST_ID_HEADER: &str = "x-request-id";
 
 /// A job claimed but unreported for this long is presumed lost.
 pub const JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+pub(crate) mod workload;
 
 #[cfg(test)]
 mod tests;
@@ -115,16 +119,21 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/grants/{name}", get(grant::show))
         .route("/v1/jobs", axum::routing::post(job::submit))
         .route("/v1/jobs/{id}", get(job::show))
+        // Rotation sits with invoking a grant, not with storing secrets: under a grant a human
+        // approved, the two reach the same things. The value is generated server-side and
+        // returned to nobody, the previous credential keeps working until something drops it,
+        // and every attempt is audited — so requiring a person here would buy no boundary and
+        // cost the automation the whole design is for (ADR 0013).
+        .route(
+            "/v1/rotate/{*secret_key}",
+            axum::routing::post(secret::rotate),
+        )
         .route_layer(from_fn(require_agent));
 
     let operator_routes = Router::new()
         .route(
             "/v1/secrets/{*secret_key}",
             put(secret::save).delete(secret::delete),
-        )
-        .route(
-            "/v1/rotate/{*secret_key}",
-            axum::routing::post(secret::rotate),
         )
         .route_layer(from_fn(require_operator));
 
@@ -147,6 +156,16 @@ fn build_router(state: AppState) -> Router {
             axum::routing::delete(admin::cleanup_expired),
         )
         .route("/v1/identities", get(identity::list).post(identity::create))
+        .route("/v1/issuers", get(issuer::list).post(issuer::register))
+        .route("/v1/recovery", get(recovery::list).post(recovery::register))
+        .route(
+            "/v1/recovery/{id}",
+            get(recovery::export).delete(recovery::remove),
+        )
+        .route(
+            "/v1/issuers/{name}",
+            axum::routing::put(issuer::update_keys).delete(issuer::remove),
+        )
         .route(
             "/v1/identities/{name}",
             axum::routing::delete(identity::revoke),

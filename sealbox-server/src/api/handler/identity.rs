@@ -13,6 +13,12 @@ use crate::{
 pub(crate) struct CreateIdentityPayload {
     name: String,
     role: String,
+    /// Bind this identity to a registered issuer instead of giving it a token. All three are
+    /// required together: an issuer without a subject would accept anything that platform signs,
+    /// and without an audience a token minted for something else would work here.
+    issuer: Option<String>,
+    subject: Option<String>,
+    audience: Option<String>,
 }
 
 /// POST /v1/identities
@@ -21,6 +27,42 @@ pub(crate) async fn create(
     Json(payload): Json<CreateIdentityPayload>,
 ) -> Result<SealboxResponse> {
     let role: Role = payload.role.parse()?;
+
+    // Bound to a platform rather than holding a credential. Nothing is returned, because there is
+    // nothing to return — which is the whole point: no Secret to leak and nothing to rotate.
+    if payload.issuer.is_some() || payload.subject.is_some() || payload.audience.is_some() {
+        let (Some(issuer), Some(subject), Some(audience)) =
+            (payload.issuer, payload.subject, payload.audience)
+        else {
+            return Err(SealboxError::InvalidRequest(
+                "binding an identity to an issuer needs all three: --issuer, --subject, and \
+                 --audience. An issuer without a subject would admit anything that platform \
+                 signs; without an audience, a token minted for something else would work here."
+                    .to_string(),
+            ));
+        };
+
+        if state.issuer_repo.find_by_url(&issuer)?.is_none()
+            && !state.issuer_repo.list()?.iter().any(|i| i.name == issuer)
+        {
+            return Err(SealboxError::InvalidRequest(format!(
+                "no issuer named `{issuer}` is registered"
+            )));
+        }
+
+        let identity = Identity::workload(payload.name, role, issuer, subject, audience);
+        state.identity_repo.create(&identity)?;
+        return Ok(SealboxResponse::Json(json!({
+            "name": identity.name,
+            "role": role.to_string(),
+            "issuer": identity.issuer,
+            "subject": identity.subject,
+            "audience": identity.audience,
+            "note": "No credential was issued. This identity authenticates by presenting a token \
+                     its platform signs, so there is nothing to store and nothing to rotate."
+        })));
+    }
+
     let (identity, token) = Identity::new(payload.name, role)?;
     state.identity_repo.create(&identity)?;
 

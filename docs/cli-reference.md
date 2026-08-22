@@ -92,6 +92,24 @@ Roles are ordered — each admits everything below it:
 | `operator` | additionally store and delete secrets |
 | `admin` | additionally manage identities and master keys |
 
+### `sealbox-cli issuer add <name> --issuer-url <iss> --jwks-file <file>` *(admin)*
+
+Registers a platform whose signed tokens may authenticate — a Kubernetes cluster, GitHub Actions,
+anything that speaks OIDC. What is uploaded is public key material, so this hands nothing over;
+what it widens is *who may act here*, which is why it needs a passkey.
+
+```bash
+kubectl get --raw /openid/v1/jwks > jwks.json
+sealbox-cli admin issuer add prod-cluster \
+  --issuer-url "$(kubectl get --raw /.well-known/openid-configuration | jq -r .issuer)" \
+  --jwks-file jwks.json
+```
+
+`issuer update <name> --jwks-file <file>` replaces the keys. A cluster rotating its signing key
+publishes both for a while: register the document holding both, and register it again without the
+old one when nothing presents it. `issuer list` and `issuer rm` do what they say — removing one
+stops every identity bound to it.
+
 ### `sealbox-cli identity list` / `identity revoke <name>`
 
 Listing never shows tokens. Revocation takes effect on that identity's next request and affects
@@ -117,7 +135,7 @@ Records name the *resource*, never its value.
 
 ## Secrets *(implemented)*
 
-### `sealbox-cli secret set <key> [--ttl N]`
+### `sealbox-cli secret set <key> [--ttl N] [--rotate-after 30d]`
 
 Reads the value from **stdin**. There is no argument form — while one exists it gets used, and
 every use puts a credential into shell history and into `ps` output for every user on the machine.
@@ -131,7 +149,7 @@ sealbox-cli secret set k8s/dockerconfig < config.json
 Only a trailing newline is stripped — the artefact of a pipe. Leading and interior whitespace
 survive, because silently altering a credential is worse than storing an odd one.
 
-### `sealbox-cli secret gen <key> [--type password|hex] [--length N] [--ttl N]`
+### `sealbox-cli secret gen <key> [--type password|hex] [--length N] [--ttl N] [--rotate-after 30d]`
 
 The server generates the value, encrypts it, and stores it. **The plaintext never crosses the
 network and is not returned to anyone — including the caller who asked for it.** That is what
@@ -150,9 +168,37 @@ alphabet is about 187 bits.
 A length below 16 is refused rather than honoured — a caller asking for eight is likelier to have
 made a mistake than to have a reason, and a weak credential looks exactly like a strong one.
 
-### `sealbox-cli secret list`
+### `--rotate-after` is not `--ttl`
+
+`--ttl` **deletes** the secret when it passes. Reaching for it as a rotation deadline removes a
+credential production is still using, at the moment it is most in use.
+
+`--rotate-after` records how long a value should stand and **nothing acts on it**. It exists so
+that "how old is this credential" is a question sealbox can answer, instead of knowledge spread
+across everyone's cron jobs. A rotation carries it to the new version — losing the policy at the
+first rotation that honoured it would be the worst possible moment.
+
+```bash
+sealbox-cli secret gen app/session-key --rotate-after 30d
+```
+
+Sealbox runs no scheduler ([ADR 0013](adr/0013-automation-first.md)). Whatever runs on a timer
+stays outside, and its whole job is three lines:
+
+```bash
+for s in $(sealbox-cli secret list --overdue --output json | jq -r '.secrets[].key'); do
+  sealbox-cli rotate "$s" --via "$GRANT"
+done
+```
+
+### `sealbox-cli secret list [--overdue]`
 
 Keys, versions, and timestamps. Never values. Expired secrets are omitted.
+
+`--overdue` narrows it to secrets past their declared interval, computed from when each last
+changed. A secret declaring none is never overdue, and rotating one settles it — because the only
+thing that made it overdue is the timestamp a rotation moves. A **rekey** does not settle it: that
+re-encrypts the data key and leaves the value alone.
 
 ### `sealbox-cli secret show <key> [--version N]`
 
@@ -286,14 +332,23 @@ a credential must not travel that way.
 
 The new value is not displayed, to anyone, ever.
 
-### `sealbox-cli runner --name <name>`
+### `sealbox-cli runner --name <name> [--token-file <path>]`
 
 Claims jobs addressed to this runner, executes them, and reports back. **This is the only place a
 grant runs, and the only place a secret's plaintext exists outside the server.**
 
 ```bash
-sealbox-cli runner --name prod-cluster
+# with workload identity — no sealbox credential anywhere in the cluster
+sealbox-cli runner --name prod-runner --token-file /var/run/sealbox/token
+
+# with a bearer token, for a machine that has no workload identity to present
+SEALBOX_TOKEN=<the runner's token> sealbox-cli runner --name laptop
 ```
+
+`--token-file` is re-read **before every poll**, because the platform rotates it underneath — a
+runner that read it once at start-up would work until the first rotation and then stop. The file
+must hold a JWT; a Secret mounted where the projected token was meant to go fails with that said
+plainly rather than as an authentication error.
 
 It dials out — the network it sits in needs no inbound port, no Ingress, and no public endpoint.
 
@@ -316,18 +371,33 @@ deployment is worse than failing. Resubmit when you have decided that is safe.
 
 ---
 
-## Setup and recovery *(target)*
+## Recovery *(implemented)*
 
-### `sealbox-cli init`
+The master key is the only thing that can read the store, and replication covers the database and
+not the key. These are what stop that from being fatal.
 
-One-time initialisation of a fresh server: generates the recovery keypair locally, has the server
-generate its master key, and forces you to type the recovery key back before finishing. **Does not
-exist yet** — today, `bootstrap` claims the server and the server's master key file is the backup.
+### `sealbox-cli recovery init [--out <file>] [--description <who>]` *(admin)*
 
-### `sealbox-cli recovery-export` / `recovery-restore`
+Generates a recovery keypair **locally**, uploads only the public half, and has the server store
+its master key encrypted under it. Then it verifies: it fetches the stored blob and recovers the
+master key with the file it just wrote, refusing to report success otherwise.
 
-Exports the encrypted recovery blob — safe to store anywhere, because it is encrypted to a key the
-server does not hold — and rebuilds a server's master key from it. **Neither exists yet.**
+Registering a second key does not retire the first — both get their own blob, so two people can
+each hold one without sharing.
+
+### `sealbox-cli recovery export <id> [--out <file>]` *(admin)*
+
+Fetches the blob. Safe to store anywhere: without the private half it yields nothing. It is re-made
+automatically whenever the master key changes, so it cannot go stale unnoticed.
+
+### `sealbox-cli recovery restore --blob <file> --key <file> [--out master.pem]`
+
+Blob plus recovery key to a master key, **with no server involved**. That is the point: recovery
+happens when the server is gone, so a restore path that needs one is not a restore path.
+
+### `sealbox-cli recovery list` *(admin)*
+
+Which recovery keys can open this server, and which master key each blob currently holds.
 
 ---
 

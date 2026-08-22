@@ -36,22 +36,39 @@ fly secrets unset SEALBOX_BOOTSTRAP_TOKEN
 ### Back up the master key. Now, not later.
 
 On its first start the server finds no key and nothing stored, so it generates one at
-`/data/master.pem` and logs a fingerprint — never the key itself. **That file is the only copy.**
+`/data/master.pem` and logs a fingerprint — never the key itself. **That file is the only copy**,
+and Litestream replicates the database, not the key: losing the volume without a backup means the
+replicated database is ciphertext under a key that no longer exists.
 
 ```bash
-fly logs | grep -i fingerprint         # confirm which key is in use
-fly ssh console -C "cat /data/master.pem"   # into your password manager, then close the shell
+sealbox-cli admin recovery init --out ./sealbox-recovery.pem --description "your name here"
 ```
 
-Litestream replicates the **database**, not the key. Losing the volume without a copy of the key
-means the replicated database is ciphertext under a key that no longer exists — every secret gone,
-permanently, with a healthy-looking backup sitting in object storage.
+The CLI generates a recovery keypair **locally**, sends only the public half, and the server stores
+its master key encrypted under it. Then it proves the result works: it fetches what the server
+stored and recovers the master key with the file it just wrote, refusing to report success
+otherwise. An unverified backup is reliably not a backup.
 
-> **This manual step is interim.** The initialisation ceremony of
-> [ADR 0010](adr/0010-recovery-via-keypair-not-a-copied-key.md) — a recovery keypair generated
-> locally, the master key stored encrypted under it, and the recovery key typed back before setup
-> finishes — replaces it. It is not built yet, which is precisely why this step is written out
-> rather than assumed.
+Move `sealbox-recovery.pem` into a password manager or onto paper and delete it from the machine —
+an agent on your laptop can read it exactly as easily as you can. Keep a copy of the blob too if
+you like; it is safe anywhere, because the server does not hold the key that opens it:
+
+```bash
+sealbox-cli admin recovery export <id> --out ./sealbox-blob.json
+```
+
+The blob is re-made automatically whenever the master key changes, so it cannot quietly stop
+matching what it is meant to restore.
+
+**Recovering** needs no server, which is the point — the server is what you have lost:
+
+```bash
+sealbox-cli recovery restore --blob ./sealbox-blob.json --key ./sealbox-recovery.pem --out master.pem
+litestream restore -o sealbox.db s3://sealbox-backups/sealbox
+```
+
+> **Two people can each hold one.** Registering a second recovery key does not retire the first;
+> both get their own blob, and neither has to be shared.
 
 ### Replication
 
@@ -126,17 +143,48 @@ no shared token.
 
 ## 4. Put a runner in your cluster *(implemented)*
 
-```bash
-sealbox-cli identity create prod-cluster --role runner   # prints its token once
-```
-
-Give that token to a runner inside your infrastructure:
+The runner holds **no sealbox credential**. It presents the ServiceAccount token its own cluster
+signs, and sealbox verifies that offline against keys you register once.
 
 ```bash
-SEALBOX_SERVER=https://sealbox.example.dev \
-SEALBOX_TOKEN=<the runner's token> \
-  sealbox-cli runner --name prod-cluster
+# once per cluster
+kubectl get --raw /openid/v1/jwks > jwks.json
+sealbox-cli admin issuer add prod-cluster \
+  --issuer-url "$(kubectl get --raw /.well-known/openid-configuration | jq -r .issuer)" \
+  --jwks-file jwks.json
+
+# one identity, one exact ServiceAccount
+sealbox-cli admin identity create prod-runner --role runner \
+  --issuer prod-cluster \
+  --subject system:serviceaccount:sealbox:runner \
+  --audience sealbox
 ```
+
+In the Deployment, mount a **projected** token with that audience — not the default one, or a
+token minted for the cluster's API server would authenticate here — and point the runner at it:
+
+```yaml
+      containers:
+        - name: runner
+          args: ["runner", "--name", "prod-runner", "--token-file", "/var/run/sealbox/token"]
+          env:
+            - name: SEALBOX_SERVER
+              value: https://sealbox.example.dev
+          volumeMounts:
+            - name: sealbox-identity
+              mountPath: /var/run/sealbox
+              readOnly: true
+      volumes:
+        - name: sealbox-identity
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: sealbox
+                  expirationSeconds: 3600
+```
+
+The runner re-reads that file before every poll, because the kubelet rotates it underneath.
 
 This is the only place a grant executes and the only place a secret's plaintext exists outside
 the server. It dials out, so the cluster needs no inbound port and no public endpoint.
@@ -145,9 +193,14 @@ Its permissions are disjoint from every other role: claim, execute, report — n
 admin cannot claim a job either, because the most privileged identity is still not the machine
 the job was addressed to.
 
-> **Target, not yet built:** the token is a long-lived identity token today. It will become a
-> 15-minute join token exchanged for a keypair the runner generates itself, so the Secret holding
-> it becomes worthless minutes later.
+> **Subjects match exactly.** A prefix would mean that creating a ServiceAccount is enough to
+> become a runner, and in most clusters far more people can create one than can be trusted with
+> plaintext. Revocation stays sealbox's: revoking the identity ends it regardless of what the
+> cluster keeps signing.
+
+> **A cluster that rotates its signing keys** needs its JWKS re-registered. Register the document
+> holding both keys with `issuer update`, and remove the old one once nothing presents it — the
+> same overlap master keys use.
 
 The runner needs **no inbound port, no Ingress, and no public endpoint** — it dials out. Its
 ServiceAccount is its entire authority over the cluster; scope it to exactly what your grants

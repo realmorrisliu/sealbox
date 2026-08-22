@@ -24,6 +24,13 @@ struct TestServer {
 }
 
 impl TestServer {
+    /// The SQLite file behind this server, for the few tests that have to stand in for time.
+    fn store_path(&self) -> std::path::PathBuf {
+        self._dir.path().join("test.db")
+    }
+}
+
+impl TestServer {
     fn new() -> Self {
         Self::with_bootstrap_window(std::time::Duration::from_secs(1800))
     }
@@ -510,8 +517,8 @@ async fn a_generated_secret_is_never_returned() {
     let keys: Vec<_> = body.as_object().unwrap().keys().cloned().collect();
     assert_eq!(
         keys,
-        vec!["created_at", "expires_at", "key", "version"],
-        "storing a secret reports which version it became, and nothing else"
+        vec!["created_at", "expires_at", "key", "rotate_after", "version"],
+        "storing a secret reports which version it became and its policy, and nothing else"
     );
 }
 
@@ -1573,22 +1580,40 @@ async fn a_failed_rotation_leaves_no_version_gap() {
 }
 
 #[tokio::test]
-async fn an_agent_cannot_rotate() {
+async fn an_agent_rotates_through_an_approved_grant() {
     let server = TestServer::new();
     let (admin, _runner) = rotation_fixture(&server).await;
     let agent = server.identity(&admin, "bot", "agent").await;
 
+    // Rotation widens nothing: the grant was approved by a human, the value is generated here and
+    // returned to nobody, and the previous credential keeps working until something drops it. A
+    // person in this path would buy no boundary and cost the automation the design is for
+    // (ADR 0013). An agent that may invoke a grant may rotate through one.
     let response = server
         .rotate(&agent, "app/db", serde_json::json!({ "via": "push" }))
         .await;
-    assert_eq!(
-        response.status(),
-        StatusCode::FORBIDDEN,
-        "an agent may run a grant that reads secrets; changing one is a different thing"
+    assert!(
+        response.status().is_success(),
+        "an agent may rotate through a grant that declares the secret"
     );
 }
 
-// ---------------------------------------------------------------- adapters
+#[tokio::test]
+async fn a_runner_still_cannot_rotate() {
+    let server = TestServer::new();
+    let (admin, _runner) = rotation_fixture(&server).await;
+    let second = server.identity(&admin, "other-runner", "runner").await;
+
+    // The runner's permissions are disjoint, not beneath: it takes what it is given and reports
+    // back. Nothing about opening rotation to agents reaches it.
+    assert_eq!(
+        server
+            .rotate(&second, "app/db", serde_json::json!({ "via": "push" }))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+}
 
 #[tokio::test]
 async fn adapter_configuration_is_validated_at_approval() {
@@ -1888,4 +1913,991 @@ async fn an_agent_still_learns_that_a_secret_exists_and_when_it_changed() {
             .status(),
         StatusCode::NOT_FOUND
     );
+}
+
+// ---------------------------------------------------------------- rotation policy
+
+/// Store a secret carrying a rotation interval, and backdate it so it is already overdue.
+async fn overdue_secret(server: &TestServer, admin: &str, key: &str, after: i64, age: i64) {
+    let response = server
+        .send(
+            build("PUT", &format!("/v1/secrets/{key}"), Some(admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "secret": "value", "rotate_after": after }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success());
+
+    // Standing in for time passing: reach into the store and age the row. Nothing else in the
+    // system can make a secret older, which is the point — the interval is measured from a
+    // timestamp only a rotation moves.
+    if age > 0 {
+        let then = time::OffsetDateTime::now_utc().unix_timestamp() - age;
+        let conn = rusqlite::Connection::open(server.store_path()).expect("Should open the store");
+        conn.execute(
+            "UPDATE secrets SET updated_at = ?1 WHERE key = ?2",
+            (then, key),
+        )
+        .expect("Should backdate");
+    }
+}
+
+#[tokio::test]
+async fn overdue_lists_exactly_what_is_past_its_interval() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    overdue_secret(&server, &admin, "app/stale", 3600, 7200).await;
+    overdue_secret(&server, &admin, "app/fresh", 86400, 0).await;
+    server.secret(&admin, "app/no-policy").await;
+
+    let body = server
+        .json(
+            server
+                .send(get("/v1/secrets?overdue=true", Some(&admin)))
+                .await,
+        )
+        .await;
+    let names: Vec<&str> = body["secrets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["key"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(
+        names,
+        vec!["app/stale"],
+        "one is past its interval; one is not; one declares none and so is never due"
+    );
+
+    // The interval is a declaration, not a timer: the overdue secret is untouched and still
+    // readable. Nothing swept it, nothing queued anything, and job 1 does not exist because no
+    // job was ever created.
+    let still = server
+        .json(
+            server
+                .send(get("/v1/secrets/app/stale", Some(&admin)))
+                .await,
+        )
+        .await;
+    assert_eq!(still["version"], 1);
+    assert!(
+        !server
+            .send(get("/v1/jobs/1", Some(&admin)))
+            .await
+            .status()
+            .is_success(),
+        "nothing acts on the interval on its own — no job exists to have been created"
+    );
+}
+
+#[tokio::test]
+async fn a_rotation_carries_the_interval_and_settles_the_secret() {
+    let server = TestServer::new();
+    let (admin, runner) = rotation_fixture(&server).await;
+
+    // `rotation_fixture` stores app/db without a policy; give it one, already overdue.
+    overdue_secret(&server, &admin, "app/db", 3600, 7200).await;
+    async fn overdue_count(server: &TestServer, admin: &str) -> usize {
+        server
+            .json(
+                server
+                    .send(get("/v1/secrets?overdue=true", Some(admin)))
+                    .await,
+            )
+            .await["secrets"]
+            .as_array()
+            .unwrap()
+            .len()
+    }
+    assert_eq!(overdue_count(&server, &admin).await, 1);
+
+    server
+        .rotate(&admin, "app/db", serde_json::json!({ "via": "push" }))
+        .await;
+    server.finish(&runner, 0, None).await;
+
+    let after = server
+        .json(server.send(get("/v1/secrets/app/db", Some(&admin))).await)
+        .await;
+    assert_eq!(
+        after["rotate_after"], 3600,
+        "losing the policy at the first rotation that honoured it would be the worst moment"
+    );
+    assert_eq!(
+        overdue_count(&server, &admin).await,
+        0,
+        "rotating settles it, because the only thing making it overdue is the timestamp"
+    );
+}
+
+// ---------------------------------------------------------------- the ceremonies
+//
+// A software authenticator stands in for the hardware one. What it does not stand in for is the
+// person: consent, presence, and the browser's origin checks are the authenticator's job in a
+// real ceremony, and here they are simply granted. What these do cover is everything on the
+// server's side of the wire — the challenge, the signature over it, what the signature is bound
+// to, and what each of them is then allowed to do.
+
+use webauthn_authenticator_rs::{AuthenticatorBackend, softpasskey::SoftPasskey};
+use webauthn_rs::prelude::Url;
+
+/// One person with one authenticator, driving real ceremonies against the real routes.
+struct Person {
+    authenticator: SoftPasskey,
+    origin: Url,
+}
+
+impl Person {
+    fn new() -> Self {
+        Self {
+            // `true` falsifies user verification: there is nobody here to verify.
+            authenticator: SoftPasskey::new(true),
+            origin: Url::parse("http://localhost:8080").expect("Should parse"),
+        }
+    }
+
+    /// Register through the enrolment link, exactly as the page does.
+    async fn enrol(&mut self, server: &TestServer, id: &uuid::Uuid) -> serde_json::Value {
+        let challenge = server
+            .json(
+                server
+                    .send(
+                        post(&format!("/enrol/{id}/start"), None)
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await,
+            )
+            .await;
+
+        let options = serde_json::from_value(challenge["publicKey"].clone())
+            .expect("the server should send a creation challenge");
+        let credential = self
+            .authenticator
+            .perform_register(self.origin.clone(), options, 60_000)
+            .expect("the authenticator should register");
+
+        let response = server
+            .send(
+                post(&format!("/enrol/{id}/finish"), None)
+                    .body(Body::from(serde_json::to_vec(&credential).unwrap()))
+                    .unwrap(),
+            )
+            .await;
+        assert!(response.status().is_success(), "enrolment should finish");
+        server.json(response).await
+    }
+
+    /// Sign a challenge at `base` (a login or an approval) and post the result to its finish.
+    async fn sign(
+        &mut self,
+        server: &TestServer,
+        base: &str,
+        identity: &str,
+    ) -> http::Response<Body> {
+        let started = server
+            .json(
+                server
+                    .send(
+                        post(&format!("{base}/start"), None)
+                            .header(header::CONTENT_TYPE, "application/json")
+                            .body(Body::from(
+                                serde_json::json!({ "identity": identity }).to_string(),
+                            ))
+                            .unwrap(),
+                    )
+                    .await,
+            )
+            .await;
+
+        let options = serde_json::from_value(started["options"]["publicKey"].clone())
+            .expect("the server should send a request challenge");
+        let credential = self
+            .authenticator
+            .perform_auth(self.origin.clone(), options, 60_000)
+            .expect("the authenticator should sign");
+
+        server
+            .send(
+                post(&format!("{base}/finish"), None)
+                    .body(Body::from(
+                        serde_json::json!({
+                            "challenge_id": started["challenge_id"],
+                            "credential": credential,
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+    }
+}
+
+/// Claim a server and come out of it holding a session, the way a person actually would.
+async fn enrol_and_sign_in(server: &TestServer, person: &mut Person) -> String {
+    let body = server
+        .json(
+            server
+                .send(
+                    post("/v1/bootstrap", None)
+                        .body(Body::from(
+                            serde_json::json!({ "token": BOOTSTRAP_TOKEN, "name": "root" })
+                                .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await,
+        )
+        .await;
+
+    let enrolment: uuid::Uuid = body["enrol_at"]
+        .as_str()
+        .and_then(|u| u.rsplit('/').next())
+        .and_then(|id| id.parse().ok())
+        .unwrap_or_else(|| panic!("bootstrap should return an enrolment link: {body}"));
+    person.enrol(server, &enrolment).await;
+
+    let opened = server
+        .json(
+            server
+                .send(post("/v1/auth/login", None).body(Body::empty()).unwrap())
+                .await,
+        )
+        .await;
+    let login = opened["login"].as_str().expect("a login id").to_string();
+
+    let response = person
+        .sign(server, &format!("/login/{login}"), "root")
+        .await;
+    assert!(response.status().is_success(), "signing in should succeed");
+
+    let collected = server
+        .json(
+            server
+                .send(get(&format!("/v1/auth/login/{login}"), None))
+                .await,
+        )
+        .await;
+    collected["session"]
+        .as_str()
+        .expect("the waiting caller should collect a session")
+        .to_string()
+}
+
+#[tokio::test]
+async fn a_passkey_carries_someone_from_enrolment_to_an_admin_operation() {
+    let server = TestServer::new();
+    let mut person = Person::new();
+    let session = enrol_and_sign_in(&server, &mut person).await;
+
+    // The session is the only thing that acts as an admin, and it does.
+    let response = server.send(get("/v1/identities", Some(&session))).await;
+    assert!(
+        response.status().is_success(),
+        "a signed-in admin should reach an admin route"
+    );
+}
+
+#[tokio::test]
+async fn an_enrolment_link_cannot_be_used_twice() {
+    let server = TestServer::new();
+    let mut person = Person::new();
+    enrol_and_sign_in(&server, &mut person).await;
+
+    // A leaked link must not be a way to add a second authenticator to a working identity.
+    let id = server.state.passkey.issue_enrolment("root");
+    let response = server
+        .send(
+            post(&format!("/enrol/{id}/start"), None)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_grant_exists_only_after_it_is_signed_for() {
+    let server = TestServer::new();
+    let mut person = Person::new();
+    let session = enrol_and_sign_in(&server, &mut person).await;
+    server.secret(&session, "app-db-url").await;
+
+    let staged = server
+        .json(
+            server
+                .stage_grant(&session, adapter_grant("k8s-sync", "app-db-url"))
+                .await,
+        )
+        .await;
+    let approval = staged["pending_approval"].as_str().expect("an approval id");
+
+    assert_eq!(
+        server
+            .send(get("/v1/grants/k8s-sync", Some(&session)))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+        "staging must create nothing"
+    );
+
+    let response = person
+        .sign(&server, &format!("/approve/{approval}"), "root")
+        .await;
+    assert!(response.status().is_success(), "approving should succeed");
+
+    let grant = server
+        .json(
+            server
+                .send(get("/v1/grants/k8s-sync", Some(&session)))
+                .await,
+        )
+        .await;
+    assert_eq!(grant["name"], "k8s-sync");
+    assert_eq!(
+        grant["created_by"], "root",
+        "the grant records who signed for it"
+    );
+}
+
+#[tokio::test]
+async fn a_signature_for_one_approval_does_not_approve_another() {
+    let server = TestServer::new();
+    let mut person = Person::new();
+    let session = enrol_and_sign_in(&server, &mut person).await;
+    server.secret(&session, "app-db-url").await;
+
+    let first = server
+        .json(
+            server
+                .stage_grant(&session, adapter_grant("harmless", "app-db-url"))
+                .await,
+        )
+        .await;
+    let second = server
+        .json(
+            server
+                .stage_grant(&session, adapter_grant("the-one-they-want", "app-db-url"))
+                .await,
+        )
+        .await;
+
+    // Sign for the first, then submit that signature against the second — the substitution the
+    // rendered page exists to prevent, attempted at the wire instead of the display.
+    let started = server
+        .json(
+            server
+                .send(
+                    post(
+                        &format!(
+                            "/approve/{}/start",
+                            first["pending_approval"].as_str().unwrap()
+                        ),
+                        None,
+                    )
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "identity": "root" }).to_string(),
+                    ))
+                    .unwrap(),
+                )
+                .await,
+        )
+        .await;
+    let options = serde_json::from_value(started["options"]["publicKey"].clone()).unwrap();
+    let credential = person
+        .authenticator
+        .perform_auth(person.origin.clone(), options, 60_000)
+        .expect("the authenticator should sign");
+
+    let response = server
+        .send(
+            post(
+                &format!(
+                    "/approve/{}/finish",
+                    second["pending_approval"].as_str().unwrap()
+                ),
+                None,
+            )
+            .body(Body::from(
+                serde_json::json!({
+                    "challenge_id": started["challenge_id"],
+                    "credential": credential,
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+        )
+        .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        server
+            .send(get("/v1/grants/the-one-they-want", Some(&session)))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND,
+        "the grant they wanted must not exist"
+    );
+}
+
+// ---------------------------------------------------------------- workload identity
+//
+// A runner's credential is the only one that receives plaintext. These drive the real routes with
+// real signatures, so what is asserted is what a cluster's token would meet.
+
+/// A stand-in issuer: an RSA key, the JWKS that publishes it, and tokens signed by it.
+struct Platform {
+    encoding: jsonwebtoken::EncodingKey,
+    jwks: String,
+    url: String,
+}
+
+impl Platform {
+    fn new(url: &str) -> Self {
+        use base64::Engine;
+        use rsa::traits::PublicKeyParts;
+
+        let (private_pem, _) =
+            crate::crypto::master_key::generate_key_pair().expect("Should generate a key");
+        // The generator emits PKCS#1; jsonwebtoken wants PKCS#8, so convert once here.
+        let private =
+            <rsa::RsaPrivateKey as rsa::pkcs1::DecodeRsaPrivateKey>::from_pkcs1_pem(&private_pem)
+                .expect("Should parse");
+        let pkcs8 = <rsa::RsaPrivateKey as rsa::pkcs8::EncodePrivateKey>::to_pkcs8_pem(
+            &private,
+            rsa::pkcs8::LineEnding::LF,
+        )
+        .expect("Should re-encode");
+        let public = private.to_public_key();
+
+        let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let jwks = serde_json::json!({
+            "keys": [{
+                "kty": "RSA",
+                "kid": "test-key",
+                "alg": "RS256",
+                "use": "sig",
+                "n": b64.encode(public.n().to_bytes_be()),
+                "e": b64.encode(public.e().to_bytes_be()),
+            }]
+        })
+        .to_string();
+
+        Self {
+            encoding: jsonwebtoken::EncodingKey::from_rsa_pem(pkcs8.as_bytes())
+                .expect("Should build an encoding key"),
+            jwks,
+            url: url.to_string(),
+        }
+    }
+
+    fn sign(&self, subject: &str, audience: &str, expires_in: i64) -> String {
+        self.sign_with_kid(subject, audience, expires_in, Some("test-key"))
+    }
+
+    fn sign_with_kid(
+        &self,
+        subject: &str,
+        audience: &str,
+        expires_in: i64,
+        kid: Option<&str>,
+    ) -> String {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let claims = serde_json::json!({
+            "iss": self.url,
+            "sub": subject,
+            "aud": audience,
+            "iat": now,
+            "exp": now + expires_in,
+        });
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+        header.kid = kid.map(|k| k.to_string());
+        jsonwebtoken::encode(&header, &claims, &self.encoding).expect("Should sign")
+    }
+}
+
+/// Register the platform as an issuer and bind a runner identity to one subject.
+async fn bind_runner(
+    server: &TestServer,
+    admin: &str,
+    platform: &Platform,
+    name: &str,
+    subject: &str,
+) {
+    let response = server
+        .send(
+            post("/v1/issuers", Some(admin))
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "prod-cluster",
+                        "url": platform.url,
+                        "jwks": platform.jwks,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "registering the issuer");
+
+    let response = server
+        .send(
+            post("/v1/identities", Some(admin))
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": name,
+                        "role": "runner",
+                        "issuer": "prod-cluster",
+                        "subject": subject,
+                        "audience": "sealbox",
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "binding the runner");
+    let body = server.json(response).await;
+    assert!(
+        body["token"].is_null(),
+        "a bound identity holds no credential: {body}"
+    );
+}
+
+/// What a runner does with its token: claim a job.
+async fn claim_with(server: &TestServer, token: &str) -> http::StatusCode {
+    server
+        .send(get("/v1/jobs/claim?runner=prod-runner", Some(token)))
+        .await
+        .status()
+}
+
+#[tokio::test]
+async fn a_workload_token_authenticates_a_runner() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let platform = Platform::new("https://kubernetes.default.svc.cluster.local");
+    bind_runner(
+        &server,
+        &admin,
+        &platform,
+        "prod-runner",
+        "system:serviceaccount:sealbox:runner",
+    )
+    .await;
+
+    let token = platform.sign("system:serviceaccount:sealbox:runner", "sealbox", 3600);
+    assert!(
+        claim_with(&server, &token).await.is_success(),
+        "a valid token from the bound issuer authenticates"
+    );
+}
+
+#[tokio::test]
+async fn every_way_a_workload_token_can_be_wrong_is_refused() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let platform = Platform::new("https://kubernetes.default.svc.cluster.local");
+    bind_runner(
+        &server,
+        &admin,
+        &platform,
+        "prod-runner",
+        "system:serviceaccount:sealbox:runner",
+    )
+    .await;
+
+    let elsewhere = Platform::new("https://someone-elses-cluster");
+
+    let cases = [
+        (
+            "another subject in the same cluster",
+            platform.sign("system:serviceaccount:default:anyone", "sealbox", 3600),
+        ),
+        (
+            "a subject differing only by a suffix",
+            platform.sign("system:serviceaccount:sealbox:runner-2", "sealbox", 3600),
+        ),
+        (
+            "a token minted for the API server",
+            platform.sign(
+                "system:serviceaccount:sealbox:runner",
+                "https://kubernetes.default.svc",
+                3600,
+            ),
+        ),
+        (
+            "an expired token",
+            platform.sign("system:serviceaccount:sealbox:runner", "sealbox", -7200),
+        ),
+        (
+            "a token signed by another issuer's key",
+            elsewhere.sign("system:serviceaccount:sealbox:runner", "sealbox", 3600),
+        ),
+        (
+            "a key nobody registered",
+            platform.sign_with_kid(
+                "system:serviceaccount:sealbox:runner",
+                "sealbox",
+                3600,
+                Some("some-other-key"),
+            ),
+        ),
+        (
+            "something that is not a token at all",
+            "not.a.jwt".to_string(),
+        ),
+    ];
+
+    for (what, token) in cases {
+        assert_eq!(
+            claim_with(&server, &token).await,
+            StatusCode::UNAUTHORIZED,
+            "{what} must be refused"
+        );
+    }
+}
+
+#[tokio::test]
+async fn revoking_a_bound_identity_ends_it_whatever_the_platform_signs() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let platform = Platform::new("https://kubernetes.default.svc.cluster.local");
+    bind_runner(
+        &server,
+        &admin,
+        &platform,
+        "prod-runner",
+        "system:serviceaccount:sealbox:runner",
+    )
+    .await;
+
+    let token = platform.sign("system:serviceaccount:sealbox:runner", "sealbox", 3600);
+    assert!(claim_with(&server, &token).await.is_success());
+
+    // Revocation has to be sealbox's, not the platform's: the cluster will happily keep signing.
+    let response = server
+        .send(
+            build("DELETE", "/v1/identities/prod-runner", Some(&admin))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "revoking");
+
+    assert_eq!(
+        claim_with(&server, &token).await,
+        StatusCode::UNAUTHORIZED,
+        "the same token must stop working the moment the identity is revoked"
+    );
+}
+
+#[tokio::test]
+async fn both_keys_work_while_a_signing_key_rotates() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let old = Platform::new("https://kubernetes.default.svc.cluster.local");
+    bind_runner(
+        &server,
+        &admin,
+        &old,
+        "prod-runner",
+        "system:serviceaccount:sealbox:runner",
+    )
+    .await;
+
+    // A cluster rotating its signing key publishes both for a while. Registering the combined
+    // JWKS is how that overlaps here instead of cutting over and stranding every runner.
+    let new = Platform::new("https://kubernetes.default.svc.cluster.local");
+    let mut combined: serde_json::Value = serde_json::from_str(&old.jwks).unwrap();
+    let mut new_key: serde_json::Value = serde_json::from_str(&new.jwks).unwrap();
+    new_key["keys"][0]["kid"] = serde_json::json!("rotated-key");
+    combined["keys"]
+        .as_array_mut()
+        .unwrap()
+        .push(new_key["keys"][0].clone());
+
+    let response = server
+        .send(
+            build("PUT", "/v1/issuers/prod-cluster", Some(&admin))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "jwks": combined.to_string() }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "registering both keys");
+
+    for (which, token) in [
+        (
+            "the old key",
+            old.sign("system:serviceaccount:sealbox:runner", "sealbox", 3600),
+        ),
+        (
+            "the new key",
+            new.sign_with_kid(
+                "system:serviceaccount:sealbox:runner",
+                "sealbox",
+                3600,
+                Some("rotated-key"),
+            ),
+        ),
+    ] {
+        assert!(
+            claim_with(&server, &token).await.is_success(),
+            "{which} should authenticate during a rotation"
+        );
+    }
+}
+
+#[tokio::test]
+async fn binding_an_identity_needs_all_three_parts() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let response = server
+        .send(
+            post("/v1/identities", Some(&admin))
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "half-bound",
+                        "role": "runner",
+                        "issuer": "prod-cluster",
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = server.json(response).await;
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("audience"),
+        "the refusal should say what is missing and why: {body}"
+    );
+}
+
+#[tokio::test]
+async fn an_issuer_that_does_not_parse_is_refused_while_someone_is_there_to_fix_it() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let response = server
+        .send(
+            post("/v1/issuers", Some(&admin))
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "typo",
+                        "url": "https://cluster",
+                        "jwks": "{ not a jwks }",
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+// ---------------------------------------------------------------- recovery
+//
+// The master key is the only thing that can read the store, and replication covers the database
+// and not the key. These assert the property that matters: a blob plus its recovery key produces
+// the master key, and a blob alone produces nothing.
+
+/// Register a recovery key and return (id, private PEM).
+async fn register_recovery(server: &TestServer, admin: &str) -> (uuid::Uuid, String) {
+    let (private_pem, public_pem) =
+        crate::crypto::master_key::generate_key_pair().expect("Should generate");
+
+    let response = server
+        .send(
+            post("/v1/recovery", Some(admin))
+                .body(Body::from(
+                    serde_json::json!({ "public_key": public_pem }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "registering a recovery key");
+
+    let body = server.json(response).await;
+    let id = body["recovery_key_id"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .expect("a recovery key id");
+    (id, private_pem)
+}
+
+/// What the restore tool does: the recovery key opens the data key, the data key opens the payload.
+fn open_blob(blob: &serde_json::Value, private_pem: &str) -> Option<Vec<u8>> {
+    use std::str::FromStr;
+
+    let field = |name: &str| -> Vec<u8> {
+        blob[name]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u8)
+            .collect()
+    };
+
+    let private = crate::crypto::master_key::PrivateMasterKey::from_str(private_pem).ok()?;
+    let data_key_bytes = private.decrypt(&field("encrypted_data_key")).ok()?;
+    let data_key = crate::crypto::data_key::DataKey::from_bytes(&data_key_bytes).ok()?;
+    data_key.decrypt(&field("encrypted_data")).ok()
+}
+
+async fn fetch_blob(server: &TestServer, admin: &str, id: &uuid::Uuid) -> serde_json::Value {
+    server
+        .json(
+            server
+                .send(get(&format!("/v1/recovery/{id}"), Some(admin)))
+                .await,
+        )
+        .await
+}
+
+#[tokio::test]
+async fn a_blob_and_its_key_produce_the_master_key() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (id, private_pem) = register_recovery(&server, &admin).await;
+
+    let blob = fetch_blob(&server, &admin, &id).await;
+    let recovered = open_blob(&blob, &private_pem).expect("the blob should open");
+
+    let on_disk = std::fs::read(server.state.config.master_key_paths[0].clone())
+        .expect("Should read the master key");
+    assert_eq!(
+        recovered, on_disk,
+        "what comes out is the master key file itself, byte for byte"
+    );
+}
+
+#[tokio::test]
+async fn a_blob_alone_yields_nothing() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (id, _) = register_recovery(&server, &admin).await;
+
+    let blob = fetch_blob(&server, &admin, &id).await;
+    let serialised = blob.to_string();
+
+    let on_disk = std::fs::read_to_string(server.state.config.master_key_paths[0].clone()).unwrap();
+    let body = on_disk.lines().nth(1).expect("a line of key material");
+    assert!(
+        !serialised.contains(body),
+        "the blob must not carry the key it protects"
+    );
+
+    // And the wrong key fails cleanly rather than producing rubbish that looks like a key.
+    let (other_pem, _) = crate::crypto::master_key::generate_key_pair().unwrap();
+    assert!(
+        open_blob(&blob, &other_pem).is_none(),
+        "a recovery key that did not encrypt this blob must not open it"
+    );
+}
+
+#[tokio::test]
+async fn a_private_key_sent_by_mistake_is_refused() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (private_pem, _) = crate::crypto::master_key::generate_key_pair().unwrap();
+
+    // Pasting the wrong half must not be silently accepted: the blob is safe to store anywhere
+    // only because the server cannot open it.
+    let response = server
+        .send(
+            post("/v1/recovery", Some(&admin))
+                .body(Body::from(
+                    serde_json::json!({ "public_key": private_pem }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = server.json(response).await;
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("public half"),
+        "the refusal should say which half to send: {body}"
+    );
+}
+
+#[tokio::test]
+async fn two_recovery_keys_each_recover_independently() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let (first_id, first_pem) = register_recovery(&server, &admin).await;
+    let (second_id, second_pem) = register_recovery(&server, &admin).await;
+
+    // Registering the second must not disturb the first: an operator adding a colleague's key
+    // has not thereby retired their own.
+    for (id, pem) in [(first_id, first_pem), (second_id, second_pem)] {
+        let blob = fetch_blob(&server, &admin, &id).await;
+        assert!(
+            open_blob(&blob, &pem).is_some(),
+            "each key opens its own blob"
+        );
+    }
+}
+
+#[tokio::test]
+async fn changing_the_master_key_refreshes_every_blob() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (id, private_pem) = register_recovery(&server, &admin).await;
+    let before = fetch_blob(&server, &admin, &id).await;
+
+    // Stand in for the key changing on disk. A backup that quietly stops matching what it is
+    // meant to restore is worse than no backup.
+    let (new_pem, _) = crate::crypto::master_key::generate_key_pair().unwrap();
+    std::fs::write(server.state.config.master_key_paths[0].clone(), &new_pem)
+        .expect("Should replace the key file");
+    let refreshed = server
+        .state
+        .refresh_every_recovery_blob()
+        .expect("Should refresh");
+    assert_eq!(refreshed, 1);
+
+    let after = fetch_blob(&server, &admin, &id).await;
+    assert_ne!(
+        before["encrypted_data"], after["encrypted_data"],
+        "the blob should have been re-made"
+    );
+    assert_eq!(
+        open_blob(&after, &private_pem).map(|b| String::from_utf8_lossy(&b).into_owned()),
+        Some(new_pem),
+        "and it should now hold the key that is actually in use"
+    );
+}
+
+#[tokio::test]
+async fn only_an_admin_reaches_recovery() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (id, _) = register_recovery(&server, &admin).await;
+    let operator = server.identity(&admin, "alice", "operator").await;
+
+    for uri in ["/v1/recovery", &format!("/v1/recovery/{id}")] {
+        assert_eq!(
+            server.send(get(uri, Some(&operator))).await.status(),
+            StatusCode::FORBIDDEN,
+            "{uri} is not an operator's to read"
+        );
+    }
 }

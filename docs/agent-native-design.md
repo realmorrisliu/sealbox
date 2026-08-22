@@ -307,20 +307,52 @@ re-entry is deliberate: an unverified backup is not a backup.
 **You put a runner in the cluster.**
 
 ```bash
-sealbox-cli identity create prod-cluster --role runner   # → join token, 15 min, single use
-kubectl -n sealbox create secret generic sealbox-join --from-literal=token=<token>
+# once per cluster: register the platform whose signatures may authenticate
+kubectl get --raw /openid/v1/jwks > jwks.json
+sealbox-cli admin issuer add prod-cluster \
+  --issuer-url "$(kubectl get --raw /.well-known/openid-configuration | jq -r .issuer)" \
+  --jwks-file jwks.json
+
+# then bind one identity to one exact ServiceAccount
+sealbox-cli admin identity create prod-runner --role runner \
+  --issuer prod-cluster \
+  --subject system:serviceaccount:sealbox:runner \
+  --audience sealbox
+
 kubectl apply -f runner-deployment.yaml
 ```
 
-The runner generates its own keypair on first start, registers the public half using the join
-token, and authenticates by signature from then on — the GitHub Actions / Buildkite runner
-pattern. **The join token expires in fifteen minutes, so the Secret you just created becomes
-worthless**, which is what makes this one manual step acceptable. The chicken-and-egg has to be
-broken somewhere; it is broken here, deliberately and visibly.
+**No credential is issued, and none is stored.** The runner presents the ServiceAccount token its
+own cluster signs — mounted by the kubelet, rotated underneath it, and reissued on every restart —
+and sealbox verifies it offline against the keys registered above. There is nothing in a Secret to
+leak, nothing to rotate, and no chicken-and-egg to break.
 
-*(A stronger form — Kubernetes TokenReview against projected ServiceAccount tokens, with no
-pre-shared secret at all — would require the server to reach the cluster API, contradicting the
-topology. Join tokens are the right balance.)*
+The audience must not be the platform's default: a token minted for the cluster's API server does
+not authenticate here.
+
+```yaml
+volumes:
+  - name: sealbox-identity
+    projected:
+      sources:
+        - serviceAccountToken:
+            path: token
+            audience: sealbox
+            expirationSeconds: 3600
+```
+
+Subjects match **exactly**. A prefix would mean that creating a ServiceAccount is enough to become
+a runner, and in most clusters far more people can create one than can be trusted with plaintext.
+Revocation stays sealbox's: revoking the identity ends it regardless of what the cluster keeps
+signing.
+
+*(This replaced a design that had 15-minute join tokens exchanged for a self-generated keypair. It
+never said where that keypair lived, and there was no answer: in memory, a pod restart loses it and
+the join token has long expired, so the runner never comes back; on a volume, the long-lived
+credential is back, moved somewhere worse. Pods restart.)*
+
+*(A cluster whose OIDC issuer is not publicly reachable is the normal case, which is why the keys
+are registered rather than fetched — the same constraint that made the runner poll outbound.)*
 
 **You move your credentials in.**
 
@@ -478,8 +510,9 @@ provisions a new service end to end without learning a single password.**
 2. **`identities`** — one per human, per agent, and per runner, with a role, revocable. Humans
    authenticate with a passkey; agents and runners hold bearer tokens, because they have no
    fingers. Includes the two enrolment flows: **single-use 24h invites bound to a named identity**
-   for humans, and **15-minute join tokens exchanged for a self-generated keypair** for runners,
-   so the Secret holding a join token is worthless minutes later. Required the moment the server is shared: it makes audit meaningful, and lets one
+   for humans, and **workload identity** for runners — the ServiceAccount token the platform
+   already signs, verified offline against keys registered once, so no credential is stored at
+   all. Required the moment the server is shared: it makes audit meaningful, and lets one
    person's access be withdrawn without rotating everyone's.
 3. **`sealbox set` and `sealbox gen`.**
 4. **Grants stored server-side**, with parameters, a declared runner, and all three injection

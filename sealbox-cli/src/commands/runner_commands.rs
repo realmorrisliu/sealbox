@@ -43,10 +43,21 @@ enum Implementation {
 ///
 /// Outbound only: the runner dials the server, so the network it sits in needs no inbound port,
 /// no Ingress, and no public endpoint (ADR 0008).
-pub async fn run(config: &Config, output: &OutputManager, name: String) -> Result<()> {
-    config
-        .validate()
-        .context("Configuration validation failed")?;
+pub async fn run(
+    config: &Config,
+    output: &OutputManager,
+    name: String,
+    token_file: Option<String>,
+) -> Result<()> {
+    // A token file means the platform supplies the credential — a projected ServiceAccount token,
+    // say — and `config.server.token` need not be set at all.
+    if token_file.is_none() {
+        config
+            .validate()
+            .context("Configuration validation failed")?;
+    } else if config.server.url.is_empty() {
+        anyhow::bail!("Set the server URL with --url or SEALBOX_SERVER");
+    }
     output.print_info(&format!(
         "Runner '{name}' polling {} — this is the only place a grant executes.",
         config.server.url
@@ -59,7 +70,18 @@ pub async fn run(config: &Config, output: &OutputManager, name: String) -> Resul
         .context("Failed to build HTTP client")?;
 
     loop {
-        match claim(&client, config).await {
+        // Re-read every time round: the platform rotates the file underneath us, and a runner
+        // that read it once at start-up would work until the first rotation and then stop.
+        let credential = match credential(config, token_file.as_deref()) {
+            Ok(credential) => credential,
+            Err(e) => {
+                output.print_warning(&format!("{e}"));
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+
+        match claim(&client, config, &credential).await {
             Ok(Some(job)) => {
                 let id = job.id;
                 let grant = job.grant.clone();
@@ -81,7 +103,16 @@ pub async fn run(config: &Config, output: &OutputManager, name: String) -> Resul
                     (format!("{out}{err}"), None)
                 };
 
-                report(&client, config, id, exit_code, &reported, captured).await?;
+                report(
+                    &client,
+                    config,
+                    &credential,
+                    id,
+                    exit_code,
+                    &reported,
+                    captured,
+                )
+                .await?;
                 if exit_code == 0 {
                     output.print_success(&format!("Job {id} succeeded"));
                 } else {
@@ -97,10 +128,35 @@ pub async fn run(config: &Config, output: &OutputManager, name: String) -> Resul
     }
 }
 
-async fn claim(client: &Client, config: &Config) -> Result<Option<ClaimedJob>> {
+/// The credential to present: whatever the platform currently has in the token file, or the
+/// configured bearer token.
+fn credential(config: &Config, token_file: Option<&str>) -> Result<String> {
+    match token_file {
+        Some(path) => {
+            let token = std::fs::read_to_string(path).with_context(|| {
+                format!(
+                    "Cannot read the token at {path}. With a projected ServiceAccount token this \
+                     is the volume mount — check that the pod actually mounts it."
+                )
+            })?;
+            let token = token.trim().to_string();
+            if token.matches('.').count() != 2 {
+                anyhow::bail!(
+                    "{path} does not hold a JWT. A projected ServiceAccount token has three \
+                     dot-separated parts; a file with one line of something else is usually a \
+                     Secret mounted where the projected token was meant to go."
+                );
+            }
+            Ok(token)
+        }
+        None => Ok(config.server.token.clone()),
+    }
+}
+
+async fn claim(client: &Client, config: &Config, credential: &str) -> Result<Option<ClaimedJob>> {
     let response = client
         .get(format!("{}/v1/jobs/claim", config.server.url))
-        .bearer_auth(&config.server.token)
+        .bearer_auth(credential)
         .send()
         .await
         .context("Failed to reach server")?;
@@ -116,6 +172,7 @@ async fn claim(client: &Client, config: &Config) -> Result<Option<ClaimedJob>> {
 async fn report(
     client: &Client,
     config: &Config,
+    credential: &str,
     id: i64,
     exit_code: i32,
     output: &str,
@@ -123,7 +180,7 @@ async fn report(
 ) -> Result<()> {
     let response = client
         .post(format!("{}/v1/jobs/{id}/result", config.server.url))
-        .bearer_auth(&config.server.token)
+        .bearer_auth(credential)
         .json(&serde_json::json!({
             "exit_code": exit_code,
             "output": output,
@@ -366,17 +423,7 @@ mod adapters {
         )?;
         let role = next_role_name(&config.role_prefix, &existing);
 
-        // The password reaches psql as a variable and is quoted by psql itself (`:'pw'`), so it
-        // is never concatenated into SQL. The privileges are constants validated at approval.
-        let privileges = config.privileges.join(", ");
-        let sql = format!(
-            "CREATE ROLE {role} LOGIN PASSWORD :'pw'; \
-             GRANT CONNECT ON DATABASE {db} TO {role}; \
-             GRANT USAGE ON SCHEMA {schema} TO {role}; \
-             GRANT {privileges} ON ALL TABLES IN SCHEMA {schema} TO {role};",
-            db = config.database,
-            schema = config.schema,
-        );
+        let sql = provision_sql(&role, &config);
         let stderr = psql_write(admin, password, &sql)?;
 
         let mut url = reqwest::Url::parse(&format!(
@@ -420,12 +467,84 @@ mod adapters {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
 
+    /// The statements that create a role and grant it what the grant declared.
+    ///
+    /// Extracted so it can be tested without a database: both bugs this has had were in the SQL
+    /// itself, not in running it.
+    ///
+    /// The password reaches psql as a variable and is quoted by psql itself (`:'pw'`), so it is
+    /// never concatenated in here. Privileges are constants validated at approval — but they are
+    /// not interchangeable: CONNECT is a database privilege and USAGE a schema one, and Postgres
+    /// rejects either against a table, so each goes only in the statement that accepts it.
+    ///
+    /// One transaction, because Postgres makes DDL transactional and a rotation that failed
+    /// half-way would otherwise leave a role that can log in and do nothing.
+    pub(super) fn provision_sql(role: &str, config: &PostgresRoleConfig) -> String {
+        let table_privileges: Vec<&str> = config
+            .privileges
+            .iter()
+            .filter_map(|p| match p.to_uppercase().as_str() {
+                "SELECT" => Some("SELECT"),
+                "INSERT" => Some("INSERT"),
+                "UPDATE" => Some("UPDATE"),
+                "DELETE" => Some("DELETE"),
+                _ => None,
+            })
+            .collect();
+
+        let mut sql = format!(
+            "BEGIN; \
+             CREATE ROLE {role} LOGIN PASSWORD :'pw'; \
+             GRANT CONNECT ON DATABASE {db} TO {role}; \
+             GRANT USAGE ON SCHEMA {schema} TO {role};",
+            db = config.database,
+            schema = config.schema,
+        );
+        if !table_privileges.is_empty() {
+            sql.push_str(&format!(
+                " GRANT {} ON ALL TABLES IN SCHEMA {schema} TO {role};",
+                table_privileges.join(", "),
+                schema = config.schema,
+            ));
+        }
+        sql.push_str(" COMMIT;");
+        sql
+    }
+
+    /// The SQL goes in on **stdin**, not through `-c`.
+    ///
+    /// psql only interpolates `:'pw'` while reading a script; with `-c` the text reaches the
+    /// server verbatim and the colon is a syntax error. Getting this wrong is not a formatting
+    /// detail — `-c` working would mean the password had been concatenated into SQL, which is
+    /// the thing the variable exists to avoid.
     fn psql_write(connection: &str, password: &str, sql: &str) -> Result<String> {
-        let out = Command::new("psql")
+        use std::io::Write;
+
+        let mut child = Command::new("psql")
             .arg(connection)
-            .args(["-v", &format!("pw={password}"), "-c", sql])
-            .output()
+            .args([
+                "-v",
+                &format!("pw={password}"),
+                // Stop at the first error rather than carrying on with a half-made role.
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-f",
+                "-",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
             .context("failed to run `psql` — the runner's image must carry it")?;
+
+        child
+            .stdin
+            .take()
+            .context("psql took no stdin")?
+            .write_all(sql.as_bytes())
+            .context("failed to send SQL to psql")?;
+
+        let out = child.wait_with_output().context("psql did not finish")?;
         if !out.status.success() {
             anyhow::bail!("psql failed: {}", String::from_utf8_lossy(&out.stderr));
         }
@@ -436,6 +555,56 @@ mod adapters {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pg_config(privileges: &[&str]) -> sealbox_server::repo::adapter::PostgresRoleConfig {
+        serde_json::from_value(serde_json::json!({
+            "host": "db", "database": "app", "role_prefix": "app_svc",
+            "privileges": privileges,
+        }))
+        .expect("Should parse")
+    }
+
+    #[test]
+    fn a_database_privilege_never_reaches_a_table_grant() {
+        use super::adapters::provision_sql;
+
+        // CONNECT is a database privilege and USAGE a schema one. Postgres rejects either
+        // against a table with "invalid privilege type", which fails the rotation after the role
+        // has already been created.
+        let sql = provision_sql("app_svc_2", &pg_config(&["CONNECT", "SELECT", "USAGE"]));
+
+        assert!(sql.contains("GRANT CONNECT ON DATABASE app TO app_svc_2"));
+        assert!(sql.contains("GRANT USAGE ON SCHEMA public TO app_svc_2"));
+        assert!(
+            sql.contains("GRANT SELECT ON ALL TABLES"),
+            "the table privileges still go through: {sql}"
+        );
+        assert!(
+            !sql.contains("CONNECT ON ALL TABLES") && !sql.contains("USAGE ON ALL TABLES"),
+            "neither may reach the table grant: {sql}"
+        );
+    }
+
+    #[test]
+    fn a_grant_with_no_table_privileges_omits_the_statement() {
+        use super::adapters::provision_sql;
+
+        // `GRANT  ON ALL TABLES` is a syntax error, and a connect-only role is a reasonable ask.
+        let sql = provision_sql("app_svc_1", &pg_config(&["CONNECT"]));
+        assert!(!sql.contains("ON ALL TABLES"), "{sql}");
+    }
+
+    #[test]
+    fn provisioning_is_one_transaction_and_never_carries_the_password() {
+        use super::adapters::provision_sql;
+
+        let sql = provision_sql("app_svc_1", &pg_config(&["SELECT"]));
+        assert!(sql.starts_with("BEGIN;"), "{sql}");
+        assert!(sql.trim_end().ends_with("COMMIT;"), "{sql}");
+        // The password is psql's variable, never text in the statement — which is also why the
+        // SQL has to go in on stdin, where psql interpolates it.
+        assert!(sql.contains(":'pw'"), "{sql}");
+    }
 
     #[test]
     fn role_names_take_the_next_serial() {

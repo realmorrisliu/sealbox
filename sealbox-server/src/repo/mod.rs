@@ -15,7 +15,8 @@ use crate::{
 
 pub(crate) use self::sqlite::{
     SqliteAuditRepo, SqliteAuthenticatorRepo, SqliteGrantRepo, SqliteHealthRepo,
-    SqliteIdentityRepo, SqliteJobRepo, SqliteMasterKeyRepo, SqliteSecretRepo, create_db_connection,
+    SqliteIdentityRepo, SqliteIssuerRepo, SqliteJobRepo, SqliteMasterKeyRepo, SqliteRecoveryRepo,
+    SqliteSecretRepo, create_db_connection,
 };
 
 pub mod adapter;
@@ -28,6 +29,9 @@ pub struct SecretInfo {
     pub created_at: i64,         // Creation timestamp (Unix time)
     pub updated_at: i64,         // Last update timestamp (Unix time)
     pub expires_at: Option<i64>, // Expiry timestamp (Unix time), optional for TTL
+    /// The declared rotation interval in seconds, and when this value is due, if it declares one.
+    pub rotate_after: Option<i64>,
+    pub rotate_due_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +45,16 @@ pub struct Secret {
     pub updated_at: i64,             // Last update timestamp (Unix time)
     pub expires_at: Option<i64>,     // Expiry timestamp (Unix time), optional for TTL
     pub metadata: Option<String>,    // Optional metadata in serialized format
+    /// How long this value should stand before it is rotated again, in seconds.
+    ///
+    /// A declaration and nothing more: nothing in the system acts on it. Acting on it would be a
+    /// scheduler, and a scheduler brings retries, backoff, overlap, and calendars — a system
+    /// rather than a field (ADR 0013). What it buys is that "what is overdue" becomes a question
+    /// with an answer here, instead of knowledge spread across everyone's cron jobs.
+    ///
+    /// Distinct from `expires_at`, which **deletes**. Using expiry as a rotation deadline would
+    /// remove a credential that production is still using.
+    pub rotate_after: Option<i64>,
 }
 
 impl Secret {
@@ -94,6 +108,7 @@ impl Secret {
             updated_at: now_timestamp,
             expires_at,
             metadata: None,
+            rotate_after: None,
         })
     }
 
@@ -134,7 +149,10 @@ impl Secret {
 /// What an identity is allowed to do. Ordered: each role admits everything the one below it can
 /// do. Three roles with a natural inclusion order need no permission matrix, and a matrix would
 /// invite per-resource entries — the boundary this design relies on is the grant, not an ACL.
+/// Serialised lowercase, matching what `--role` takes: a response saying `"Admin"` for a role
+/// that must be written `admin` is a small thing that costs someone an afternoon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Role {
     /// Claims jobs addressed to it and reports results. **Disjoint from the others**, not
     /// beneath them: it cannot invoke a grant, read a secret by name, list secrets, or read the
@@ -188,11 +206,13 @@ impl FromStr for Role {
 
 impl std::fmt::Display for Role {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Lowercase, the same spelling `--role` takes and `FromStr` returns. Rows written by an
+        // earlier build still read: parsing is case-insensitive.
         f.write_str(match self {
-            Role::Runner => "Runner",
-            Role::Agent => "Agent",
-            Role::Operator => "Operator",
-            Role::Admin => "Admin",
+            Role::Runner => "runner",
+            Role::Agent => "agent",
+            Role::Operator => "operator",
+            Role::Admin => "admin",
         })
     }
 }
@@ -204,8 +224,19 @@ pub struct Identity {
     pub id: Uuid,
     pub name: String,
     pub role: Role,
+    /// Empty when this identity authenticates as a workload instead of holding a credential.
     #[serde(skip)]
     pub token_hash: Vec<u8>,
+    /// Bound to a registered issuer: the identity presents a token that issuer signed rather than
+    /// one sealbox handed out. An identity does one or the other, never both — a runner that can
+    /// still be reached with a stored token has not stopped holding a stored token.
+    pub issuer: Option<String>,
+    /// The exact `sub` that may act as this identity. Exact, because in most clusters far more
+    /// people can create a ServiceAccount than can be trusted with plaintext.
+    pub subject: Option<String>,
+    /// The `aud` the token must carry. Required, so a token minted for the cluster's API server
+    /// does not authenticate here.
+    pub audience: Option<String>,
     pub created_at: i64,
     /// Set rather than deleting the row, so audit records naming this identity stay meaningful.
     pub revoked_at: Option<i64>,
@@ -223,6 +254,9 @@ impl Identity {
 
         let identity = Self {
             id: Uuid::new_v4(),
+            issuer: None,
+            subject: None,
+            audience: None,
             name,
             role,
             token_hash: hash_token(&token),
@@ -230,6 +264,31 @@ impl Identity {
             revoked_at: None,
         };
         Ok((identity, token))
+    }
+
+    /// An identity that holds no credential at all: it authenticates by presenting a token its
+    /// platform signed, checked against a registered issuer.
+    ///
+    /// The token hash is empty, and the lookup by hash refuses an empty one — otherwise
+    /// presenting nothing would resolve to this identity.
+    pub(crate) fn workload(
+        name: String,
+        role: Role,
+        issuer: String,
+        subject: String,
+        audience: String,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            role,
+            token_hash: Vec::new(),
+            issuer: Some(issuer),
+            subject: Some(subject),
+            audience: Some(audience),
+            created_at: time::OffsetDateTime::now_utc().unix_timestamp(),
+            revoked_at: None,
+        }
     }
 
     pub fn is_revoked(&self) -> bool {
@@ -255,6 +314,11 @@ pub(crate) trait IdentityRepo: Send + Sync {
     /// Resolve a presented token to a live identity. Returns `None` for unknown or revoked.
     fn find_by_token(&self, token: &str) -> Result<Option<Identity>>;
     fn find_by_name(&self, name: &str) -> Result<Option<Identity>>;
+    /// The identity bound to exactly this issuer and subject, if it is live.
+    ///
+    /// The pair comes from a token that has **not been verified yet** — it is used only to find
+    /// which identity's rules to check the token against, never to decide that the token is good.
+    fn find_by_workload(&self, issuer: &str, subject: &str) -> Result<Option<Identity>>;
     fn list(&self) -> Result<Vec<Identity>>;
     fn revoke(&self, name: &str) -> Result<()>;
     /// Whether any identity exists at all. The bootstrap path turns on this.
@@ -624,6 +688,7 @@ pub(crate) trait SecretRepo: Send + Sync {
         value: &SecretValue,
         master_key: MasterKey,
         ttl: Option<i64>,
+        rotate_after: Option<i64>,
         pending: bool,
     ) -> Result<Secret>;
     /// Read a pending version. The only path that sees one — every other read excludes them.
@@ -728,6 +793,54 @@ impl MasterKey {
 }
 
 /// MasterKeyRepo trait for managing master_keys table
+/// A token issuer whose signatures sealbox will accept: a name, the `iss` its tokens carry, and
+/// its public keys as a JWKS.
+///
+/// Registered rather than discovered. A hosted server cannot reach a private cluster's OIDC
+/// endpoint — the same constraint that made the runner poll outbound (ADR 0008).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Issuer {
+    pub name: String,
+    pub url: String,
+    /// The JWKS document, stored as it was supplied. More than one key may be present, which is
+    /// what lets a signing-key rotation overlap instead of cutting over.
+    pub jwks: String,
+    pub created_at: i64,
+}
+
+/// The server's master key, encrypted under a recovery key the server does not hold.
+///
+/// Envelope encryption, exactly as a secret is: RSA-OAEP cannot take 1.7 KB directly, and
+/// inventing something for this would be inventing cryptography.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryBlob {
+    /// The master key row — `server_held = 0` — whose private half decrypts this.
+    pub recovery_key_id: Uuid,
+    /// The master key file's bytes, encrypted under the data key.
+    pub encrypted_data: Vec<u8>,
+    /// The data key, encrypted under the recovery public key.
+    pub encrypted_data_key: Vec<u8>,
+    /// Which master key this blob holds, so an operator can tell a current backup from a stale
+    /// one without decrypting it.
+    pub master_key_fingerprint: String,
+    pub created_at: i64,
+}
+
+pub(crate) trait RecoveryRepo: Send + Sync {
+    fn store(&self, blob: &RecoveryBlob) -> Result<()>;
+    fn get(&self, recovery_key_id: &Uuid) -> Result<Option<RecoveryBlob>>;
+    fn list(&self) -> Result<Vec<RecoveryBlob>>;
+    fn remove(&self, recovery_key_id: &Uuid) -> Result<()>;
+}
+
+pub(crate) trait IssuerRepo: Send + Sync {
+    fn register(&self, issuer: &Issuer) -> Result<()>;
+    fn update_keys(&self, name: &str, jwks: &str) -> Result<()>;
+    fn remove(&self, name: &str) -> Result<()>;
+    fn list(&self) -> Result<Vec<Issuer>>;
+    fn find_by_url(&self, url: &str) -> Result<Option<Issuer>>;
+}
+
 pub(crate) trait MasterKeyRepo: Send + Sync {
     fn create_master_key(&self, key: &MasterKey) -> Result<()>;
     fn fetch_all_master_keys(&self) -> Result<Vec<MasterKey>>;

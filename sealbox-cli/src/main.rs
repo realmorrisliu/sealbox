@@ -4,7 +4,8 @@ mod output;
 
 use crate::commands::{
     admin_commands, audit_commands, config_commands, grant_commands, identity_commands,
-    job_commands, key_commands, runner_commands, secret_commands,
+    issuer_commands, job_commands, key_commands, recovery_commands, runner_commands,
+    secret_commands,
 };
 use crate::config::{Config, OutputFormat};
 use anyhow::Result;
@@ -87,6 +88,16 @@ enum Commands {
         #[command(subcommand)]
         command: IdentityCommands,
     },
+    /// Manage token issuers: the platforms whose signatures authenticate a workload
+    Issuer {
+        #[command(subcommand)]
+        command: IssuerCommands,
+    },
+    /// Back up and restore the server master key — the one thing replication does not cover
+    Recovery {
+        #[command(subcommand)]
+        command: RecoveryCommands,
+    },
     /// Read the audit trail: what was attempted, by whom, and whether it was allowed
     Audit {
         /// Only this identity
@@ -128,6 +139,12 @@ enum Commands {
         /// This runner's identity name, matching the `runner` field in the grants it executes
         #[arg(long)]
         name: String,
+        /// Read the credential from this file before every poll, rather than from configuration.
+        ///
+        /// For a projected ServiceAccount token: the platform signs it, rotates it, and reissues
+        /// it on restart, so there is no credential of sealbox's to store anywhere.
+        #[arg(long)]
+        token_file: Option<String>,
     },
     /// Run one command as an admin, proving it with a passkey.
     ///
@@ -172,14 +189,97 @@ pub enum GrantCommands {
 }
 
 #[derive(Subcommand)]
+pub enum RecoveryCommands {
+    /// Generate a recovery key, register its public half, and verify the result by recovering
+    /// the master key with it. Admin only.
+    Init {
+        /// Where to write the recovery private key. It never leaves this machine.
+        #[arg(long, default_value = "./sealbox-recovery.pem")]
+        out: String,
+        /// A note about who holds it
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Fetch a recovery blob. Safe to store anywhere — without the private key it yields nothing.
+    Export {
+        /// Recovery key id
+        id: String,
+        /// Write to this file instead of printing
+        #[arg(long)]
+        out: Option<String>,
+    },
+    /// Turn a blob and its recovery key back into a master key. Needs no server.
+    Restore {
+        /// The blob, as written by `recovery export --out`
+        #[arg(long)]
+        blob: String,
+        /// The recovery private key
+        #[arg(long)]
+        key: String,
+        /// Where to write the recovered master key
+        #[arg(long, default_value = "./master.pem")]
+        out: String,
+    },
+    /// List the recovery keys that can open this server
+    List,
+}
+
+#[derive(Subcommand)]
+pub enum IssuerCommands {
+    /// Register a platform whose signed tokens may authenticate. Admin only.
+    Add {
+        /// Name to refer to it by
+        name: String,
+        /// The URL its tokens carry in `iss`.
+        ///
+        /// The field is `issuer_url`, not `url`: clap derives an argument's **id** from the field
+        /// name, so a field called `url` here would collide with the global `--url` and silently
+        /// take the server's address instead.
+        #[arg(long)]
+        issuer_url: String,
+        /// File holding its JWKS — `kubectl get --raw /openid/v1/jwks` for a cluster
+        #[arg(long)]
+        jwks_file: String,
+    },
+    /// Replace an issuer's keys. This is how a signing-key rotation lands: register the JWKS
+    /// holding both keys, then register it again without the old one.
+    Update {
+        /// Issuer name
+        name: String,
+        /// File holding the new JWKS
+        #[arg(long)]
+        jwks_file: String,
+    },
+    /// List registered issuers
+    List,
+    /// Remove an issuer. Every identity bound to it stops authenticating.
+    Rm {
+        /// Issuer name
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum IdentityCommands {
-    /// Create an identity and print its token once
+    /// Create an identity and print its token once — or bind it to an issuer, in which case no
+    /// credential is issued at all.
     Create {
         /// Name, unique on this server
         name: String,
-        /// One of: agent, operator, admin
+        /// One of: agent, operator, admin, runner
         #[arg(long)]
         role: String,
+        /// Bind to this registered issuer instead of issuing a token
+        #[arg(long)]
+        issuer: Option<String>,
+        /// The exact `sub` that may act as this identity, e.g.
+        /// system:serviceaccount:sealbox:runner
+        #[arg(long)]
+        subject: Option<String>,
+        /// The `aud` its tokens must carry. Not the platform's default audience — that is the
+        /// point of requiring it.
+        #[arg(long)]
+        audience: Option<String>,
     },
     /// List identities. Tokens are never shown.
     List,
@@ -262,9 +362,14 @@ enum SecretCommands {
     Set {
         /// Secret key name
         key: String,
-        /// Time to live in seconds
+        /// Time to live in seconds. This DELETES the secret when it passes — for a rotation
+        /// deadline use --rotate-after.
         #[arg(long)]
         ttl: Option<i64>,
+        /// How long this value should stand before it is rotated: 30d, 12h. Recorded, never
+        /// acted on: `secret list --overdue` is what reads it.
+        #[arg(long)]
+        rotate_after: Option<String>,
     },
     /// Have the server generate the value. It is encrypted without ever leaving the server, and
     /// is not returned to anyone — including the caller who asked for it.
@@ -277,9 +382,13 @@ enum SecretCommands {
         /// Length. Defaults to 32; below 16 is refused.
         #[arg(long)]
         length: Option<usize>,
-        /// Time to live in seconds
+        /// Time to live in seconds. This DELETES the secret when it passes — for a rotation
+        /// deadline use --rotate-after.
         #[arg(long)]
         ttl: Option<i64>,
+        /// How long this value should stand before it is rotated: 30d, 12h.
+        #[arg(long)]
+        rotate_after: Option<String>,
     },
     /// Show a secret's metadata: that it exists, its version, and when it last changed. Never
     /// its value, and never its ciphertext.
@@ -299,7 +408,11 @@ enum SecretCommands {
         version: i32,
     },
     /// List all secret keys. Metadata only — never values.
-    List,
+    List {
+        /// Only those past their declared rotation interval
+        #[arg(long)]
+        overdue: bool,
+    },
     /// Which grants may use a secret: everything that credential can do here
     Uses {
         /// Secret key name
@@ -355,6 +468,8 @@ async fn dispatch(command: Commands, mut config: Config) -> Result<()> {
         Commands::Secret { command } => secret_commands::handle_command(command, config).await,
         Commands::Grant { command } => grant_commands::handle_command(command, config).await,
         Commands::Identity { command } => identity_commands::handle_command(command, config).await,
+        Commands::Issuer { command } => issuer_commands::handle_command(command, config).await,
+        Commands::Recovery { command } => recovery_commands::handle_command(command, config).await,
         Commands::Audit {
             identity,
             action,
@@ -377,9 +492,9 @@ async fn dispatch(command: Commands, mut config: Config) -> Result<()> {
             let output = crate::output::OutputManager::new(config.output.format.clone());
             job_commands::rotate(config, &output, secret, via, from_output, params).await
         }
-        Commands::Runner { name } => {
+        Commands::Runner { name, token_file } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());
-            runner_commands::run(config, &output, name).await
+            runner_commands::run(config, &output, name, token_file).await
         }
         Commands::Admin { .. } => unreachable!("handled before dispatch"),
         Commands::Bootstrap { token, name } => {

@@ -60,6 +60,18 @@ sealbox-cli rotate app/database-url --via pg-provision --from-output
 ```
 
 If the grant fails, the old value is still current. There is no half-rotated state to clean up.
+You may do this yourself — rotating through a grant a human already approved widens nothing.
+
+**A credential should change regularly.** Record it next to the secret, so the schedule is not
+knowledge living in someone's cron job:
+
+```bash
+sealbox-cli secret gen app/session-key --rotate-after 30d
+sealbox-cli secret list --overdue        # what is past its interval
+```
+
+Nothing acts on it on its own — sealbox runs no scheduler. `--rotate-after` is **not** `--ttl`:
+`--ttl` deletes the secret when it passes.
 
 **Working out what to change.** Everything a credential can be used for is the set of grants
 declaring it:

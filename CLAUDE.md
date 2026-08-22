@@ -11,7 +11,7 @@ is being replaced in significant part.
 | | |
 |---|---|
 | Target design | [`docs/agent-native-design.md`](docs/agent-native-design.md) |
-| Decisions and their reasoning | [`docs/adr/`](docs/adr/) — 12 ADRs |
+| Decisions and their reasoning | [`docs/adr/`](docs/adr/) — 13 ADRs |
 | Vocabulary — use these words, no synonyms | [`CONTEXT.md`](CONTEXT.md) |
 | Behavior already specified | [`openspec/specs/`](openspec/specs/) — `http-api`, `master-key`, `secret-encryption` |
 
@@ -110,15 +110,14 @@ An existing database from before this is not migrated — delete it and start ag
 
 Acceptance test: the author's own infrastructure runs on it.
 
-1. **Server on Fly.io** — *partly done.* `fly.toml`, Litestream supervising the server, and a
-   master key the server generates on first boot **only** when the store holds no key and no
-   secret. **Still missing:** the recovery-keypair ceremony with mandatory re-entry verification
-   (ADR 0010). Until it exists the master key on the volume is the only copy, and the operator
-   backs it up by hand — a manual step in a security-critical position, documented in
-   `docs/getting-started.md` and deliberately called out as interim.
+1. **Server on Fly.io** — *done in the repo, never deployed.* `fly.toml`, Litestream supervising
+   the server, a master key generated on first boot **only** when the store holds no key and no
+   secret, and the recovery ceremony of ADR 0010: a keypair generated locally, the master key
+   stored encrypted under it, blobs re-made automatically whenever the master key changes, and
+   `recovery restore` working with no server involved. What remains is an actual `fly deploy`.
 2. **`identities`** — *partly done.* Identities, four roles, hashed tokens, revocation, the audit
-   trail, a bounded bootstrap, and passkeys all exist. **Still missing:** join tokens for runners,
-   so a runner's token is long-lived rather than exchanged for one it generates itself.
+   trail, a bounded bootstrap, passkeys, and **workload identity for runners** all exist — a
+   runner presents the token its platform signs and holds no sealbox credential at all.
 3. ~~**`sealbox set` and `sealbox gen`.**~~ *Done.* `set` reads stdin only; `gen` produces the
    value server-side and returns it to nobody. Minimum length 16, default 32, password alphabet
    without ambiguous characters or punctuation.

@@ -8,22 +8,50 @@ pub async fn handle_command(command: SecretCommands, config: &Config) -> Result<
     let output = OutputManager::new(config.output.format.clone());
 
     match command {
-        SecretCommands::Set { key, ttl } => set_secret(config, &output, key, ttl).await,
+        SecretCommands::Set {
+            key,
+            ttl,
+            rotate_after,
+        } => set_secret(config, &output, key, ttl, rotate_after).await,
         SecretCommands::Gen {
             key,
             r#type,
             length,
             ttl,
-        } => generate_secret(config, &output, key, r#type, length, ttl).await,
+            rotate_after,
+        } => generate_secret(config, &output, key, r#type, length, ttl, rotate_after).await,
         SecretCommands::Show { key, version } => show_secret(config, &output, key, version).await,
         SecretCommands::Delete { key, version } => {
             delete_secret(config, &output, key, version).await
         }
-        SecretCommands::List => list_secrets(config, &output).await,
+        SecretCommands::List { overdue } => list_secrets(config, &output, overdue).await,
         SecretCommands::Uses { key } => {
             crate::commands::grant_commands::uses(config, &output, key).await
         }
     }
+}
+
+/// `30d`, `12h`, `90m`, `45s`, or a plain number of seconds.
+///
+/// The same shapes `audit --since` takes, because someone who has just typed one should not have
+/// to find out that this one is different.
+fn parse_interval(input: &str) -> Result<i64> {
+    let (value, unit) = input.split_at(input.len().saturating_sub(1));
+    let seconds = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        "d" => 86400,
+        _ => {
+            return input
+                .parse::<i64>()
+                .context("Expected an interval like 30d, or a number of seconds");
+        }
+    };
+    let amount: i64 = value
+        .parse()
+        .with_context(|| format!("Invalid interval: {input}"))?;
+    Ok(amount * seconds)
 }
 
 /// Strip the trailing newline a pipe adds, and refuse an empty value.
@@ -46,6 +74,7 @@ async fn set_secret(
     output: &OutputManager,
     key: String,
     ttl: Option<i64>,
+    rotate_after: Option<String>,
 ) -> Result<()> {
     config
         .validate()
@@ -69,10 +98,13 @@ async fn set_secret(
     // Send plaintext to server (server will handle encryption)
     output.print_info("Saving to server...");
 
-    let payload = json!({
+    let mut payload = json!({
         "secret": secret_value,
         "ttl": ttl
     });
+    if let Some(interval) = rotate_after {
+        payload["rotate_after"] = json!(parse_interval(&interval)?);
+    }
 
     let client = Client::new();
     let response = client
@@ -190,13 +222,19 @@ async fn delete_secret(
     Ok(())
 }
 
-async fn list_secrets(config: &Config, output: &OutputManager) -> Result<()> {
+async fn list_secrets(config: &Config, output: &OutputManager, overdue: bool) -> Result<()> {
     config
         .validate()
         .context("Configuration validation failed")?;
 
+    let mut url = reqwest::Url::parse(&format!("{}/v1/secrets", config.server.url))
+        .context("Invalid server URL")?;
+    if overdue {
+        url.query_pairs_mut().append_pair("overdue", "true");
+    }
+
     let response = Client::new()
-        .get(format!("{}/v1/secrets", config.server.url))
+        .get(url)
         .bearer_auth(&config.server.token)
         .send()
         .await
@@ -224,6 +262,7 @@ async fn generate_secret(
     kind: String,
     length: Option<usize>,
     ttl: Option<i64>,
+    rotate_after: Option<String>,
 ) -> Result<()> {
     config
         .validate()
@@ -236,6 +275,9 @@ async fn generate_secret(
     let mut payload = serde_json::json!({ "generate": generate });
     if let Some(ttl) = ttl {
         payload["ttl"] = serde_json::json!(ttl);
+    }
+    if let Some(interval) = rotate_after {
+        payload["rotate_after"] = serde_json::json!(parse_interval(&interval)?);
     }
 
     let response = Client::new()

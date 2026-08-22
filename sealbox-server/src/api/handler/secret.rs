@@ -56,6 +56,8 @@ pub(crate) async fn get(
         "updated_at": secret.updated_at,
         "expires_at": secret.expires_at,
         "metadata": secret.metadata,
+        "rotate_after": secret.rotate_after,
+        "rotate_due_at": secret.rotate_after.map(|after| secret.updated_at + after),
     })))
 }
 
@@ -67,6 +69,8 @@ pub(crate) struct SaveSecretPayload {
     secret: Option<String>,
     generate: Option<GenerateSpec>,
     ttl: Option<i64>,
+    /// Seconds this value should stand before it is rotated again. Recorded, never acted on.
+    rotate_after: Option<i64>,
 }
 
 impl SaveSecretPayload {
@@ -93,6 +97,7 @@ pub(crate) async fn save(
     let master_key = state.master_key_repo.get_valid_master_key()?;
 
     let ttl = payload.ttl;
+    let rotate_after = payload.rotate_after;
     let value = payload.value()?;
 
     let secret = state.secret_repo.create_new_version(
@@ -100,6 +105,7 @@ pub(crate) async fn save(
         &value,
         master_key,
         ttl,
+        rotate_after,
         false,
     )?;
 
@@ -111,6 +117,7 @@ pub(crate) async fn save(
         "version": secret.version,
         "created_at": secret.created_at,
         "expires_at": secret.expires_at,
+        "rotate_after": secret.rotate_after,
     })))
 }
 
@@ -135,6 +142,8 @@ pub(crate) async fn delete(
 pub(crate) struct ListSecretsQueryParams {
     /// When set, return the grants that may use this secret instead of the secret list.
     uses: Option<String>,
+    /// Only secrets past their declared rotation interval.
+    overdue: Option<bool>,
 }
 
 /// API handler function for listing all secrets
@@ -178,7 +187,16 @@ pub(crate) async fn list(
         ));
     }
 
-    let secrets = state.secret_repo.list_secrets()?;
+    let mut secrets = state.secret_repo.list_secrets()?;
+
+    // Filtered at read time from what is already there, so nothing has to be swept and nothing
+    // can disagree: a secret stops being overdue by being rotated, because the only thing making
+    // it overdue is the timestamp a rotation moves.
+    if query.overdue.unwrap_or(false) {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        secrets.retain(|s| s.rotate_due_at.is_some_and(|due| due < now));
+    }
+
     Ok(SealboxResponse::Json(json!({ "secrets": secrets })))
 }
 
@@ -217,7 +235,7 @@ pub(crate) async fn rotate(
 
     // Refuse to rotate something that does not exist: there would be no previous value to fall
     // back to, which is the property that makes a failed rotation safe.
-    state.secret_repo.get_secret(&key)?;
+    let current = state.secret_repo.get_secret(&key)?;
 
     // The server generates the value. A caller supplying one is refused rather than honoured.
     let master_key = state.master_key_repo.get_valid_master_key()?;
@@ -230,6 +248,9 @@ pub(crate) async fn rotate(
         &SecretValue::Generated(spec),
         master_key,
         None,
+        // Carried forward. Losing the policy at the first rotation that honoured it would be the
+        // worst possible moment to lose it.
+        current.rotate_after,
         true,
     )?;
 

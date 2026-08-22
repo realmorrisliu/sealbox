@@ -2,7 +2,9 @@
 FROM rust:1.97-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev pkgconfig openssl-dev
+# `openssl-libs-static` matters: the musl target links statically, and without the static halves
+# the build gets all the way to `ld` before failing on -lssl/-lcrypto.
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static
 
 # Set working directory
 WORKDIR /app
@@ -36,8 +38,11 @@ FROM alpine:3.24
 # Litestream supervises the server: `replicate -exec` runs both as one process tree, so the image
 # needs no init system, and the server cannot be running while replication is not.
 ARG LITESTREAM_VERSION=v0.3.13
+# TARGETARCH comes from the builder; hardcoding an architecture produces an image whose
+# supervisor cannot exec, and the failure looks like the server never starting.
+ARG TARGETARCH
 RUN apk add --no-cache ca-certificates wget && \
-    wget -qO- "https://github.com/benbjohnson/litestream/releases/download/${LITESTREAM_VERSION}/litestream-${LITESTREAM_VERSION}-linux-amd64.tar.gz" \
+    wget -qO- "https://github.com/benbjohnson/litestream/releases/download/${LITESTREAM_VERSION}/litestream-${LITESTREAM_VERSION}-linux-${TARGETARCH}.tar.gz" \
       | tar -xz -C /usr/local/bin litestream && \
     adduser -D -s /bin/sh sealbox
 

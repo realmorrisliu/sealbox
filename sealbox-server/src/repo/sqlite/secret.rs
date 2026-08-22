@@ -34,6 +34,7 @@ impl SqliteSecretRepo {
                 expires_at INTEGER,
                 metadata TEXT,
                 pending INTEGER NOT NULL DEFAULT 0,
+                rotate_after INTEGER,
                 PRIMARY KEY (key, version)
             )",
             (),
@@ -122,7 +123,8 @@ impl SecretRepo for SqliteSecretRepo {
                 created_at,
                 updated_at,
                 expires_at,
-                metadata
+                metadata,
+                rotate_after
             FROM secrets
             WHERE key = ?1 AND pending = 0
             ORDER BY version DESC
@@ -148,7 +150,8 @@ impl SecretRepo for SqliteSecretRepo {
                 created_at,
                 updated_at,
                 expires_at,
-                metadata
+                metadata,
+                rotate_after
             FROM secrets
             WHERE key = ?1 AND version = ?2 AND pending = 0
             LIMIT 1",
@@ -163,6 +166,7 @@ impl SecretRepo for SqliteSecretRepo {
         value: &crate::repo::SecretValue,
         master_key: crate::repo::MasterKey,
         ttl: Option<i64>,
+        rotate_after: Option<i64>,
         pending: bool,
     ) -> Result<Secret> {
         let mut guard = self.conn.lock()?;
@@ -180,7 +184,8 @@ impl SecretRepo for SqliteSecretRepo {
 
         // The plaintext lives only from here to the envelope inside `Secret::new`.
         let plaintext = value.resolve()?;
-        let secret = Secret::new(key, &plaintext, master_key, next_version, ttl)?;
+        let mut secret = Secret::new(key, &plaintext, master_key, next_version, ttl)?;
+        secret.rotate_after = rotate_after;
 
         tx.execute(
             "INSERT INTO secrets (
@@ -193,8 +198,9 @@ impl SecretRepo for SqliteSecretRepo {
               updated_at,
               expires_at,
               metadata,
-              pending
-          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+              pending,
+              rotate_after
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             (
                 &secret.key,
                 &secret.version,
@@ -206,6 +212,7 @@ impl SecretRepo for SqliteSecretRepo {
                 &secret.expires_at,
                 &secret.metadata,
                 pending,
+                &secret.rotate_after,
             ),
         )?;
 
@@ -249,7 +256,8 @@ impl SecretRepo for SqliteSecretRepo {
                     created_at,
                     updated_at,
                     expires_at,
-                    metadata
+                    metadata,
+                    rotate_after
                 FROM secrets
                 WHERE master_key_id = ?1",
             )?;
@@ -272,15 +280,17 @@ impl SecretRepo for SqliteSecretRepo {
             ) {
                 Ok(rekeyed) => {
                     tx.execute(
+                        // `updated_at` is deliberately left alone. A rekey re-encrypts the data
+                        // key and does not change the value (CONTEXT.md draws exactly this
+                        // line), so touching it would make every rekeyed secret look freshly
+                        // rotated — and a rotation interval is measured from that timestamp.
                         "UPDATE secrets SET
                             encrypted_data_key = ?1,
-                            master_key_id = ?2,
-                            updated_at = ?3
-                         WHERE key = ?4 AND version = ?5",
+                            master_key_id = ?2
+                         WHERE key = ?3 AND version = ?4",
                         rusqlite::params![
                             &rekeyed.encrypted_data_key,
                             &rekeyed.master_key_id,
-                            &rekeyed.updated_at,
                             &rekeyed.key,
                             &rekeyed.version,
                         ],
@@ -312,7 +322,7 @@ impl SecretRepo for SqliteSecretRepo {
         let guard = self.conn.lock()?;
         let mut stmt = guard.prepare(
             "SELECT key, version, encrypted_data, encrypted_data_key, master_key_id,
-                    created_at, updated_at, expires_at, metadata
+                    created_at, updated_at, expires_at, metadata, rotate_after
              FROM secrets WHERE key = ?1 AND version = ?2 AND pending = 1",
         )?;
         let mut rows = stmt.query((key, version))?;
@@ -406,27 +416,42 @@ impl SecretRepo for SqliteSecretRepo {
         info!("list_secrets");
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
 
+        // Joined against the latest version per key rather than selecting bare columns beside
+        // an aggregate: with more than one MAX in the list, SQLite picks the row matching the
+        // last one, so `rotate_after` and `expires_at` could come from a different version than
+        // the one being reported.
         let mut stmt = conn.prepare(
-            "SELECT 
-                key,
-                MAX(version) as version,
-                created_at,
-                MAX(updated_at) as updated_at,
-                expires_at
-            FROM secrets 
-            WHERE pending = 0 AND (expires_at IS NULL OR expires_at > ?1)
-            GROUP BY key
-            ORDER BY updated_at DESC",
+            "SELECT
+                s.key,
+                s.version,
+                s.created_at,
+                s.updated_at,
+                s.expires_at,
+                s.rotate_after
+            FROM secrets s
+            JOIN (
+                SELECT key, MAX(version) AS version
+                FROM secrets WHERE pending = 0 GROUP BY key
+            ) latest ON latest.key = s.key AND latest.version = s.version
+            WHERE s.pending = 0 AND (s.expires_at IS NULL OR s.expires_at > ?1)
+            ORDER BY s.updated_at DESC",
         )?;
 
         let secret_infos = stmt
             .query_map([now], |row| {
+                let updated_at: i64 = row.get(3)?;
+                let rotate_after: Option<i64> = row.get(5)?;
                 Ok(crate::repo::SecretInfo {
                     key: row.get(0)?,
                     version: row.get(1)?,
                     created_at: row.get(2)?,
-                    updated_at: row.get(3)?,
+                    updated_at,
                     expires_at: row.get(4)?,
+                    rotate_after,
+                    // Computed at read time rather than stored: a stored due-date is a second
+                    // copy of a fact, and it would be wrong the moment a rotation moved the
+                    // timestamp it came from.
+                    rotate_due_at: rotate_after.map(|after| updated_at + after),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()
@@ -509,7 +534,14 @@ mod tests {
 
         // Create secret
         let created_secret = repo
-            .create_new_version(secret_key, &supplied(secret_data), master_key, None, false)
+            .create_new_version(
+                secret_key,
+                &supplied(secret_data),
+                master_key,
+                None,
+                None,
+                false,
+            )
             .expect("Should create secret");
 
         // Get secret back
@@ -555,6 +587,7 @@ mod tests {
                 &supplied("data version 1"),
                 master_key.clone(),
                 None,
+                None,
                 false,
             )
             .expect("Should create version 1");
@@ -565,6 +598,7 @@ mod tests {
                 secret_key,
                 &supplied("data version 2"),
                 master_key,
+                None,
                 None,
                 false,
             )
@@ -596,6 +630,7 @@ mod tests {
                 &supplied("data version 1"),
                 master_key.clone(),
                 None,
+                None,
                 false,
             )
             .expect("Should create version 1");
@@ -605,6 +640,7 @@ mod tests {
                 secret_key,
                 &supplied("data version 2"),
                 master_key,
+                None,
                 None,
                 false,
             )
@@ -646,6 +682,7 @@ mod tests {
                 &supplied("data version 1"),
                 master_key.clone(),
                 None,
+                None,
                 false,
             )
             .expect("Should create version 1");
@@ -655,6 +692,7 @@ mod tests {
                 secret_key,
                 &supplied("data version 2"),
                 master_key,
+                None,
                 None,
                 false,
             )
@@ -703,6 +741,7 @@ mod tests {
                 &supplied("temporary-data"),
                 master_key,
                 ttl,
+                None,
                 false,
             )
             .expect("Should create secret with TTL");
@@ -730,6 +769,7 @@ mod tests {
                 &supplied("temporary-data"),
                 master_key,
                 Some(1i64), // 1 second
+                None,
                 false,
             )
             .expect("Should create secret with short TTL");
@@ -759,6 +799,7 @@ mod tests {
                 &supplied("temporary-data"),
                 master_key,
                 Some(1i64), // 1 second
+                None,
                 false,
             )
             .expect("Should create secret with short TTL");
@@ -788,6 +829,7 @@ mod tests {
                 &supplied("data1"),
                 master_key.clone(),
                 Some(1i64), // 1 second
+                None,
                 false,
             )
             .expect("Should create expired secret 1");
@@ -798,6 +840,7 @@ mod tests {
                 &supplied("data2"),
                 master_key.clone(),
                 Some(1i64), // 1 second
+                None,
                 false,
             )
             .expect("Should create expired secret 2");
@@ -808,6 +851,7 @@ mod tests {
                 &supplied("permanent-data"),
                 master_key.clone(),
                 None, // No TTL
+                None,
                 false,
             )
             .expect("Should create permanent secret");
@@ -818,6 +862,7 @@ mod tests {
                 &supplied("long-data"),
                 master_key,
                 Some(3600i64), // 1 hour
+                None,
                 false,
             )
             .expect("Should create long-lived secret");
@@ -864,6 +909,7 @@ mod tests {
                 &supplied("data"),
                 master_key.clone(),
                 None,
+                None,
                 false,
             )
             .expect("Should create permanent secret");
@@ -874,6 +920,7 @@ mod tests {
                 &supplied("data"),
                 master_key,
                 Some(3600i64),
+                None,
                 false,
             )
             .expect("Should create long-lived secret");
@@ -905,6 +952,7 @@ mod tests {
                 &supplied("data1"),
                 master_key.clone(),
                 None,
+                None,
                 false,
             )
             .expect("Should create secret1");
@@ -915,6 +963,7 @@ mod tests {
                 &supplied("data2"),
                 master_key.clone(),
                 Some(3600),
+                None,
                 false,
             )
             .expect("Should create secret2 with TTL");
@@ -925,13 +974,21 @@ mod tests {
                 &supplied("data3"),
                 master_key.clone(),
                 None,
+                None,
                 false,
             )
             .expect("Should create secret3");
 
         // Create multiple versions of secret1
         let _secret1_v2 = repo
-            .create_new_version("secret1", &supplied("data1-v2"), master_key, None, false)
+            .create_new_version(
+                "secret1",
+                &supplied("data1-v2"),
+                master_key,
+                None,
+                None,
+                false,
+            )
             .expect("Should create secret1 version 2");
 
         // List all secrets
@@ -974,6 +1031,7 @@ mod tests {
                 &supplied("temporary-data"),
                 master_key.clone(),
                 Some(1i64), // 1 second
+                None,
                 false,
             )
             .expect("Should create expired secret");
@@ -984,6 +1042,7 @@ mod tests {
                 "permanent-secret",
                 &supplied("permanent-data"),
                 master_key,
+                None,
                 None,
                 false,
             )
@@ -1010,9 +1069,17 @@ mod tests {
         let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
         let new_key = MasterKey::new(new_public).expect("Should create new master key");
 
-        repo.create_new_version("s1", &supplied("d1"), old_key.clone(), None, false)
+        let s1 = repo
+            .create_new_version(
+                "s1",
+                &supplied("d1"),
+                old_key.clone(),
+                None,
+                Some(3600),
+                false,
+            )
             .expect("Should create s1");
-        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None, false)
+        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None, None, false)
             .expect("Should create s2");
 
         let failed = repo
@@ -1020,6 +1087,14 @@ mod tests {
             .expect("Should rekey");
 
         assert!(failed.is_empty(), "no secret should fail to rekey");
+
+        // A rekey re-encrypts the data key and does not change the value (CONTEXT.md draws
+        // exactly that line), so it must not touch `updated_at` — a rotation interval is measured
+        // from that timestamp, and bumping it here would quietly settle every secret in the store
+        // that was due.
+        let after = repo.get_secret("s1").expect("Should read s1 back");
+        assert_eq!(after.updated_at, s1.updated_at, "a rekey is not a rotation");
+        assert_eq!(after.rotate_after, Some(3600), "and it keeps the policy");
         for key in ["s1", "s2"] {
             let secret = repo.get_secret(key).expect("Should read secret");
             assert_eq!(secret.master_key_id, new_key.id);
@@ -1040,9 +1115,9 @@ mod tests {
         let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
         let new_key = MasterKey::new(new_public).expect("Should create new master key");
 
-        repo.create_new_version("s1", &supplied("d1"), old_key.clone(), None, false)
+        repo.create_new_version("s1", &supplied("d1"), old_key.clone(), None, None, false)
             .expect("Should create s1");
-        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None, false)
+        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None, None, false)
             .expect("Should create s2");
 
         let failed = repo
