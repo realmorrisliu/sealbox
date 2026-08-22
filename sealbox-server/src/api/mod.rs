@@ -20,7 +20,9 @@ use crate::{
         auth::{
             authenticate_and_audit, require_admin, require_agent, require_operator, require_runner,
         },
-        handler::{admin, admin_auth, audit, grant, identity, issuer, job, master_key, secret},
+        handler::{
+            admin, admin_auth, audit, grant, identity, issuer, job, master_key, recovery, secret,
+        },
         state::AppState,
     },
     config::SealboxConfig,
@@ -155,6 +157,11 @@ fn build_router(state: AppState) -> Router {
         )
         .route("/v1/identities", get(identity::list).post(identity::create))
         .route("/v1/issuers", get(issuer::list).post(issuer::register))
+        .route("/v1/recovery", get(recovery::list).post(recovery::register))
+        .route(
+            "/v1/recovery/{id}",
+            get(recovery::export).delete(recovery::remove),
+        )
         .route(
             "/v1/issuers/{name}",
             axum::routing::put(issuer::update_keys).delete(issuer::remove),

@@ -371,18 +371,33 @@ deployment is worse than failing. Resubmit when you have decided that is safe.
 
 ---
 
-## Setup and recovery *(target)*
+## Recovery *(implemented)*
 
-### `sealbox-cli init`
+The master key is the only thing that can read the store, and replication covers the database and
+not the key. These are what stop that from being fatal.
 
-One-time initialisation of a fresh server: generates the recovery keypair locally, has the server
-generate its master key, and forces you to type the recovery key back before finishing. **Does not
-exist yet** — today, `bootstrap` claims the server and the server's master key file is the backup.
+### `sealbox-cli recovery init [--out <file>] [--description <who>]` *(admin)*
 
-### `sealbox-cli recovery-export` / `recovery-restore`
+Generates a recovery keypair **locally**, uploads only the public half, and has the server store
+its master key encrypted under it. Then it verifies: it fetches the stored blob and recovers the
+master key with the file it just wrote, refusing to report success otherwise.
 
-Exports the encrypted recovery blob — safe to store anywhere, because it is encrypted to a key the
-server does not hold — and rebuilds a server's master key from it. **Neither exists yet.**
+Registering a second key does not retire the first — both get their own blob, so two people can
+each hold one without sharing.
+
+### `sealbox-cli recovery export <id> [--out <file>]` *(admin)*
+
+Fetches the blob. Safe to store anywhere: without the private half it yields nothing. It is re-made
+automatically whenever the master key changes, so it cannot go stale unnoticed.
+
+### `sealbox-cli recovery restore --blob <file> --key <file> [--out master.pem]`
+
+Blob plus recovery key to a master key, **with no server involved**. That is the point: recovery
+happens when the server is gone, so a restore path that needs one is not a restore path.
+
+### `sealbox-cli recovery list` *(admin)*
+
+Which recovery keys can open this server, and which master key each blob currently holds.
 
 ---
 

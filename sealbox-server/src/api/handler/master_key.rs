@@ -66,9 +66,14 @@ pub(crate) async fn rekey(
         })));
     }
 
-    Ok(SealboxResponse::Json(
-        json!({ "master_key": new_master_key_id }),
-    ))
+    // The backup now names a key nothing is stored under. Refreshing it here rather than
+    // reminding someone to is the whole of ADR 0013 in one line.
+    let refreshed = state.refresh_every_recovery_blob()?;
+
+    Ok(SealboxResponse::Json(json!({
+        "master_key": new_master_key_id,
+        "recovery_blobs_refreshed": refreshed,
+    })))
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -113,7 +118,8 @@ mod tests {
             grant_repo: Arc::new(crate::repo::SqliteGrantRepo::new(conn.clone())),
             job_repo: Arc::new(crate::repo::SqliteJobRepo::new(conn.clone())),
             authenticator_repo: Arc::new(crate::repo::SqliteAuthenticatorRepo::new(conn.clone())),
-            issuer_repo: Arc::new(crate::repo::SqliteIssuerRepo::new(conn)),
+            issuer_repo: Arc::new(crate::repo::SqliteIssuerRepo::new(conn.clone())),
+            recovery_repo: Arc::new(crate::repo::SqliteRecoveryRepo::new(conn)),
             passkey: crate::api::passkey::PasskeyState::new("http://localhost:8080")
                 .expect("Should build passkey state"),
             config: Arc::new(SealboxConfig::default()),

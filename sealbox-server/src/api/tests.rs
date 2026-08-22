@@ -2708,3 +2708,196 @@ async fn an_issuer_that_does_not_parse_is_refused_while_someone_is_there_to_fix_
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+// ---------------------------------------------------------------- recovery
+//
+// The master key is the only thing that can read the store, and replication covers the database
+// and not the key. These assert the property that matters: a blob plus its recovery key produces
+// the master key, and a blob alone produces nothing.
+
+/// Register a recovery key and return (id, private PEM).
+async fn register_recovery(server: &TestServer, admin: &str) -> (uuid::Uuid, String) {
+    let (private_pem, public_pem) =
+        crate::crypto::master_key::generate_key_pair().expect("Should generate");
+
+    let response = server
+        .send(
+            post("/v1/recovery", Some(admin))
+                .body(Body::from(
+                    serde_json::json!({ "public_key": public_pem }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success(), "registering a recovery key");
+
+    let body = server.json(response).await;
+    let id = body["recovery_key_id"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .expect("a recovery key id");
+    (id, private_pem)
+}
+
+/// What the restore tool does: the recovery key opens the data key, the data key opens the payload.
+fn open_blob(blob: &serde_json::Value, private_pem: &str) -> Option<Vec<u8>> {
+    use std::str::FromStr;
+
+    let field = |name: &str| -> Vec<u8> {
+        blob[name]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u8)
+            .collect()
+    };
+
+    let private = crate::crypto::master_key::PrivateMasterKey::from_str(private_pem).ok()?;
+    let data_key_bytes = private.decrypt(&field("encrypted_data_key")).ok()?;
+    let data_key = crate::crypto::data_key::DataKey::from_bytes(&data_key_bytes).ok()?;
+    data_key.decrypt(&field("encrypted_data")).ok()
+}
+
+async fn fetch_blob(server: &TestServer, admin: &str, id: &uuid::Uuid) -> serde_json::Value {
+    server
+        .json(
+            server
+                .send(get(&format!("/v1/recovery/{id}"), Some(admin)))
+                .await,
+        )
+        .await
+}
+
+#[tokio::test]
+async fn a_blob_and_its_key_produce_the_master_key() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (id, private_pem) = register_recovery(&server, &admin).await;
+
+    let blob = fetch_blob(&server, &admin, &id).await;
+    let recovered = open_blob(&blob, &private_pem).expect("the blob should open");
+
+    let on_disk = std::fs::read(server.state.config.master_key_paths[0].clone())
+        .expect("Should read the master key");
+    assert_eq!(
+        recovered, on_disk,
+        "what comes out is the master key file itself, byte for byte"
+    );
+}
+
+#[tokio::test]
+async fn a_blob_alone_yields_nothing() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (id, _) = register_recovery(&server, &admin).await;
+
+    let blob = fetch_blob(&server, &admin, &id).await;
+    let serialised = blob.to_string();
+
+    let on_disk = std::fs::read_to_string(server.state.config.master_key_paths[0].clone()).unwrap();
+    let body = on_disk.lines().nth(1).expect("a line of key material");
+    assert!(
+        !serialised.contains(body),
+        "the blob must not carry the key it protects"
+    );
+
+    // And the wrong key fails cleanly rather than producing rubbish that looks like a key.
+    let (other_pem, _) = crate::crypto::master_key::generate_key_pair().unwrap();
+    assert!(
+        open_blob(&blob, &other_pem).is_none(),
+        "a recovery key that did not encrypt this blob must not open it"
+    );
+}
+
+#[tokio::test]
+async fn a_private_key_sent_by_mistake_is_refused() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (private_pem, _) = crate::crypto::master_key::generate_key_pair().unwrap();
+
+    // Pasting the wrong half must not be silently accepted: the blob is safe to store anywhere
+    // only because the server cannot open it.
+    let response = server
+        .send(
+            post("/v1/recovery", Some(&admin))
+                .body(Body::from(
+                    serde_json::json!({ "public_key": private_pem }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = server.json(response).await;
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("public half"),
+        "the refusal should say which half to send: {body}"
+    );
+}
+
+#[tokio::test]
+async fn two_recovery_keys_each_recover_independently() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+
+    let (first_id, first_pem) = register_recovery(&server, &admin).await;
+    let (second_id, second_pem) = register_recovery(&server, &admin).await;
+
+    // Registering the second must not disturb the first: an operator adding a colleague's key
+    // has not thereby retired their own.
+    for (id, pem) in [(first_id, first_pem), (second_id, second_pem)] {
+        let blob = fetch_blob(&server, &admin, &id).await;
+        assert!(
+            open_blob(&blob, &pem).is_some(),
+            "each key opens its own blob"
+        );
+    }
+}
+
+#[tokio::test]
+async fn changing_the_master_key_refreshes_every_blob() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (id, private_pem) = register_recovery(&server, &admin).await;
+    let before = fetch_blob(&server, &admin, &id).await;
+
+    // Stand in for the key changing on disk. A backup that quietly stops matching what it is
+    // meant to restore is worse than no backup.
+    let (new_pem, _) = crate::crypto::master_key::generate_key_pair().unwrap();
+    std::fs::write(server.state.config.master_key_paths[0].clone(), &new_pem)
+        .expect("Should replace the key file");
+    let refreshed = server
+        .state
+        .refresh_every_recovery_blob()
+        .expect("Should refresh");
+    assert_eq!(refreshed, 1);
+
+    let after = fetch_blob(&server, &admin, &id).await;
+    assert_ne!(
+        before["encrypted_data"], after["encrypted_data"],
+        "the blob should have been re-made"
+    );
+    assert_eq!(
+        open_blob(&after, &private_pem).map(|b| String::from_utf8_lossy(&b).into_owned()),
+        Some(new_pem),
+        "and it should now hold the key that is actually in use"
+    );
+}
+
+#[tokio::test]
+async fn only_an_admin_reaches_recovery() {
+    let server = TestServer::new();
+    let admin = server.bootstrap().await;
+    let (id, _) = register_recovery(&server, &admin).await;
+    let operator = server.identity(&admin, "alice", "operator").await;
+
+    for uri in ["/v1/recovery", &format!("/v1/recovery/{id}")] {
+        assert_eq!(
+            server.send(get(uri, Some(&operator))).await.status(),
+            StatusCode::FORBIDDEN,
+            "{uri} is not an operator's to read"
+        );
+    }
+}

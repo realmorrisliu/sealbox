@@ -36,22 +36,39 @@ fly secrets unset SEALBOX_BOOTSTRAP_TOKEN
 ### Back up the master key. Now, not later.
 
 On its first start the server finds no key and nothing stored, so it generates one at
-`/data/master.pem` and logs a fingerprint — never the key itself. **That file is the only copy.**
+`/data/master.pem` and logs a fingerprint — never the key itself. **That file is the only copy**,
+and Litestream replicates the database, not the key: losing the volume without a backup means the
+replicated database is ciphertext under a key that no longer exists.
 
 ```bash
-fly logs | grep -i fingerprint         # confirm which key is in use
-fly ssh console -C "cat /data/master.pem"   # into your password manager, then close the shell
+sealbox-cli admin recovery init --out ./sealbox-recovery.pem --description "your name here"
 ```
 
-Litestream replicates the **database**, not the key. Losing the volume without a copy of the key
-means the replicated database is ciphertext under a key that no longer exists — every secret gone,
-permanently, with a healthy-looking backup sitting in object storage.
+The CLI generates a recovery keypair **locally**, sends only the public half, and the server stores
+its master key encrypted under it. Then it proves the result works: it fetches what the server
+stored and recovers the master key with the file it just wrote, refusing to report success
+otherwise. An unverified backup is reliably not a backup.
 
-> **This manual step is interim.** The initialisation ceremony of
-> [ADR 0010](adr/0010-recovery-via-keypair-not-a-copied-key.md) — a recovery keypair generated
-> locally, the master key stored encrypted under it, and the recovery key typed back before setup
-> finishes — replaces it. It is not built yet, which is precisely why this step is written out
-> rather than assumed.
+Move `sealbox-recovery.pem` into a password manager or onto paper and delete it from the machine —
+an agent on your laptop can read it exactly as easily as you can. Keep a copy of the blob too if
+you like; it is safe anywhere, because the server does not hold the key that opens it:
+
+```bash
+sealbox-cli admin recovery export <id> --out ./sealbox-blob.json
+```
+
+The blob is re-made automatically whenever the master key changes, so it cannot quietly stop
+matching what it is meant to restore.
+
+**Recovering** needs no server, which is the point — the server is what you have lost:
+
+```bash
+sealbox-cli recovery restore --blob ./sealbox-blob.json --key ./sealbox-recovery.pem --out master.pem
+litestream restore -o sealbox.db s3://sealbox-backups/sealbox
+```
+
+> **Two people can each hold one.** Registering a second recovery key does not retire the first;
+> both get their own blob, and neither has to be shared.
 
 ### Replication
 

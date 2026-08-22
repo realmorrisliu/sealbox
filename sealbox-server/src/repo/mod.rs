@@ -15,8 +15,8 @@ use crate::{
 
 pub(crate) use self::sqlite::{
     SqliteAuditRepo, SqliteAuthenticatorRepo, SqliteGrantRepo, SqliteHealthRepo,
-    SqliteIdentityRepo, SqliteIssuerRepo, SqliteJobRepo, SqliteMasterKeyRepo, SqliteSecretRepo,
-    create_db_connection,
+    SqliteIdentityRepo, SqliteIssuerRepo, SqliteJobRepo, SqliteMasterKeyRepo, SqliteRecoveryRepo,
+    SqliteSecretRepo, create_db_connection,
 };
 
 pub mod adapter;
@@ -806,6 +806,31 @@ pub struct Issuer {
     /// what lets a signing-key rotation overlap instead of cutting over.
     pub jwks: String,
     pub created_at: i64,
+}
+
+/// The server's master key, encrypted under a recovery key the server does not hold.
+///
+/// Envelope encryption, exactly as a secret is: RSA-OAEP cannot take 1.7 KB directly, and
+/// inventing something for this would be inventing cryptography.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryBlob {
+    /// The master key row — `server_held = 0` — whose private half decrypts this.
+    pub recovery_key_id: Uuid,
+    /// The master key file's bytes, encrypted under the data key.
+    pub encrypted_data: Vec<u8>,
+    /// The data key, encrypted under the recovery public key.
+    pub encrypted_data_key: Vec<u8>,
+    /// Which master key this blob holds, so an operator can tell a current backup from a stale
+    /// one without decrypting it.
+    pub master_key_fingerprint: String,
+    pub created_at: i64,
+}
+
+pub(crate) trait RecoveryRepo: Send + Sync {
+    fn store(&self, blob: &RecoveryBlob) -> Result<()>;
+    fn get(&self, recovery_key_id: &Uuid) -> Result<Option<RecoveryBlob>>;
+    fn list(&self) -> Result<Vec<RecoveryBlob>>;
+    fn remove(&self, recovery_key_id: &Uuid) -> Result<()>;
 }
 
 pub(crate) trait IssuerRepo: Send + Sync {

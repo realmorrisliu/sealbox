@@ -15,14 +15,27 @@ exists for credentials the server cannot decrypt.
 
 ## Mandatory verification
 
-Initialisation forces the operator to re-enter the recovery key before finishing. This is the
-1Password Emergency Kit / hardware-wallet seed-phrase convention, and it exists because an
-unverified backup is reliably not a backup — it is a transcription error nobody discovers until
-the day it matters.
+Initialisation does not finish until the backup has been shown to work, because an unverified
+backup is reliably not a backup — it is a transcription error nobody discovers until the day it
+matters.
+
+**Amended when this was built.** The original form was re-entry: type the recovery key back, as
+1Password's Emergency Kit and a hardware wallet's seed phrase do. That works because those are
+short. A recovery key here is a 1.7 KB PEM, and nobody transcribes twenty-five lines of base64 —
+a ceremony that asks them to is one they paste around or skip.
+
+So verification does the stronger thing directly: the client takes the file it just wrote, fetches
+the blob the server stored, and **decrypts it**, refusing to report success until the artefact the
+operator now holds has actually recovered the master key. That checks the whole chain rather than a
+transcription, and it is what the operator would do at three in the morning anyway.
 
 ## Consequences
 
-`sealbox recovery-export` can be run at any time and its output is safe to store anywhere,
+The blob is re-made automatically whenever the server's master key changes. A backup that silently
+stops matching what it is meant to restore is worse than no backup, and remembering to refresh it
+is exactly the kind of task a person should never be holding (ADR 0013).
+
+`sealbox-cli recovery export` can be run at any time and its output is safe to store anywhere,
 because the blob is encrypted to a key the server does not hold. Losing the recovery private key
 while the server is healthy is survivable — re-initialise recovery with a new keypair. Losing it
 *and* the server is not, which is the property that makes verification non-negotiable.

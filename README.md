@@ -12,7 +12,8 @@
 > Sealbox has been rebuilt around the design in [`docs/agent-native-design.md`](docs/agent-native-design.md),
 > and the previous generation — a single-token store with a React UI — is gone. Secrets, grants,
 > jobs, the runner, adapters, rotation, the audit trail, and passkey approval all work. **Not yet
-> built:** hosted deployment on Fly.io and the recovery-keypair ceremony. There is no migration from the old generation — delete the
+> built:** hosted deployment on Fly.io — the `fly.toml` and image are here, but nothing has been
+> deployed to it yet. There is no migration from the old generation — delete the
 > database and start again ([ADR 0012](docs/adr/0012-no-backward-compatibility-before-first-release.md)).
 
 ## Why

@@ -4,7 +4,8 @@ mod output;
 
 use crate::commands::{
     admin_commands, audit_commands, config_commands, grant_commands, identity_commands,
-    issuer_commands, job_commands, key_commands, runner_commands, secret_commands,
+    issuer_commands, job_commands, key_commands, recovery_commands, runner_commands,
+    secret_commands,
 };
 use crate::config::{Config, OutputFormat};
 use anyhow::Result;
@@ -91,6 +92,11 @@ enum Commands {
     Issuer {
         #[command(subcommand)]
         command: IssuerCommands,
+    },
+    /// Back up and restore the server master key — the one thing replication does not cover
+    Recovery {
+        #[command(subcommand)]
+        command: RecoveryCommands,
     },
     /// Read the audit trail: what was attempted, by whom, and whether it was allowed
     Audit {
@@ -180,6 +186,42 @@ pub enum GrantCommands {
         /// Grant name
         name: String,
     },
+}
+
+#[derive(Subcommand)]
+pub enum RecoveryCommands {
+    /// Generate a recovery key, register its public half, and verify the result by recovering
+    /// the master key with it. Admin only.
+    Init {
+        /// Where to write the recovery private key. It never leaves this machine.
+        #[arg(long, default_value = "./sealbox-recovery.pem")]
+        out: String,
+        /// A note about who holds it
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Fetch a recovery blob. Safe to store anywhere — without the private key it yields nothing.
+    Export {
+        /// Recovery key id
+        id: String,
+        /// Write to this file instead of printing
+        #[arg(long)]
+        out: Option<String>,
+    },
+    /// Turn a blob and its recovery key back into a master key. Needs no server.
+    Restore {
+        /// The blob, as written by `recovery export --out`
+        #[arg(long)]
+        blob: String,
+        /// The recovery private key
+        #[arg(long)]
+        key: String,
+        /// Where to write the recovered master key
+        #[arg(long, default_value = "./master.pem")]
+        out: String,
+    },
+    /// List the recovery keys that can open this server
+    List,
 }
 
 #[derive(Subcommand)]
@@ -427,6 +469,7 @@ async fn dispatch(command: Commands, mut config: Config) -> Result<()> {
         Commands::Grant { command } => grant_commands::handle_command(command, config).await,
         Commands::Identity { command } => identity_commands::handle_command(command, config).await,
         Commands::Issuer { command } => issuer_commands::handle_command(command, config).await,
+        Commands::Recovery { command } => recovery_commands::handle_command(command, config).await,
         Commands::Audit {
             identity,
             action,

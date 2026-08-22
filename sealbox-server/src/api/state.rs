@@ -30,6 +30,7 @@ pub(crate) struct AppState {
     pub(crate) job_repo: Arc<dyn JobRepo>,
     pub(crate) authenticator_repo: Arc<dyn AuthenticatorRepo>,
     pub(crate) issuer_repo: Arc<dyn crate::repo::IssuerRepo>,
+    pub(crate) recovery_repo: Arc<dyn crate::repo::RecoveryRepo>,
     /// Challenges, sessions, enrolments, and pending approvals — all in memory, deliberately.
     pub(crate) passkey: crate::api::passkey::PasskeyState,
     /// When the bootstrap token stops being accepted. Stored as a deadline rather than a start
@@ -53,6 +54,7 @@ impl AppState {
         SqliteJobRepo::init_table(&conn)?;
         SqliteAuthenticatorRepo::init_table(&conn)?;
         crate::repo::SqliteIssuerRepo::init_table(&conn)?;
+        crate::repo::SqliteRecoveryRepo::init_table(&conn)?;
 
         // One connection, shared by the repositories. Nothing above this layer holds it:
         // a database lock has no business in an HTTP handler.
@@ -68,7 +70,8 @@ impl AppState {
             grant_repo: Arc::new(SqliteGrantRepo::new(conn.clone())),
             job_repo: Arc::new(SqliteJobRepo::new(conn.clone())),
             authenticator_repo: Arc::new(SqliteAuthenticatorRepo::new(conn.clone())),
-            issuer_repo: Arc::new(crate::repo::SqliteIssuerRepo::new(conn)),
+            issuer_repo: Arc::new(crate::repo::SqliteIssuerRepo::new(conn.clone())),
+            recovery_repo: Arc::new(crate::repo::SqliteRecoveryRepo::new(conn)),
             passkey: crate::api::passkey::PasskeyState::new(&config.public_url)?,
             server_keys: Arc::new(HashMap::new()),
             bootstrap_deadline: Instant::now() + config.bootstrap_window,
@@ -238,7 +241,7 @@ fn write_private_key(path: &str, pem: &str) -> Result<()> {
 
 /// A short, stable name for a key that discloses nothing about it. Enough to tell two keys apart
 /// in a log, and to check that the file on the volume is the one being used.
-fn fingerprint(public_pem: &str) -> String {
+pub(crate) fn fingerprint(public_pem: &str) -> String {
     use sha2::{Digest, Sha256};
 
     let digest = Sha256::digest(public_pem.as_bytes());

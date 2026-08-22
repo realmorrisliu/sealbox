@@ -6,4 +6,5 @@ pub(crate) mod identity;
 pub(crate) mod issuer;
 pub(crate) mod job;
 pub(crate) mod master_key;
+pub(crate) mod recovery;
 pub(crate) mod secret;

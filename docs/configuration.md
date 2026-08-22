@@ -109,10 +109,11 @@ Litestream covers the database and **not** the master key. A replicated database
 is ciphertext under a key that no longer exists, which looks like a healthy backup right up until
 the restore.
 
-The intended backup is an encrypted recovery blob written once at initialisation, not a copy of the
-file — see [ADR 0010](adr/0010-recovery-via-keypair-not-a-copied-key.md). **That ceremony is not
-built yet.** Until it is, copy the key off the volume by hand immediately after the first deploy;
-[Getting started](getting-started.md) spells out the step.
+The backup is an encrypted recovery blob, not a copy of the file: `recovery init` generates a
+keypair locally, uploads only the public half, and verifies the result by recovering the master key
+with it ([ADR 0010](adr/0010-recovery-via-keypair-not-a-copied-key.md)). The blob is re-made
+whenever the master key changes, and `recovery restore` needs no server — which matters, because
+the server is what you have lost.
 
 ## Runner
 

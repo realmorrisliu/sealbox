@@ -6,5 +6,6 @@ pub mod identity_commands;
 pub mod issuer_commands;
 pub mod job_commands;
 pub mod key_commands;
+pub mod recovery_commands;
 pub mod runner_commands;
 pub mod secret_commands;
