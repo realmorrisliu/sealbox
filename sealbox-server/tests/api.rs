@@ -1239,3 +1239,267 @@ async fn the_caller_gets_a_status_and_output_never_a_value() {
         "the value the runner saw must not reach the caller: {serialised}"
     );
 }
+
+// ---------------------------------------------------------------- rotation
+
+impl TestServer {
+    async fn rotate(
+        &self,
+        token: &str,
+        secret: &str,
+        body: serde_json::Value,
+    ) -> http::Response<Body> {
+        self.send(
+            post(&format!("/v1/rotate/{secret}"), Some(token))
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+    }
+
+    async fn finish(&self, runner: &str, exit_code: i32, captured: Option<&str>) {
+        let claimed = self.claim(runner).await;
+        let id = claimed["id"].as_i64().expect("a job should be waiting");
+        let mut body = serde_json::json!({ "exit_code": exit_code, "output": "stderr text" });
+        if let Some(v) = captured {
+            body["captured"] = serde_json::json!(v);
+        }
+        let response = self
+            .send(
+                post(&format!("/v1/jobs/{id}/result"), Some(runner))
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await;
+        assert!(response.status().is_success(), "reporting job {id}");
+    }
+
+    async fn current_version(&self, token: &str, secret: &str) -> i64 {
+        let response = self.send(get("/v1/secrets", Some(token))).await;
+        let body = self.json(response).await;
+        body["secrets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["key"] == secret)
+            .map(|s| s["version"].as_i64().unwrap())
+            .unwrap_or(0)
+    }
+}
+
+async fn rotation_fixture(server: &TestServer) -> (String, String) {
+    let admin = server.bootstrap().await;
+    let runner = server.runner_identity(&admin, "local").await;
+    server.secret(&admin, "app/db").await;
+    server
+        .add_grant(&admin, script_grant("push", "app/db"))
+        .await;
+    (admin, runner)
+}
+
+#[tokio::test]
+async fn a_failed_rotation_changes_nothing() {
+    let server = TestServer::new();
+    let (admin, runner) = rotation_fixture(&server).await;
+    let before = server.current_version(&admin, "app/db").await;
+
+    let response = server
+        .rotate(&admin, "app/db", serde_json::json!({ "via": "push" }))
+        .await;
+    assert!(response.status().is_success());
+
+    server.finish(&runner, 1, None).await;
+
+    assert_eq!(
+        server.current_version(&admin, "app/db").await,
+        before,
+        "a failed rotation must leave the previous value current — a stored credential that \
+         silently disagrees with reality is worse than no rotation"
+    );
+}
+
+#[tokio::test]
+async fn a_successful_rotation_commits() {
+    let server = TestServer::new();
+    let (admin, runner) = rotation_fixture(&server).await;
+    let before = server.current_version(&admin, "app/db").await;
+
+    server
+        .rotate(&admin, "app/db", serde_json::json!({ "via": "push" }))
+        .await;
+    server.finish(&runner, 0, None).await;
+
+    assert_eq!(server.current_version(&admin, "app/db").await, before + 1);
+}
+
+#[tokio::test]
+async fn a_pending_version_is_invisible_until_it_commits() {
+    let server = TestServer::new();
+    let (admin, runner) = rotation_fixture(&server).await;
+    let before = server.current_version(&admin, "app/db").await;
+
+    server
+        .rotate(&admin, "app/db", serde_json::json!({ "via": "push" }))
+        .await;
+
+    // The rotation is in flight: the listing must still show the old version.
+    assert_eq!(
+        server.current_version(&admin, "app/db").await,
+        before,
+        "a pending version must not be visible before its grant succeeds"
+    );
+
+    // And the claim carries the new value as an ordinary secret.
+    let claimed = server.claim(&runner).await;
+    assert!(
+        claimed["secrets"]["SEALBOX_NEW"].is_string(),
+        "the implementation receives the new value like any declared secret: {claimed}"
+    );
+}
+
+#[tokio::test]
+async fn the_caller_cannot_choose_the_new_value() {
+    let server = TestServer::new();
+    let (admin, _runner) = rotation_fixture(&server).await;
+
+    let response = server
+        .rotate(
+            &admin,
+            "app/db",
+            serde_json::json!({ "via": "push", "secret": "chosen-by-me" }),
+        )
+        .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "the system generates the value; a caller supplying one is refused, not honoured"
+    );
+}
+
+#[tokio::test]
+async fn a_captured_value_never_reaches_the_job_record() {
+    let server = TestServer::new();
+    let (admin, runner) = rotation_fixture(&server).await;
+
+    server
+        .rotate(
+            &admin,
+            "app/db",
+            serde_json::json!({ "via": "push", "from_output": true }),
+        )
+        .await;
+
+    let claimed = server.claim(&runner).await;
+    let id = claimed["id"].as_i64().unwrap();
+    assert_eq!(claimed["capture"], true, "the runner is told to capture");
+
+    let composed = "postgresql://app:s3cr3t-composed@db:5432/app";
+    let response = server
+        .send(
+            post(&format!("/v1/jobs/{id}/result"), Some(&runner))
+                .body(Body::from(
+                    serde_json::json!({
+                        "exit_code": 0,
+                        "output": "diagnostics on stderr",
+                        "captured": composed,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+    assert!(response.status().is_success());
+
+    // Output is stored in the clear for the caller to read; the value must not travel that way.
+    let response = server
+        .send(get(&format!("/v1/jobs/{id}"), Some(&admin)))
+        .await;
+    let job = server.json(response).await.to_string();
+    assert!(job.contains("diagnostics"), "output is kept");
+    assert!(
+        !job.contains("s3cr3t-composed"),
+        "a captured value must not appear in the job record: {job}"
+    );
+
+    let response = server.send(get("/v1/audit?limit=50", Some(&admin))).await;
+    let trail = server.json(response).await.to_string();
+    assert!(
+        !trail.contains("s3cr3t-composed"),
+        "nor in the audit trail: {trail}"
+    );
+}
+
+#[tokio::test]
+async fn capturing_nothing_fails_the_rotation() {
+    let server = TestServer::new();
+    let (admin, runner) = rotation_fixture(&server).await;
+    let before = server.current_version(&admin, "app/db").await;
+
+    server
+        .rotate(
+            &admin,
+            "app/db",
+            serde_json::json!({ "via": "push", "from_output": true }),
+        )
+        .await;
+
+    let claimed = server.claim(&runner).await;
+    let id = claimed["id"].as_i64().unwrap();
+    let response = server
+        .send(
+            post(&format!("/v1/jobs/{id}/result"), Some(&runner))
+                .body(Body::from(
+                    r#"{"exit_code":0,"output":"forgot to print","captured":""}"#,
+                ))
+                .unwrap(),
+        )
+        .await;
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "storing an empty credential because a script forgot to print is the same failure as \
+         storing the wrong one"
+    );
+    assert_eq!(server.current_version(&admin, "app/db").await, before);
+}
+
+#[tokio::test]
+async fn a_failed_rotation_leaves_no_version_gap() {
+    let server = TestServer::new();
+    let (admin, runner) = rotation_fixture(&server).await;
+    let before = server.current_version(&admin, "app/db").await;
+
+    // Fail one, then succeed. Deleting the pending row returns MAX(version), so the successful
+    // rotation reuses the number rather than skipping it.
+    server
+        .rotate(&admin, "app/db", serde_json::json!({ "via": "push" }))
+        .await;
+    server.finish(&runner, 1, None).await;
+    server
+        .rotate(&admin, "app/db", serde_json::json!({ "via": "push" }))
+        .await;
+    server.finish(&runner, 0, None).await;
+
+    assert_eq!(
+        server.current_version(&admin, "app/db").await,
+        before + 1,
+        "no gap: a failed rotation leaves nothing behind to skip over"
+    );
+}
+
+#[tokio::test]
+async fn an_agent_cannot_rotate() {
+    let server = TestServer::new();
+    let (admin, _runner) = rotation_fixture(&server).await;
+    let agent = server.identity(&admin, "bot", "agent").await;
+
+    let response = server
+        .rotate(&agent, "app/db", serde_json::json!({ "via": "push" }))
+        .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "an agent may run a grant that reads secrets; changing one is a different thing"
+    );
+}

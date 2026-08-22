@@ -98,10 +98,13 @@ pub(crate) async fn save(
     let ttl = payload.ttl;
     let value = payload.value()?;
 
-    let secret =
-        state
-            .secret_repo
-            .create_new_version(&params.secret_key(), &value, master_key, ttl)?;
+    let secret = state.secret_repo.create_new_version(
+        &params.secret_key(),
+        &value,
+        master_key,
+        ttl,
+        false,
+    )?;
 
     // Metadata only. Returning the ciphertext and the encrypted data key would hand every caller
     // the material to decrypt with, given a master key — for no reason: the caller asked to store
@@ -180,4 +183,77 @@ pub(crate) async fn list(
 
     let secrets = state.secret_repo.list_secrets()?;
     Ok(SealboxResponse::Json(json!({ "secrets": secrets })))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RotatePayload {
+    /// The grant that will make some upstream accept the new value.
+    via: String,
+    /// Store what the grant printed instead of what was generated — for values that are composed
+    /// (a URL with a percent-encoded password) or issued upstream.
+    #[serde(default)]
+    from_output: bool,
+    #[serde(default)]
+    params: std::collections::BTreeMap<String, String>,
+    /// Generation parameters for the new value. The caller chooses the shape, never the value.
+    #[serde(default)]
+    generate: Option<GenerateSpec>,
+}
+
+/// POST /v1/secrets/{key}/rotate — operator and above.
+///
+/// Rotating changes a stored value, which is what `set` requires the operator role for. An agent
+/// may *run* a grant that reads secrets; changing one is a different thing.
+pub(crate) async fn rotate(
+    State(state): State<AppState>,
+    axum::Extension(identity): axum::Extension<crate::repo::Identity>,
+    Path(params): Path<SecretPathParams>,
+    Json(payload): Json<RotatePayload>,
+) -> Result<SealboxResponse> {
+    let key = params.secret_key();
+
+    let grant = state
+        .grant_repo
+        .get(&payload.via)?
+        .ok_or_else(|| SealboxError::GrantNotFound(payload.via.clone()))?;
+
+    // Refuse to rotate something that does not exist: there would be no previous value to fall
+    // back to, which is the property that makes a failed rotation safe.
+    state.secret_repo.get_secret(&key)?;
+
+    // The server generates the value. A caller supplying one is refused rather than honoured.
+    let master_key = state.master_key_repo.get_valid_master_key()?;
+    let spec = payload.generate.unwrap_or(GenerateSpec {
+        kind: crate::repo::GenerateKind::Password,
+        length: None,
+    });
+    let pending = state.secret_repo.create_new_version(
+        &key,
+        &SecretValue::Generated(spec),
+        master_key,
+        None,
+        true,
+    )?;
+
+    let rotation = crate::repo::Rotation {
+        secret: key.clone(),
+        version: pending.version,
+        capture: payload.from_output,
+    };
+    let job = state.job_repo.submit(
+        &grant.name,
+        &grant.runner,
+        &payload.params,
+        &identity.name,
+        Some(&rotation),
+    )?;
+
+    Ok(SealboxResponse::Json(json!({
+        "job": job.id,
+        "secret": key,
+        "pending_version": pending.version,
+        "note": "The new value was generated on the server and is not returned to anyone. It \
+                 becomes current only if the grant succeeds."
+    })))
 }

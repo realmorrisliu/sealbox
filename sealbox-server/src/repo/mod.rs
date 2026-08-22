@@ -499,6 +499,20 @@ pub struct Job {
     pub finished_at: Option<i64>,
     pub exit_code: Option<i32>,
     pub output: Option<String>,
+    /// Present when this job is a rotation.
+    #[serde(default)]
+    pub rotation: Option<Rotation>,
+}
+
+/// What a job is rotating, if it is. Carried alongside the job so that success or failure
+/// decides the fate of a pending version.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rotation {
+    pub secret: String,
+    /// The pending version created for this rotation.
+    pub version: i32,
+    /// Whether the grant's output becomes the value, rather than what the server generated.
+    pub capture: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -547,11 +561,17 @@ pub struct ClaimedJob {
     pub grant: String,
     pub params: BTreeMap<String, String>,
     pub implementation: Implementation,
-    /// Injected name to plaintext value, for environment injection and the env-file.
+    /// Injected name to plaintext value, for environment injection and the env-file. A rotation's
+    /// new value arrives here as `SEALBOX_NEW`, indistinguishable from any declared secret — so
+    /// there is nothing special for a script author to get right.
     pub secrets: BTreeMap<String, String>,
     /// Injected name to plaintext value, for secrets that must be a file.
     #[serde(default)]
     pub files: BTreeMap<String, String>,
+    /// When true, the implementation's stdout becomes the secret's new value and must contain
+    /// nothing else. Diagnostics belong on stderr.
+    #[serde(default)]
+    pub capture: bool,
 }
 
 pub(crate) trait JobRepo: Send + Sync {
@@ -561,6 +581,7 @@ pub(crate) trait JobRepo: Send + Sync {
         runner: &str,
         params: &BTreeMap<String, String>,
         by: &str,
+        rotation: Option<&Rotation>,
     ) -> Result<Job>;
     fn get(&self, id: i64) -> Result<Option<Job>>;
     /// Claim the oldest pending job for this runner, atomically. `None` if there is none.
@@ -576,13 +597,27 @@ pub(crate) trait SecretRepo: Send + Sync {
     fn get_secret(&self, key: &str) -> Result<Secret>;
     /// Get specific version secret with atomic lazy cleanup
     fn get_secret_by_version(&self, key: &str, version: i32) -> Result<Secret>;
+    /// A `pending` version is stored enveloped like any other but excluded from every read, so
+    /// a rotation's new value exists durably without being usable until its grant succeeds.
     fn create_new_version(
         &self,
         key: &str,
         value: &SecretValue,
         master_key: MasterKey,
         ttl: Option<i64>,
+        pending: bool,
     ) -> Result<Secret>;
+    /// Read a pending version. The only path that sees one — every other read excludes them.
+    fn get_pending(&self, key: &str, version: i32) -> Result<Secret>;
+    fn commit_pending(&self, key: &str, version: i32) -> Result<()>;
+    fn discard_pending(&self, key: &str, version: i32) -> Result<()>;
+    fn replace_pending_value(
+        &self,
+        key: &str,
+        version: i32,
+        value: &str,
+        master_key: MasterKey,
+    ) -> Result<()>;
     fn delete_secret_by_version(&self, key: &str, version: i32) -> Result<()>;
 
     /// Rekey every secret under `old_master_key_id`, atomically. Returns the keys of secrets

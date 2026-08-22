@@ -43,9 +43,10 @@ read. In memory it would not survive a restart, and a rotation that lost its new
 upstream accepted it is precisely the disagreement this feature exists to prevent. A separate
 table would be the secrets table with a different name and its own encryption path to get wrong.
 
-*Consequence, accepted:* a failed rotation consumes a version number. Version 3 may not exist
-while 2 and 4 do. That is visible and explicable; the spec only requires that the numbering not
-imply a value is missing, and a deleted pending row leaves nothing to look for.
+*Consequence:* none, as it turns out. Deleting the pending row returns `MAX(version)` to what it
+was, so the next write reuses the number and there is no gap at all. This was expected to be an
+accepted cost and is not one — worth recording so nobody later "fixes" a gap that does not
+exist.
 
 ### The generated value is injected as a declared secret
 

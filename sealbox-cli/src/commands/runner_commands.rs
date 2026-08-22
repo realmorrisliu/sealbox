@@ -20,6 +20,9 @@ struct ClaimedJob {
     secrets: BTreeMap<String, String>,
     #[serde(default)]
     files: BTreeMap<String, String>,
+    /// When set, stdout is the secret's new value and must contain nothing else.
+    #[serde(default)]
+    capture: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,14 +65,23 @@ pub async fn run(config: &Config, output: &OutputManager, name: String) -> Resul
                 let grant = job.grant.clone();
                 output.print_info(&format!("Running grant '{grant}' (job {id})"));
 
-                let (exit_code, combined) = match execute(job) {
+                let capture = job.capture;
+                let (exit_code, out, err) = match execute(job) {
                     Ok(result) => result,
                     // A runner that cannot execute still has to report, or the job hangs until
                     // the server's timeout sweeps it.
-                    Err(e) => (127, format!("runner could not execute: {e}")),
+                    Err(e) => (127, String::new(), format!("runner could not execute: {e}")),
                 };
 
-                report(&client, config, id, exit_code, &combined).await?;
+                // For a capturing rotation, stdout *is* the value: it goes in its own field and
+                // never into the output the caller can read. Only stderr is reported as output.
+                let (reported, captured) = if capture {
+                    (err, Some(out))
+                } else {
+                    (format!("{out}{err}"), None)
+                };
+
+                report(&client, config, id, exit_code, &reported, captured).await?;
                 if exit_code == 0 {
                     output.print_success(&format!("Job {id} succeeded"));
                 } else {
@@ -107,11 +119,16 @@ async fn report(
     id: i64,
     exit_code: i32,
     output: &str,
+    captured: Option<String>,
 ) -> Result<()> {
     let response = client
         .post(format!("{}/v1/jobs/{id}/result", config.server.url))
         .bearer_auth(&config.server.token)
-        .json(&serde_json::json!({ "exit_code": exit_code, "output": output }))
+        .json(&serde_json::json!({
+            "exit_code": exit_code,
+            "output": output,
+            "captured": captured,
+        }))
         .send()
         .await
         .context("Failed to report result")?;
@@ -129,7 +146,7 @@ async fn report(
 /// Every file lives in one temp directory owned by a guard, so nothing survives an early return
 /// or a panic — rather than a cleanup call at the bottom of the happy path, which is exactly the
 /// line that gets skipped when an error path is added later.
-fn execute(job: ClaimedJob) -> Result<(i32, String)> {
+fn execute(job: ClaimedJob) -> Result<(i32, String, String)> {
     let workspace = tempfile::Builder::new()
         .prefix("sealbox-job-")
         .tempdir()
@@ -197,13 +214,11 @@ fn execute(job: ClaimedJob) -> Result<(i32, String)> {
         .output()
         .with_context(|| format!("Failed to execute {program}"))?;
 
-    let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    if !stderr.is_empty() {
-        combined.push_str(&stderr);
-    }
-
-    Ok((out.status.code().unwrap_or(-1), combined))
+    Ok((
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    ))
     // `workspace` drops here: every file carrying a secret goes with it.
 }
 

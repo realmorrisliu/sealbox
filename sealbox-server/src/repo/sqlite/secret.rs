@@ -33,6 +33,7 @@ impl SqliteSecretRepo {
                 updated_at INTEGER NOT NULL,
                 expires_at INTEGER,
                 metadata TEXT,
+                pending INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (key, version)
             )",
             (),
@@ -123,7 +124,7 @@ impl SecretRepo for SqliteSecretRepo {
                 expires_at,
                 metadata
             FROM secrets
-            WHERE key = ?1
+            WHERE key = ?1 AND pending = 0
             ORDER BY version DESC
             LIMIT 1",
             [key],
@@ -149,7 +150,7 @@ impl SecretRepo for SqliteSecretRepo {
                 expires_at,
                 metadata
             FROM secrets
-            WHERE key = ?1 AND version = ?2
+            WHERE key = ?1 AND version = ?2 AND pending = 0
             LIMIT 1",
             (key, version),
             key,
@@ -162,6 +163,7 @@ impl SecretRepo for SqliteSecretRepo {
         value: &crate::repo::SecretValue,
         master_key: crate::repo::MasterKey,
         ttl: Option<i64>,
+        pending: bool,
     ) -> Result<Secret> {
         let mut guard = self.conn.lock()?;
         let conn = &mut *guard;
@@ -190,8 +192,9 @@ impl SecretRepo for SqliteSecretRepo {
               created_at,
               updated_at,
               expires_at,
-              metadata
-          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+              metadata,
+              pending
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             (
                 &secret.key,
                 &secret.version,
@@ -202,6 +205,7 @@ impl SecretRepo for SqliteSecretRepo {
                 &secret.updated_at,
                 &secret.expires_at,
                 &secret.metadata,
+                pending,
             ),
         )?;
 
@@ -304,6 +308,79 @@ impl SecretRepo for SqliteSecretRepo {
         Ok(failed_secret_keys)
     }
 
+    fn get_pending(&self, key: &str, version: i32) -> Result<Secret> {
+        let guard = self.conn.lock()?;
+        let mut stmt = guard.prepare(
+            "SELECT key, version, encrypted_data, encrypted_data_key, master_key_id,
+                    created_at, updated_at, expires_at, metadata
+             FROM secrets WHERE key = ?1 AND version = ?2 AND pending = 1",
+        )?;
+        let mut rows = stmt.query((key, version))?;
+        let row = rows
+            .next()?
+            .ok_or_else(|| SealboxError::SecretNotFound(format!("{key} (pending {version})")))?;
+        from_row::<Secret>(row).map_err(|e| SealboxError::DatabaseError(e.to_string()))
+    }
+
+    /// A pending version becomes the current one. Used when a rotation's grant succeeds.
+    fn commit_pending(&self, key: &str, version: i32) -> Result<()> {
+        let guard = self.conn.lock()?;
+        let updated = guard.execute(
+            "UPDATE secrets SET pending = 0, updated_at = ?1 WHERE key = ?2 AND version = ?3 AND pending = 1",
+            (
+                time::OffsetDateTime::now_utc().unix_timestamp(),
+                key,
+                version,
+            ),
+        )?;
+        if updated == 0 {
+            return Err(SealboxError::InvalidRequest(format!(
+                "no pending version {version} of `{key}` to commit"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Remove a pending version. A failed rotation must leave the previous value current and
+    /// unchanged — a stored credential that silently disagrees with reality is worse than none.
+    fn discard_pending(&self, key: &str, version: i32) -> Result<()> {
+        let guard = self.conn.lock()?;
+        guard.execute(
+            "DELETE FROM secrets WHERE key = ?1 AND version = ?2 AND pending = 1",
+            (key, version),
+        )?;
+        Ok(())
+    }
+
+    /// Replace a pending version's value, for a rotation that captures what the grant produced.
+    fn replace_pending_value(
+        &self,
+        key: &str,
+        version: i32,
+        value: &str,
+        master_key: crate::repo::MasterKey,
+    ) -> Result<()> {
+        let replacement = Secret::new(key, value, master_key, version, None)?;
+        let guard = self.conn.lock()?;
+        let updated = guard.execute(
+            "UPDATE secrets SET encrypted_data = ?1, encrypted_data_key = ?2, master_key_id = ?3
+             WHERE key = ?4 AND version = ?5 AND pending = 1",
+            (
+                &replacement.encrypted_data,
+                &replacement.encrypted_data_key,
+                &replacement.master_key_id,
+                key,
+                version,
+            ),
+        )?;
+        if updated == 0 {
+            return Err(SealboxError::InvalidRequest(format!(
+                "no pending version {version} of `{key}` to write"
+            )));
+        }
+        Ok(())
+    }
+
     fn cleanup_expired_secrets(&self) -> Result<usize> {
         let guard = self.conn.lock()?;
         let conn = &*guard;
@@ -331,7 +408,7 @@ impl SecretRepo for SqliteSecretRepo {
                 MAX(updated_at) as updated_at,
                 expires_at
             FROM secrets 
-            WHERE expires_at IS NULL OR expires_at > ?1
+            WHERE pending = 0 AND (expires_at IS NULL OR expires_at > ?1)
             GROUP BY key
             ORDER BY updated_at DESC",
         )?;
@@ -426,7 +503,7 @@ mod tests {
 
         // Create secret
         let created_secret = repo
-            .create_new_version(secret_key, &supplied(secret_data), master_key, None)
+            .create_new_version(secret_key, &supplied(secret_data), master_key, None, false)
             .expect("Should create secret");
 
         // Get secret back
@@ -472,12 +549,19 @@ mod tests {
                 &supplied("data version 1"),
                 master_key.clone(),
                 None,
+                false,
             )
             .expect("Should create version 1");
 
         // Create second version
         let secret_v2 = repo
-            .create_new_version(secret_key, &supplied("data version 2"), master_key, None)
+            .create_new_version(
+                secret_key,
+                &supplied("data version 2"),
+                master_key,
+                None,
+                false,
+            )
             .expect("Should create version 2");
 
         assert_eq!(secret_v1.version, 1);
@@ -506,11 +590,18 @@ mod tests {
                 &supplied("data version 1"),
                 master_key.clone(),
                 None,
+                false,
             )
             .expect("Should create version 1");
 
         let _secret_v2 = repo
-            .create_new_version(secret_key, &supplied("data version 2"), master_key, None)
+            .create_new_version(
+                secret_key,
+                &supplied("data version 2"),
+                master_key,
+                None,
+                false,
+            )
             .expect("Should create version 2");
 
         // Get specific version
@@ -549,11 +640,18 @@ mod tests {
                 &supplied("data version 1"),
                 master_key.clone(),
                 None,
+                false,
             )
             .expect("Should create version 1");
 
         let secret_v2 = repo
-            .create_new_version(secret_key, &supplied("data version 2"), master_key, None)
+            .create_new_version(
+                secret_key,
+                &supplied("data version 2"),
+                master_key,
+                None,
+                false,
+            )
             .expect("Should create version 2");
 
         // Delete version 1
@@ -594,7 +692,13 @@ mod tests {
 
         // Create secret with TTL
         let secret = repo
-            .create_new_version("ttl-secret", &supplied("temporary-data"), master_key, ttl)
+            .create_new_version(
+                "ttl-secret",
+                &supplied("temporary-data"),
+                master_key,
+                ttl,
+                false,
+            )
             .expect("Should create secret with TTL");
 
         assert!(secret.expires_at.is_some());
@@ -620,6 +724,7 @@ mod tests {
                 &supplied("temporary-data"),
                 master_key,
                 Some(1i64), // 1 second
+                false,
             )
             .expect("Should create secret with short TTL");
 
@@ -648,6 +753,7 @@ mod tests {
                 &supplied("temporary-data"),
                 master_key,
                 Some(1i64), // 1 second
+                false,
             )
             .expect("Should create secret with short TTL");
 
@@ -676,6 +782,7 @@ mod tests {
                 &supplied("data1"),
                 master_key.clone(),
                 Some(1i64), // 1 second
+                false,
             )
             .expect("Should create expired secret 1");
 
@@ -685,6 +792,7 @@ mod tests {
                 &supplied("data2"),
                 master_key.clone(),
                 Some(1i64), // 1 second
+                false,
             )
             .expect("Should create expired secret 2");
 
@@ -694,6 +802,7 @@ mod tests {
                 &supplied("permanent-data"),
                 master_key.clone(),
                 None, // No TTL
+                false,
             )
             .expect("Should create permanent secret");
 
@@ -703,6 +812,7 @@ mod tests {
                 &supplied("long-data"),
                 master_key,
                 Some(3600i64), // 1 hour
+                false,
             )
             .expect("Should create long-lived secret");
 
@@ -743,11 +853,23 @@ mod tests {
 
         // Create only non-expired secrets
         let _permanent = repo
-            .create_new_version("permanent", &supplied("data"), master_key.clone(), None)
+            .create_new_version(
+                "permanent",
+                &supplied("data"),
+                master_key.clone(),
+                None,
+                false,
+            )
             .expect("Should create permanent secret");
 
         let _long_lived = repo
-            .create_new_version("long-lived", &supplied("data"), master_key, Some(3600i64))
+            .create_new_version(
+                "long-lived",
+                &supplied("data"),
+                master_key,
+                Some(3600i64),
+                false,
+            )
             .expect("Should create long-lived secret");
 
         // Run cleanup
@@ -772,7 +894,13 @@ mod tests {
 
         // Create several secrets
         let _secret1 = repo
-            .create_new_version("secret1", &supplied("data1"), master_key.clone(), None)
+            .create_new_version(
+                "secret1",
+                &supplied("data1"),
+                master_key.clone(),
+                None,
+                false,
+            )
             .expect("Should create secret1");
 
         let _secret2 = repo
@@ -781,16 +909,23 @@ mod tests {
                 &supplied("data2"),
                 master_key.clone(),
                 Some(3600),
+                false,
             )
             .expect("Should create secret2 with TTL");
 
         let _secret3 = repo
-            .create_new_version("secret3", &supplied("data3"), master_key.clone(), None)
+            .create_new_version(
+                "secret3",
+                &supplied("data3"),
+                master_key.clone(),
+                None,
+                false,
+            )
             .expect("Should create secret3");
 
         // Create multiple versions of secret1
         let _secret1_v2 = repo
-            .create_new_version("secret1", &supplied("data1-v2"), master_key, None)
+            .create_new_version("secret1", &supplied("data1-v2"), master_key, None, false)
             .expect("Should create secret1 version 2");
 
         // List all secrets
@@ -833,6 +968,7 @@ mod tests {
                 &supplied("temporary-data"),
                 master_key.clone(),
                 Some(1i64), // 1 second
+                false,
             )
             .expect("Should create expired secret");
 
@@ -843,6 +979,7 @@ mod tests {
                 &supplied("permanent-data"),
                 master_key,
                 None,
+                false,
             )
             .expect("Should create permanent secret");
 
@@ -867,9 +1004,9 @@ mod tests {
         let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
         let new_key = MasterKey::new(new_public).expect("Should create new master key");
 
-        repo.create_new_version("s1", &supplied("d1"), old_key.clone(), None)
+        repo.create_new_version("s1", &supplied("d1"), old_key.clone(), None, false)
             .expect("Should create s1");
-        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None)
+        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None, false)
             .expect("Should create s2");
 
         let failed = repo
@@ -897,9 +1034,9 @@ mod tests {
         let (_, new_public) = generate_key_pair().expect("Should generate new key pair");
         let new_key = MasterKey::new(new_public).expect("Should create new master key");
 
-        repo.create_new_version("s1", &supplied("d1"), old_key.clone(), None)
+        repo.create_new_version("s1", &supplied("d1"), old_key.clone(), None, false)
             .expect("Should create s1");
-        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None)
+        repo.create_new_version("s2", &supplied("d2"), old_key.clone(), None, false)
             .expect("Should create s2");
 
         let failed = repo

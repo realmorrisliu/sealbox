@@ -5,7 +5,7 @@ use rusqlite::OptionalExtension;
 
 use crate::{
     error::{Result, SealboxError},
-    repo::{Job, JobRepo, JobStatus},
+    repo::{Job, JobRepo, JobStatus, Rotation},
 };
 
 #[derive(Debug, Clone)]
@@ -31,7 +31,8 @@ impl SqliteJobRepo {
                 claimed_at INTEGER,
                 finished_at INTEGER,
                 exit_code INTEGER,
-                output TEXT
+                output TEXT,
+                rotation TEXT
             )",
             (),
         )?;
@@ -44,7 +45,8 @@ impl SqliteJobRepo {
     }
 
     const COLUMNS: &'static str = "id, grant_name, params, runner, status, submitted_by, \
-                                   submitted_at, claimed_at, finished_at, exit_code, output";
+                                   submitted_at, claimed_at, finished_at, exit_code, output, \
+                                   rotation";
 
     fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
         let params: String = row.get(2)?;
@@ -66,6 +68,17 @@ impl SqliteJobRepo {
             finished_at: row.get(8)?,
             exit_code: row.get(9)?,
             output: row.get(10)?,
+            rotation: row
+                .get::<_, Option<String>>(11)?
+                .map(|r| serde_json::from_str(&r))
+                .transpose()
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        11,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?,
         })
     }
 }
@@ -77,16 +90,30 @@ impl JobRepo for SqliteJobRepo {
         runner: &str,
         params: &BTreeMap<String, String>,
         by: &str,
+        rotation: Option<&Rotation>,
     ) -> Result<Job> {
         let guard = self.conn.lock()?;
         let params_json = serde_json::to_string(params)
             .map_err(|e| SealboxError::DatabaseError(e.to_string()))?;
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
 
+        let rotation_json = rotation
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| SealboxError::DatabaseError(e.to_string()))?;
+
         guard.execute(
-            "INSERT INTO jobs (grant_name, params, runner, status, submitted_by, submitted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            (grant, &params_json, runner, JobStatus::Pending, by, now),
+            "INSERT INTO jobs (grant_name, params, runner, status, submitted_by, submitted_at, rotation)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            (
+                grant,
+                &params_json,
+                runner,
+                JobStatus::Pending,
+                by,
+                now,
+                &rotation_json,
+            ),
         )?;
         let id = guard.last_insert_rowid();
 

@@ -108,6 +108,98 @@ fn parse_params(raw: &[String]) -> Result<BTreeMap<String, String>> {
         .collect()
 }
 
+/// Rotate a secret through a grant.
+///
+/// The new value is generated on the server and is never displayed — saying so matters, because
+/// a caller may otherwise sit waiting for it.
+pub async fn rotate(
+    config: &Config,
+    output: &OutputManager,
+    secret: String,
+    via: String,
+    from_output: bool,
+    params: Vec<String>,
+) -> Result<()> {
+    config
+        .validate()
+        .context("Configuration validation failed")?;
+
+    let params = parse_params(&params)?;
+    let client = Client::new();
+
+    let response = client
+        .post(format!("{}/v1/rotate/{secret}", config.server.url))
+        .bearer_auth(&config.server.token)
+        .json(&serde_json::json!({
+            "via": via,
+            "from_output": from_output,
+            "params": params,
+        }))
+        .send()
+        .await
+        .context("Failed to request server")?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("Server returned {status}: {body}");
+    }
+
+    let started: serde_json::Value = response
+        .json()
+        .await
+        .context("Failed to parse server response")?;
+    let id = started["job"]
+        .as_i64()
+        .context("Server returned no job id")?;
+    output.print_info(&format!(
+        "Rotating '{secret}' through '{via}' (job {id}). The new value was generated on the \
+         server and is not shown to anyone."
+    ));
+
+    let deadline = std::time::Instant::now() + WAIT_TIMEOUT;
+    loop {
+        let job = fetch(&client, config, id).await?;
+        match job["status"].as_str().unwrap_or("") {
+            "Succeeded" => {
+                if let Some(out) = job["output"].as_str()
+                    && !out.is_empty()
+                {
+                    println!("{out}");
+                }
+                output.print_success(&format!(
+                    "'{secret}' rotated. Version {} is now current.",
+                    started["pending_version"]
+                ));
+                return Ok(());
+            }
+            "Failed" => {
+                if let Some(out) = job["output"].as_str()
+                    && !out.is_empty()
+                {
+                    println!("{out}");
+                }
+                // The distinction that matters: nothing changed, so whatever is deployed still
+                // works.
+                anyhow::bail!(
+                    "Rotation of '{secret}' failed. The previous value is still current and \
+                     unchanged — nothing upstream was left disagreeing with what is stored."
+                );
+            }
+            status => {
+                if std::time::Instant::now() >= deadline {
+                    anyhow::bail!(
+                        "Stopped waiting for the rotation of '{secret}' after {}s; it is still \
+                         {status}. Check `sealbox-cli audit` for what became of it.",
+                        WAIT_TIMEOUT.as_secs()
+                    );
+                }
+                tokio::time::sleep(POLL_INTERVAL).await;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,7 +1,7 @@
 # CLI Reference
 
 > **Mostly implemented.** `identity`, `audit`, `bootstrap`, the secret commands, `grant`, `run`,
-> and `runner` all exist and are documented as they actually behave. `rotate` and `admin` describe
+> `runner`, and `rotate` all exist and are documented as they actually behave. `admin` describes
 > the target. Adapters are recognised but not yet implemented — a grant with a `script` runs
 > today. See [`README.md`](../README.md).
 
@@ -208,6 +208,35 @@ sealbox-cli run k8s-restart deploy=api
 A caller supplies a grant name and parameters — never a command. Parameters are substituted into
 the implementation's argv as whole tokens and are never re-parsed, so a parameter of
 `x; curl evil.com` arrives as one odd argument and nothing in it executes.
+
+### `sealbox-cli rotate <secret> --via <grant> [--from-output] [key=value ...]`
+
+Replaces a secret's value, committing **only if the grant succeeds**.
+
+```bash
+sealbox-cli rotate app/db-password --via pg-set-password
+sealbox-cli rotate app/db-url --via pg-provision --from-output
+```
+
+The server generates the new value and hands it to the grant as `$SEALBOX_NEW`, injected exactly
+like a declared secret — **an implementation never produces secret material**, so randomness stays
+in one audited place instead of being reimplemented per script. A caller supplying a value is
+refused, not honoured.
+
+**If the grant fails, the previous value is still current, unchanged.** That is the whole point:
+a stored credential that silently disagrees with reality is worse than no rotation, because
+nothing says so.
+
+`--from-output` stores what the grant printed instead, for values that are *composed* — a
+`DATABASE_URL` with a percent-encoded password — or issued upstream. A capturing implementation
+**prints the value on stdout and nothing else**; diagnostics go to stderr. Printing nothing fails
+the rotation: storing an empty credential because a script forgot is the same failure as storing
+the wrong one.
+
+The captured value never enters the job record. Job output is stored in the clear for you to read;
+a credential must not travel that way.
+
+The new value is not displayed, to anyone, ever.
 
 ### `sealbox-cli runner --name <name>`
 

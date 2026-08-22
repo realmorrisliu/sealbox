@@ -18,4 +18,8 @@ secrets = { admin = "pg/prod-admin-password" }
 # deleted in favour of a broken one.
 then = ["k8s-sync", "k8s-restart", "verify-health"]
 
-# sealbox rotate utopia/prod/db-password --via rotate-db
+# sealbox-cli rotate utopia/prod/db-password --via rotate-db
+#
+# The new value arrives as $SEALBOX_NEW, injected like any declared secret. If this grant fails,
+# the previous password is still the current one — nothing upstream is left disagreeing with what
+# is stored.

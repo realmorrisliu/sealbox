@@ -45,9 +45,13 @@ pub(crate) async fn submit(
 
     // The runner is copied from the grant now, so a later change to the grant cannot redirect
     // work already queued.
-    let job = state
-        .job_repo
-        .submit(&grant.name, &grant.runner, &payload.params, &identity.name)?;
+    let job = state.job_repo.submit(
+        &grant.name,
+        &grant.runner,
+        &payload.params,
+        &identity.name,
+        None,
+    )?;
 
     state.audit_repo.append(&NewAuditRecord {
         identity: Some(identity.name.clone()),
@@ -123,6 +127,16 @@ fn prepare(state: &AppState, job: &Job) -> Result<ClaimedJob> {
         .ok_or_else(|| SealboxError::GrantNotFound(job.grant.clone()))?;
 
     let mut secrets = BTreeMap::new();
+
+    // A rotation's new value is injected exactly like a declared secret, so an implementation
+    // cannot tell it apart and there is nothing special for a script author to get right.
+    if let Some(rotation) = &job.rotation {
+        let pending = state
+            .secret_repo
+            .get_pending(&rotation.secret, rotation.version)?;
+        secrets.insert("SEALBOX_NEW".to_string(), decrypt(state, &pending)?);
+    }
+
     for (injected_as, name) in &grant.secrets {
         let secret = state.secret_repo.get_secret(name)?;
         secrets.insert(injected_as.clone(), decrypt(state, &secret)?);
@@ -140,6 +154,7 @@ fn prepare(state: &AppState, job: &Job) -> Result<ClaimedJob> {
         implementation: grant.implementation,
         secrets,
         files,
+        capture: job.rotation.as_ref().is_some_and(|r| r.capture),
     })
 }
 
@@ -165,6 +180,11 @@ pub(crate) struct ReportPayload {
     exit_code: i32,
     #[serde(default)]
     output: String,
+    /// A value captured from the implementation, for a capturing rotation. Kept separate from
+    /// `output` all the way down: output is stored in the clear for the caller to read, and a
+    /// credential must not travel that way.
+    #[serde(default)]
+    captured: Option<String>,
 }
 
 /// POST /v1/jobs/{id}/result — runner only, and only the runner holding the claim.
@@ -194,6 +214,10 @@ pub(crate) async fn report(
         detail: Some(format!("job {} exited {}", job.id, payload.exit_code)),
     })?;
 
+    if let Some(rotation) = job.rotation.clone() {
+        settle_rotation(&state, &job, &rotation, payload.exit_code, payload.captured)?;
+    }
+
     // A chain is driven here, not by the runner: a runner that kept itself going would keep
     // going unsupervised if it were compromised.
     if payload.exit_code == 0 {
@@ -201,6 +225,81 @@ pub(crate) async fn report(
     }
 
     Ok(SealboxResponse::Json(json!(job)))
+}
+
+/// Commit or discard the pending version.
+///
+/// A failed rotation must leave the previous value current and unchanged: a stored credential
+/// that silently disagrees with reality is worse than no rotation at all, because nothing says
+/// so.
+fn settle_rotation(
+    state: &AppState,
+    job: &Job,
+    rotation: &crate::repo::Rotation,
+    exit_code: i32,
+    captured: Option<String>,
+) -> Result<()> {
+    if exit_code != 0 {
+        state
+            .secret_repo
+            .discard_pending(&rotation.secret, rotation.version)?;
+        audit_rotation(state, job, rotation, AuditOutcome::Failed, "grant failed")?;
+        return Ok(());
+    }
+
+    if rotation.capture {
+        // Storing an empty credential because a script forgot to print is the same failure as
+        // storing the wrong one.
+        let value = captured.filter(|v| !v.trim().is_empty());
+        let Some(value) = value else {
+            state
+                .secret_repo
+                .discard_pending(&rotation.secret, rotation.version)?;
+            audit_rotation(
+                state,
+                job,
+                rotation,
+                AuditOutcome::Failed,
+                "capture requested but the grant emitted nothing",
+            )?;
+            return Err(SealboxError::InvalidRequest(format!(
+                "rotation of `{}` captures its value, but the grant printed nothing",
+                rotation.secret
+            )));
+        };
+
+        let master_key = state.master_key_repo.get_valid_master_key()?;
+        state.secret_repo.replace_pending_value(
+            &rotation.secret,
+            rotation.version,
+            value.trim(),
+            master_key,
+        )?;
+    }
+
+    state
+        .secret_repo
+        .commit_pending(&rotation.secret, rotation.version)?;
+    audit_rotation(state, job, rotation, AuditOutcome::Allowed, "committed")?;
+    Ok(())
+}
+
+fn audit_rotation(
+    state: &AppState,
+    job: &Job,
+    rotation: &crate::repo::Rotation,
+    outcome: AuditOutcome,
+    detail: &str,
+) -> Result<()> {
+    state.audit_repo.append(&NewAuditRecord {
+        identity: Some(job.submitted_by.clone()),
+        action: "secret.rotate".to_string(),
+        resource: Some(rotation.secret.clone()),
+        outcome,
+        // Never the value, captured or generated.
+        detail: Some(format!("version {}: {detail}", rotation.version)),
+    })?;
+    Ok(())
 }
 
 fn queue_next_in_chain(state: &AppState, job: &Job, by: &str) -> Result<()> {
@@ -216,7 +315,7 @@ fn queue_next_in_chain(state: &AppState, job: &Job, by: &str) -> Result<()> {
 
     let queued = state
         .job_repo
-        .submit(&next.name, &next.runner, &job.params, by)?;
+        .submit(&next.name, &next.runner, &job.params, by, None)?;
 
     state.audit_repo.append(&NewAuditRecord {
         identity: Some(by.to_string()),

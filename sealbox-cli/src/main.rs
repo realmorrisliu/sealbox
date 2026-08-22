@@ -109,6 +109,19 @@ enum Commands {
         /// Parameters as key=value
         params: Vec<String>,
     },
+    /// Rotate a secret's value through a grant. Commits only if the grant succeeds.
+    Rotate {
+        /// Secret key
+        secret: String,
+        /// The grant that makes some upstream accept the new value
+        #[arg(long)]
+        via: String,
+        /// Store what the grant printed instead of the generated value
+        #[arg(long)]
+        from_output: bool,
+        /// Parameters as key=value
+        params: Vec<String>,
+    },
     /// Execute jobs addressed to this runner. The only place a grant runs, and the only place
     /// plaintext exists outside the server.
     Runner {
@@ -350,6 +363,15 @@ async fn main() -> Result<()> {
         Commands::Run { grant, params } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());
             job_commands::run(&config, &output, grant, params).await
+        }
+        Commands::Rotate {
+            secret,
+            via,
+            from_output,
+            params,
+        } => {
+            let output = crate::output::OutputManager::new(config.output.format.clone());
+            job_commands::rotate(&config, &output, secret, via, from_output, params).await
         }
         Commands::Runner { name } => {
             let output = crate::output::OutputManager::new(config.output.format.clone());

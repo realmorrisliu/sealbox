@@ -108,6 +108,10 @@ pub fn create_app(config: &SealboxConfig) -> Result<Router> {
             "/v1/secrets/{*secret_key}",
             put(secret::save).delete(secret::delete),
         )
+        .route(
+            "/v1/rotate/{*secret_key}",
+            axum::routing::post(secret::rotate),
+        )
         .route_layer(from_fn(require_operator));
 
     // Disjoint from every other group: only a runner reaches these, and a runner reaches
