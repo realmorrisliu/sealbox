@@ -134,7 +134,10 @@ impl Secret {
 /// What an identity is allowed to do. Ordered: each role admits everything the one below it can
 /// do. Three roles with a natural inclusion order need no permission matrix, and a matrix would
 /// invite per-resource entries — the boundary this design relies on is the grant, not an ACL.
+/// Serialised lowercase, matching what `--role` takes: a response saying `"Admin"` for a role
+/// that must be written `admin` is a small thing that costs someone an afternoon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Role {
     /// Claims jobs addressed to it and reports results. **Disjoint from the others**, not
     /// beneath them: it cannot invoke a grant, read a secret by name, list secrets, or read the
@@ -188,11 +191,13 @@ impl FromStr for Role {
 
 impl std::fmt::Display for Role {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Lowercase, the same spelling `--role` takes and `FromStr` returns. Rows written by an
+        // earlier build still read: parsing is case-insensitive.
         f.write_str(match self {
-            Role::Runner => "Runner",
-            Role::Agent => "Agent",
-            Role::Operator => "Operator",
-            Role::Admin => "Admin",
+            Role::Runner => "runner",
+            Role::Agent => "agent",
+            Role::Operator => "operator",
+            Role::Admin => "admin",
         })
     }
 }

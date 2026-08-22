@@ -96,7 +96,8 @@ pub async fn bootstrap(
     output.print_success(&format!("Admin identity '{name}' created."));
     output.print_value(&result)?;
     output.print_warning(
-        "Store this token, then unset SEALBOX_BOOTSTRAP_TOKEN on the server — it has served its \
+        "Open the enrolment link and register your passkey, then unset SEALBOX_BOOTSTRAP_TOKEN \
+         on the server — it has served its \
          purpose and only widens exposure from here.",
     );
     Ok(())
