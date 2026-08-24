@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.97-alpine AS builder
+FROM rust:1.98-alpine AS builder
 
 # Install build dependencies
 # `openssl-libs-static` matters: the musl target links statically, and without the static halves
